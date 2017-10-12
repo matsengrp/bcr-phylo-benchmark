@@ -13,7 +13,6 @@ from scipy.stats import poisson
 from ete3 import TreeNode, NodeStyle, TreeStyle, TextFace, add_face_to_node, CircleFace, PieChartFace, faces, SVG_COLORS
 from Bio.Seq import Seq
 from Bio.Alphabet import generic_dna
-from Bio import AlignIO
 import matplotlib; matplotlib.use('agg')
 from matplotlib import pyplot as plt, ticker
 try:
@@ -21,7 +20,7 @@ try:
 except:
     import pickle
 
-from utils import hamming_distance
+from utils import hamming_distance, has_stop, translate
 import selection_utils
 
 scipy.seterr(all='raise')
@@ -36,24 +35,18 @@ class CollapsedTree():
            |   \\
           (2)  (1)
     '''
-    def __init__(self, params=None, tree=None, frame=None, collapse_syn=False, allow_repeats=False):
+    def __init__(self, params=None, tree=None, collapse_syn=False, allow_repeats=False):
         '''
         For intialization, either params or tree (or both) must be provided
         params: offspring distribution parameters
         tree: ete tree with frequency node feature. If uncollapsed, it will be collapsed
-        frame: tranlation frame, with default None, no tranlation attempted
         '''
-        if frame is not None and frame not in (1, 2, 3):
-            raise RuntimeError('frame must be 1, 2, 3, or None')
-        self.frame = frame
 
         if collapse_syn is True:
             tree.dist = 0  # no branch above root
             for node in tree.iter_descendants():
-                aa = Seq(node.sequence[(frame-1):(frame-1+(3*(((len(node.sequence)-(frame-1))//3))))],
-                         generic_dna).translate()
-                aa_parent = Seq(node.up.sequence[(frame-1):(frame-1+(3*(((len(node.sequence)-(frame-1))//3))))],
-                                generic_dna).translate()
+                aa = translate(node.sequence)
+                aa_parent = translate(node.up.sequence)
                 node.dist = hamming_distance(aa, aa_parent)
 
         if tree is not None:
@@ -129,34 +122,17 @@ class CollapsedTree():
             nstyle = NodeStyle()
             nstyle['size'] = 0
             if node.up is not None:
-                if set(node.sequence.upper()) == set('ACGT'):
-                    if chain_split is not None:
-                        if self.frame is not None:
-                            raise NotImplementedError('frame not implemented with chain_split')
-                        leftseq_mutated = hamming_distance(node.sequence[:chain_split], node.up.sequence[:chain_split]) > 0
-                        rightseq_mutated = hamming_distance(node.sequence[chain_split:], node.up.sequence[chain_split:]) > 0
-                        if leftseq_mutated and rightseq_mutated:
-                            nstyle['hz_line_color'] = 'purple'
-                            nstyle['hz_line_width'] = 3
-                        elif leftseq_mutated:
-                            nstyle['hz_line_color'] = 'red'
-                            nstyle['hz_line_width'] = 2
-                        elif rightseq_mutated:
-                            nstyle['hz_line_color'] = 'blue'
-                            nstyle['hz_line_width'] = 2
-                    if self.frame is not None:
-                        aa = Seq(node.sequence[(self.frame-1):(self.frame-1+(3*(((len(node.sequence)-(self.frame-1))//3))))],
-                                 generic_dna).translate()
-                        aa_parent = Seq(node.up.sequence[(self.frame-1):(self.frame-1+(3*(((len(node.sequence)-(self.frame-1))//3))))],
-                                        generic_dna).translate()
-                        nonsyn = hamming_distance(aa, aa_parent)
-                        if '*' in aa:
-                            nstyle['bgcolor'] = 'red'
-                        if nonsyn > 0:
-                            nstyle['hz_line_color'] = 'black'
-                            nstyle['hz_line_width'] = nonsyn
-                        else:
-                            nstyle['hz_line_type'] = 1
+                if set(node.sequence.upper()) == set('ACGT'):  # Don't know what this do, try and delete
+                    aa = translate(node.sequence)
+                    aa_parent = translate(node.up.sequence)
+                    nonsyn = hamming_distance(aa, aa_parent)
+                    if '*' in aa:
+                        nstyle['bgcolor'] = 'red'
+                    if nonsyn > 0:
+                        nstyle['hz_line_color'] = 'black'
+                        nstyle['hz_line_width'] = nonsyn
+                    else:
+                        nstyle['hz_line_type'] = 1
             node.set_style(nstyle)
 
         ts = TreeStyle()
@@ -262,20 +238,16 @@ class MutationModel():
             # mutabilities of each nucleotide
             return [self.mutability(sequence[(i-self.k//2):(i+self.k//2+1)]) for i in range(self.k//2, len(sequence) - self.k//2)]
 
-    def mutate(self, sequence, lambda0=1, frame=None):
+    def mutate(self, sequence, lambda0=1):
         """
         Mutate a sequence, with lamdba0 the baseline mutability
         Cannot mutate the same position multiple times
         @param sequence: the original sequence to mutate
         @param lambda0: a "baseline" mutation rate
-        @param frame: the reading frame index
         """
         sequence_length = len(sequence)
-        if frame is not None:
-            codon_start = frame-1
-            codon_end = codon_start + 3*((sequence_length - codon_start)//3)
-            if '*' in Seq(sequence[codon_start:codon_end], generic_dna).translate():
-                raise RuntimeError('sequence contains stop codon!')
+        if has_stop(sequence):
+            raise RuntimeError('sequence contains stop codon!')
 
         mutabilities = self.mutabilities(sequence)
         sequence_mutability = sum(mutability[0] for mutability in mutabilities)/sequence_length
@@ -291,7 +263,7 @@ class MutationModel():
                 raise RuntimeError('mutations saturating, consider reducing lambda0')
 
         # mutate the sites with mutations
-        # if frame is not None and sequence contains stop codon, try again, up to 10 times
+        # if sequence contains stop codon, try again, up to 10 times
         unmutated_positions = range(sequence_length)
         for i in range(m):
             sequence_list = list(sequence) # make string a list so we can modify it
@@ -306,7 +278,7 @@ class MutationModel():
                 original_base = sequence_list[mut_pos]
                 sequence_list[mut_pos] = 'ACGT'[chosen_target]
                 sequence = ''.join(sequence_list) # reconstruct our sequence
-                if frame is None or '*' not in Seq(sequence[codon_start:codon_end], generic_dna).translate():
+                if not has_stop(sequence):
                     if self.mutation_order:
                         # if mutation order matters, the mutabilities of the sequence need to be updated
                         mutabilities = self.mutabilities(sequence)
@@ -319,19 +291,19 @@ class MutationModel():
                 sequence_list[mut_pos] = original_base # <-- we only get here if we are retrying
         return sequence
 
-    def one_mutant(self, sequence, Nmuts, frame=1, lambda0=0.1):
+    def one_mutant(self, sequence, Nmuts, lambda0=0.1):
         '''
         Make a single mutant with a distance, in amino acid sequence, of Nmuts away from the starting point.
         '''
         trial = 100  # Allow 100 trials before quitting
         while trial > 0:
             mut_seq = sequence[:]
-            aa = str(Seq(sequence[(frame-1):(frame-1+(3*(((len(sequence)-(frame-1))//3))))], generic_dna).translate())
-            aa_mut = Seq(mut_seq[(frame-1):(frame-1+(3*(((len(mut_seq)-(frame-1))//3))))], generic_dna).translate()
+            aa = translate(sequence)
+            aa_mut = translate(mut_seq)
             dist = hamming_distance(aa, aa_mut)
             while dist < Nmuts:
-                mut_seq = self.mutate(mut_seq, lambda0=lambda0, frame=frame)
-                aa_mut = str(Seq(mut_seq[(frame-1):(frame-1+(3*(((len(mut_seq)-(frame-1))//3))))], generic_dna).translate())
+                mut_seq = self.mutate(mut_seq, lambda0=lambda0)
+                aa_mut = translate(mut_seq)
                 dist = hamming_distance(aa, aa_mut)
             if dist == Nmuts:
                 return aa_mut
@@ -339,7 +311,7 @@ class MutationModel():
                 trial -= 1
         raise RuntimeError('100 consecutive attempts for creating a target sequence failed.')
 
-    def simulate(self, sequence, seq_bounds=None, progeny=poisson(.9), lambda0=[1], frame=None,
+    def simulate(self, sequence, seq_bounds=None, progeny=poisson(.9), lambda0=[1],
                  N=None, T=None, n=None, verbose=False, selection_params=None):
         '''
         simulate neutral binary branching process with mutation model
@@ -355,8 +327,6 @@ class MutationModel():
             raise ValueError('Either N or T must be specified.')
         if N is not None and n > N:
             raise ValueError('n ({}) must not larger than N ({})'.format(n, N))
-        if selection_params is not None and frame is None:
-            raise ValueError('Simulation with selection was chosen. A frame must must be specified.')
 
         # Planting the tree:
         tree = TreeNode()
@@ -370,7 +340,7 @@ class MutationModel():
             hd_generation = list()  # Collect an array of the counts of each hamming distance at each time step
             stop_dist, mature_affy, naive_affy, target_dist, skip_update, targetAAseqs, A_total, B_total, Lp, k, outbase = selection_params
             # Assert that the target sequences are comparable to the naive sequence:
-            aa = Seq(tree.sequence[(frame-1):(frame-1+(3*(((len(tree.sequence)-(frame-1))//3))))], generic_dna).translate()
+            aa = translate(tree.sequence)
             assert(sum([1 for t in targetAAseqs if len(t) != len(aa)]) == 0)  # All targets are same length
             assert(sum([1 for t in targetAAseqs if hamming_distance(aa, t) == target_dist]))  # All target are "target_dist" away from the naive sequence
             # Affinity is an exponential function of hamming distance:
@@ -415,16 +385,16 @@ class MutationModel():
                     for child_count in range(n_children):
                         # If sequence pair mutate them separately with their own mutation rate:
                         if seq_bounds is not None:
-                            mutated_sequence1 = self.mutate(leaf.sequence[seq_bounds[0][0]:seq_bounds[0][1]], lambda0=lambda0[0], frame=frame)
-                            mutated_sequence2 = self.mutate(leaf.sequence[seq_bounds[1][0]:seq_bounds[1][1]], lambda0=lambda0[1], frame=frame)
+                            mutated_sequence1 = self.mutate(leaf.sequence[seq_bounds[0][0]:seq_bounds[0][1]], lambda0=lambda0[0])
+                            mutated_sequence2 = self.mutate(leaf.sequence[seq_bounds[1][0]:seq_bounds[1][1]], lambda0=lambda0[1])
                             mutated_sequence = mutated_sequence1 + mutated_sequence2
                         else:
-                            mutated_sequence = self.mutate(leaf.sequence, lambda0=lambda0[0], frame=frame)
+                            mutated_sequence = self.mutate(leaf.sequence, lambda0=lambda0[0])
                         child = TreeNode()
                         child.dist = sum(x!=y for x,y in zip(mutated_sequence, leaf.sequence))
                         child.add_feature('sequence', mutated_sequence)
                         if selection_params is not None:
-                            aa = Seq(child.sequence[(frame-1):(frame-1+(3*(((len(child.sequence)-(frame-1))//3))))], generic_dna).translate()
+                            aa = translate(child.sequence)
                             child.add_feature('AAseq', str(aa))
                             child.add_feature('Kd', selection_utils.calc_Kd(child.AAseq, targetAAseqs, hd2affy))
                             child.add_feature('target_dist', min([hamming_distance(child.AAseq, taa) for taa in targetAAseqs]))
@@ -519,11 +489,7 @@ def simulate(args):
             args.lambda0 = [args.lambda0[0], args.lambda0[0]]
         elif len(args.lambda0) != 2:
             raise Exception('Only one or two lambda0 can be defined for a two sequence simulation.')
-        # Require both sequences to be in frame 1:
-        if args.frame is not None and args.frame != 1:
-            print('Warning: When simulating with two sequences they are truncated to be beginning at frame 1.')
-            args.sequence = args.sequence[(args.frame-1):(args.frame-1+(3*(((len(args.sequence)-(args.frame-1))//3))))]
-            args.sequence2 = args.sequence2[(args.frame-1):(args.frame-1+(3*(((len(args.sequence2)-(args.frame-1))//3))))]
+
         # Extract the bounds between sequence 1 and 2:
         seq_bounds = ((0, len(args.sequence)), (len(args.sequence), len(args.sequence)+len(args.sequence2)))
         # Merge the two seqeunces to simplify future dealing with the pair:
@@ -531,11 +497,9 @@ def simulate(args):
     else:
         seq_bounds = None
     if args.selection:
-        if args.frame is None:
-            raise Exception('Frame must be defined when simulating with selection.')
         assert(args.B_total >= args.f_full)  # the fully activating fraction on BA must be possible to reach within B_total
         # Make a list of target sequences:
-        targetAAseqs = [mutation_model.one_mutant(args.sequence, args.target_dist, frame=args.frame) for i in range(args.target_count)]
+        targetAAseqs = [mutation_model.one_mutant(args.sequence, args.target_dist) for i in range(args.target_count)]
         # Find the total amount of A necessary for sustaining the inputted carrying capacity:
         print((args.carry_cap, args.B_total, args.f_full, args.mature_affy))
         A_total = selection_utils.find_A_total(args.carry_cap, args.B_total, args.f_full, args.mature_affy, args.U)
@@ -556,13 +520,12 @@ def simulate(args):
                                            n=args.n,
                                            N=args.N,
                                            T=args.T,
-                                           frame=args.frame,
                                            verbose=args.verbose,
                                            selection_params=selection_params)
             if args.selection:
-                collapsed_tree = CollapsedTree(tree=tree, frame=args.frame, collapse_syn=False, allow_repeats=True)
+                collapsed_tree = CollapsedTree(tree=tree, collapse_syn=False, allow_repeats=True)
             else:
-                collapsed_tree = CollapsedTree(tree=tree, frame=args.frame) # <-- this will fail if backmutations
+                collapsed_tree = CollapsedTree(tree=tree)  # <-- this will fail if backmutations
             tree.ladderize()
             uniques = sum(node.frequency > 0 for node in collapsed_tree.tree.traverse())
             if uniques < 2:
@@ -713,7 +676,6 @@ def main():
     parser.add_argument('--plotAA', type=bool, default=False, help='Plot trees with collapsing and coloring on amino acid level.')
     parser.add_argument('--verbose', type=bool, default=False, help='Print progress during simulation. Mostly useful for simulation with selection since this can take a while.')
     parser.add_argument('--outbase', type=str, default='gctree.out', help='output file base name')
-    parser.add_argument('--frame', type=int, default=None, choices=(1, 2, 3), help='codon frame')
     parser.add_argument('--idlabel', action='store_true', help='flag for labeling the sequence ids of the nodes in the output tree images, also write associated fasta alignment if True')
 
     args = parser.parse_args()
