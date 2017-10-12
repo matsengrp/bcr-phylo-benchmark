@@ -1,8 +1,5 @@
-# GCtree
+# Benchmarking phylogenetic inference for B cell receptors
 
-Implements phylogenetic inference for data with repeated sequences, as described in:
-
-DeWitt, Mesin, Victora, Minin and Matsen, *Using genotype abundance to improve phylogenetic inference*, [arXiv:1708.08944](https://arxiv.org/abs/1708.08944).
 
 ## DEPENDENCIES
 * scons
@@ -17,6 +14,16 @@ DeWitt, Mesin, Victora, Minin and Matsen, *Using genotype abundance to improve p
 * [PHYLIP](http://evolution.genetics.washington.edu/phylip/getme-new.html)
   * PHYLIP's `dnapars` program is used for generating parsimony trees, so the command-line program `dnapars` should be on your path
 * X11 or xvfb-run (for rendering phylogenetic trees using ete3)
+* IgPhyML (https://github.com/kbhoehn/IgPhyML)
+  * Needs to be in $PATH
+* perl5, with modules:
+  * PDL
+  * PDL::LinearAlgebra::Trans
+```
+cpan
+> install PDL
+> install PDL::LinearAlgebra::Trans
+```
 
 **NOTE:** for installing scons, ete, and other python dependencies, [conda](https://conda.io/docs/) is recommended:
 ```bash
@@ -25,6 +32,7 @@ conda install biopython matplotlib nestly pandas scipy scons seaborn
 ```
 Alternatively, an example linux environment spec file is included (`spec-file.txt`), which may be used to create a conda environment.
 For example, to create an environment called `gctree`, execute `conda create --name gctree --file spec-file.txt`, then activate the environment with `source activate gctree`.
+
 
 ## SCONS PIPELINES
 
@@ -139,18 +147,4 @@ The under-the-hood functionality of the `gctree.py` library might be useful for 
 
 `--skip_update`  skip update step
 
-### additional depencies for development functionality
-* IgPhyML (https://github.com/kbhoehn/IgPhyML)
-  * Needs to be in $PATH
-* perl5, with modules:
-  * PDL
-  * PDL::LinearAlgebra::Trans
 
-* installing python and perl dependencies *
-```
-sudo apt-get install python-pip scons
-pip install --user ete3 seaborn numpy scipy matplotlib pandas biopython nestly
-cpan
-> install PDL
-> install PDL::LinearAlgebra::Trans
-```
