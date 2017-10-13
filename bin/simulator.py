@@ -641,19 +641,23 @@ def simulate(args):
 
 def main():
     import argparse
+    file_path = os.path.realpath(__file__)
+    file_dir = os.path.dirname(file_path)
+
     parser = argparse.ArgumentParser(description='Germinal center simulation',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument('sequence', type=str, help='seed naive nucleotide sequence')
-    parser.add_argument('mutability', type=str, help='path to mutability model file')
-    parser.add_argument('substitution', type=str, help='path to substitution model file')
+    parser.add_argument('--sequence', type=str, default='GGACCTAGCCTCGTGAAACCTTCTCAGACTCTGTCCCTCACCTGTTCTGTCACTGGCGACTCCATCACCAGTGGTTACTGGAACTGGATCCGGAAATTCCCAGGGAATAAACTTGAGTACATGGGGTACATAAGCTACAGTGGTAGCACTTACTACAATCCATCTCTCAAAAGTCGAATCTCCATCACTCGAGACACATCCAAGAACCAGTACTACCTGCAGTTGAATTCTGTGACTACTGAGGACACAGCCACATATTACTGT',
+                        help='Seed naive nucleotide sequence')
+    parser.add_argument('--mutability', type=str, default=file_dir+'../S5F/Mutability.csv', help='Path to mutability model file')
+    parser.add_argument('--substitution', type=str, default=file_dir+'../S5F/Substitution.csv', help='Path to substitution model file')
     parser.add_argument('--sequence2', type=str, default=None, help='Second seed naive nucleotide sequence. For simulating heavy/light chain co-evolution.')
-    parser.add_argument('--lambda', dest='lambda_', type=float, default=.9, help='poisson branching parameter')
+    parser.add_argument('--lambda', dest='lambda_', type=float, default=.9, help='Poisson branching parameter')
     parser.add_argument('--lambda0', type=float, default=None, nargs='*', help='List of one or two elements with the baseline mutation rates. Space separated input values.'
                         'First element belonging to seed sequence one and optionally the next to sequence 2. If only one rate is provided for two sequences,'
                         'this rate will be used on both.')
-    parser.add_argument('--n', type=int, default=None, help='cells downsampled')
-    parser.add_argument('--N', type=int, default=None, help='target simulation size')
-    parser.add_argument('--T', type=int, nargs='+', default=None, help='observation time, if None we run until termination and take all leaves')
+    parser.add_argument('--n', type=int, default=None, help='Cells downsampled')
+    parser.add_argument('--N', type=int, default=None, help='Target simulation size')
+    parser.add_argument('--T', type=int, nargs='+', default=None, help='Observation time, if None we run until termination and take all leaves')
     parser.add_argument('--selection', action='store_true', default=False, help='Simulation with selection? true/false. When doing simulation with selection an observation time cut must be set.')
     parser.add_argument('--stop_dist', type=int, default=None, help='Stop when this distance has been reached in the selection model.')
     parser.add_argument('--carry_cap', type=int, default=1000, help='The carrying capacity of the simulation with selection. This number affects the fixation time of a new mutation.'
@@ -675,8 +679,8 @@ def main():
                         'It is recommended to keep this as the default.')
     parser.add_argument('--plotAA', action='store_true', default=False, help='Plot trees with collapsing and coloring on amino acid level.')
     parser.add_argument('--verbose', action='store_true', default=False, help='Print progress during simulation. Mostly useful for simulation with selection since this can take a while.')
-    parser.add_argument('--outbase', type=str, default='gctree.out', help='output file base name')
-    parser.add_argument('--idlabel', action='store_true', help='flag for labeling the sequence ids of the nodes in the output tree images, also write associated fasta alignment if True')
+    parser.add_argument('--outbase', type=str, default='GCsimulator_out', help='Output file base name')
+    parser.add_argument('--idlabel', action='store_true', help='Flag for labeling the sequence ids of the nodes in the output tree images, also write associated fasta alignment if True')
 
     args = parser.parse_args()
     simulate(args)
