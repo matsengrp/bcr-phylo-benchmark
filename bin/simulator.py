@@ -10,11 +10,13 @@ from __future__ import division, print_function
 import scipy, random, pandas as pd, os
 from itertools import cycle
 from scipy.stats import poisson
-from ete3 import TreeNode, NodeStyle, TreeStyle, TextFace, add_face_to_node, CircleFace, PieChartFace, faces, SVG_COLORS
+from ete3 import TreeNode, NodeStyle, TreeStyle, TextFace, CircleFace, PieChartFace, faces, SVG_COLORS
 from Bio.Seq import Seq
 from Bio.Alphabet import generic_dna
+from Bio import AlignIO
+from Bio.Phylo.TreeConstruction import MultipleSeqAlignment
+from Bio.SeqRecord import SeqRecord
 import matplotlib; matplotlib.use('agg')
-from matplotlib import pyplot as plt, ticker
 try:
     import cPickle as pickle
 except:
@@ -28,20 +30,16 @@ scipy.seterr(all='raise')
 
 class CollapsedTree():
     '''
-    Here's a derived class for a collapsed tree, where we recurse into the mutant clades
-          (4)
-         / | \\
-       (3)(1)(2)
-           |   \\
-          (2)  (1)
+    Collapsed tree class from GCtree. Collapses an ete3 tree
+    into a genotype collapsed tree based on hamming distance between node seqeunces.
     '''
     def __init__(self, params=None, tree=None, collapse_syn=False, allow_repeats=False):
         '''
         For intialization, either params or tree (or both) must be provided
         params: offspring distribution parameters
-        tree: ete tree with frequency node feature. If uncollapsed, it will be collapsed
+        tree: ete tree with frequency node feature. If uncollapsed, it will be collapsed.
         '''
-
+        # Collapse synonymous reads:
         if collapse_syn is True:
             tree.dist = 0  # no branch above root
             for node in tree.iter_descendants():
@@ -93,11 +91,11 @@ class CollapsedTree():
             self.tree = tree
 
     def __str__(self):
-        '''return a string representation for printing'''
+        '''Return a string representation for printing.'''
         return 'params = ' + str(self.params)+ '\ntree:\n' + str(self.tree)
 
     def render(self, outfile, idlabel=False, colormap=None, show_support=False, chain_split=None):
-        '''render to image file, filetype inferred from suffix, svg for color images'''
+        '''Render to image file, filetype inferred from suffix, svg for color images'''
         def my_layout(node):
             circle_color = 'lightgray' if colormap is None or node.name not in colormap else colormap[node.name]
             text_color = 'black'
@@ -144,7 +142,7 @@ class CollapsedTree():
         ts.show_scale = False
         ts.show_branch_support = show_support
         self.tree.render(outfile, tree_style=ts)
-        # if we labelled seqs, let's also write the alignment out so we have the sequences (including of internal nodes)
+        # If we labelled seqs, let's also write the alignment out so we have the sequences (including of internal nodes):
         if idlabel:
             aln = MultipleSeqAlignment([])
             for node in self.tree.traverse():
@@ -158,12 +156,14 @@ class CollapsedTree():
 
 
 class MutationModel():
-    '''a class for a mutation model, and functions to mutate sequences'''
+    '''
+    A class for a mutation model, and functions to mutate sequences.
+    '''
     def __init__(self, mutability_file=None, substitution_file=None, mutation_order=True, with_replacement=True):
         """
         initialized with input files of the S5F format
         @param mutation_order: whether or not to mutate sequences using a context sensitive manner
-                                where mutation order matters
+                               where mutation order matters
         @param with_replacement: allow the same position to mutate multiple times on a single branch
         """
         self.mutation_order = mutation_order
@@ -171,7 +171,7 @@ class MutationModel():
         if mutability_file is not None and substitution_file is not None:
             self.context_model = {}
             with open(mutability_file, 'r') as f:
-                # eat header
+                # Eat header:
                 f.readline()
                 for line in f:
                     motif, score = line.replace('"', '').split()[:2]
@@ -180,7 +180,7 @@ class MutationModel():
             # kmer k
             self.k = None
             with open(substitution_file, 'r') as f:
-                # eat header
+                # Eat header:
                 f.readline()
                 for line in f:
                     fields = line.replace('"', '').split()
@@ -196,10 +196,10 @@ class MutationModel():
 
     @staticmethod
     def disambiguate(sequence):
-        '''generator of all possible nt sequences implied by a sequence containing Ns'''
-        # find the first N nucleotide
+        '''Generator of all possible nt sequences implied by a sequence containing Ns.'''
+        # Find the first N nucleotide:
         N_index = sequence.find('N')
-        # if there is no N nucleotide, yield the input sequence
+        # If there is no N nucleotide, yield the input sequence:
         if N_index == -1:
             yield sequence
         else:
@@ -211,15 +211,15 @@ class MutationModel():
 
     def mutability(self, kmer):
         '''
-        returns the mutability of a central base of kmer, along with nucleotide bias
-        averages over N nucleotide identities
+        Returns the mutability of a central base of a kmer, along with nucleotide bias
+        averages over N nucleotide identities.
         '''
         if self.context_model is None:
             raise ValueError('kmer mutability only defined for context models')
         if len(kmer) != self.k:
             raise ValueError('kmer of length {} inconsistent with context model kmer length {}'.format(len(kmer), self.k))
         if not all(n in 'ACGTN' for n in kmer):
-            raise ValueError('sequence {} must contain only characters A, C, G, T, or N'.format(kmer))
+            raise ValueError('Sequence {} must contain only characters A, C, G, T, or N'.format(kmer))
 
         mutabilities_to_average, substitutions_to_average = zip(*[self.context_model[x] for x in MutationModel.disambiguate(kmer)])
 
@@ -229,31 +229,31 @@ class MutationModel():
         return average_mutability, average_substitution
 
     def mutabilities(self, sequence):
-        '''returns the mutability of a sequence at each site, along with nucleotide biases'''
+        '''Returns the mutability of a sequence at each site, along with nucleotide biases.'''
         if self.context_model is None:
             return [(1, dict((n2, 1/3) if n2 is not n else (n2, 0.) for n2 in 'ACGT')) for n in sequence]
         else:
-            # pad with Ns to allow averaged edge effects
+            # Pad with Ns to allow averaged edge effects:
             sequence = 'N'*(self.k//2) + sequence + 'N'*(self.k//2)
-            # mutabilities of each nucleotide
+            # Mutabilities of each nucleotide:
             return [self.mutability(sequence[(i-self.k//2):(i+self.k//2+1)]) for i in range(self.k//2, len(sequence) - self.k//2)]
 
     def mutate(self, sequence, lambda0=1):
         """
-        Mutate a sequence, with lamdba0 the baseline mutability
-        Cannot mutate the same position multiple times
+        Mutate a sequence, with lamdba0 the baseline mutability.
+        Cannot mutate the same position multiple times.
         @param sequence: the original sequence to mutate
         @param lambda0: a "baseline" mutation rate
         """
         sequence_length = len(sequence)
         if has_stop(sequence):
-            raise RuntimeError('sequence contains stop codon!')
+            raise RuntimeError('Sequence contains stop codon!')
 
         mutabilities = self.mutabilities(sequence)
         sequence_mutability = sum(mutability[0] for mutability in mutabilities)/sequence_length
-        # poisson rate for this sequence (given its relative mutability)
+        # Poisson rate for this sequence (given its relative mutability):
         lambda_sequence = sequence_mutability*lambda0
-        # number of mutations m
+        # Number of mutations m:
         trials = 20
         for trial in range(1, trials+1):
             m = scipy.random.poisson(lambda_sequence)
@@ -262,12 +262,11 @@ class MutationModel():
             if trial == trials:
                 raise RuntimeError('mutations saturating, consider reducing lambda0')
 
-        # mutate the sites with mutations
-        # if sequence contains stop codon, try again, up to 10 times
+        # Introduce mutations, if causing stop codon, try again, up to 10 times:
         unmutated_positions = range(sequence_length)
         for i in range(m):
-            sequence_list = list(sequence) # make string a list so we can modify it
-            # Determine the position to mutate from the mutability matrix
+            sequence_list = list(sequence)  # make string a list so we can modify it
+            # Determine the position to mutate from the mutability matrix:
             mutability_p = scipy.array([mutabilities[pos][0] for pos in unmutated_positions])
             for trial in range(1, trials+1):
                 mut_pos = scipy.random.choice(unmutated_positions, p=mutability_p/mutability_p.sum())
@@ -277,23 +276,24 @@ class MutationModel():
                 chosen_target = scipy.random.choice(4, p=substitution_p)
                 original_base = sequence_list[mut_pos]
                 sequence_list[mut_pos] = 'ACGT'[chosen_target]
-                sequence = ''.join(sequence_list) # reconstruct our sequence
+                sequence = ''.join(sequence_list)  # reconstruct our sequence
+                # Break the loop if no stop codon:
                 if not has_stop(sequence):
                     if self.mutation_order:
-                        # if mutation order matters, the mutabilities of the sequence need to be updated
+                        # If mutation order matters, the mutabilities of the sequence need to be updated:
                         mutabilities = self.mutabilities(sequence)
                     if not self.with_replacement:
-                        # Remove this position so we don't mutate it again
+                        # Remove this position so we don't mutate it again:
                         unmutated_positions.remove(mut_pos)
                     break
                 if trial == trials:
                     raise RuntimeError('stop codon in simulated sequence on '+str(trials)+' consecutive attempts')
-                sequence_list[mut_pos] = original_base # <-- we only get here if we are retrying
+                sequence_list[mut_pos] = original_base  # <-- we only get here if we are retrying
         return sequence
 
     def one_mutant(self, sequence, Nmuts, lambda0=0.1):
         '''
-        Make a single mutant with a distance, in amino acid sequence, of Nmuts away from the starting point.
+        Make a single mutant with a hamming distance, in amino acid space, of Nmuts away from the starting point.
         '''
         trial = 100  # Allow 100 trials before quitting
         while trial > 0:
@@ -311,12 +311,15 @@ class MutationModel():
                 trial -= 1
         raise RuntimeError('100 consecutive attempts for creating a target sequence failed.')
 
-    def simulate(self, sequence, seq_bounds=None, progeny=poisson(.9), lambda0=[1],
+    def simulate(self, sequence, pair_bounds=None, lambda_=0.9, lambda0=[1],
                  N=None, T=None, n=None, verbose=False, selection_params=None):
         '''
-        simulate neutral binary branching process with mutation model
-        progeny must be like a scipy.stats distribution, with rvs() and mean() methods
+        Simulate a poisson branching process with mutation introduced
+        by the chosen mutation model e.g. motif or uniform.
+        Can either simulate under a neutral model without selection,
+        or using an affinity muturation inspired model for selection.
         '''
+        progeny = poisson(lambda_)  # Default progeny distribution
         stop_dist = None  # Default stopping criterium for affinity simulation
         # Checking the validity of the input parameters:
         if N is not None and T is not None:
@@ -371,8 +374,6 @@ class MutationModel():
                         if skip_lambda_n == 0:
                             skip_lambda_n = skip_update + 1  # Add one so skip_update=0 is no skip
                             tree = selection_utils.lambda_selection(leaf, tree, targetAAseqs, hd2affy, A_total, B_total, Lp)
-                        # Small lambdas are causing problems so make a minimum:
-                        lambda_min = 10e-10
                         if leaf.lambda_ > lambda_min:
                             progeny = poisson(leaf.lambda_)
                         else:
@@ -384,9 +385,9 @@ class MutationModel():
                         leaf.terminated = True
                     for child_count in range(n_children):
                         # If sequence pair mutate them separately with their own mutation rate:
-                        if seq_bounds is not None:
-                            mutated_sequence1 = self.mutate(leaf.sequence[seq_bounds[0][0]:seq_bounds[0][1]], lambda0=lambda0[0])
-                            mutated_sequence2 = self.mutate(leaf.sequence[seq_bounds[1][0]:seq_bounds[1][1]], lambda0=lambda0[1])
+                        if pair_bounds is not None:
+                            mutated_sequence1 = self.mutate(leaf.sequence[pair_bounds[0][0]:pair_bounds[0][1]], lambda0=lambda0[0])
+                            mutated_sequence2 = self.mutate(leaf.sequence[pair_bounds[1][0]:pair_bounds[1][1]], lambda0=lambda0[1])
                             mutated_sequence = mutated_sequence1 + mutated_sequence2
                         else:
                             mutated_sequence = self.mutate(leaf.sequence, lambda0=lambda0[0])
@@ -423,7 +424,7 @@ class MutationModel():
         if leaves_unterminated < N:
             raise RuntimeError('tree terminated with {} leaves, {} desired'.format(leaves_unterminated, N))
 
-        # each leaf in final generation gets an observation frequency of 1, unless downsampled
+        # Each leaf in final generation gets an observation frequency of 1, unless downsampled:
         if T is not None and len(T) > 1:
             # Iterate the intermediate time steps:
             for Ti in sorted(T)[:-1]:
@@ -437,7 +438,7 @@ class MutationModel():
             raise RuntimeError('tree terminated with before the requested sample time.')
         # Do the normal sampling of the last time step:
         final_leaves = [leaf for leaf in tree.iter_leaves() if leaf.time == t]
-        # by default, downsample to the target simulation size
+        # By default, downsample to the target simulation size:
         if n is not None and len(final_leaves) >= n:
             for leaf in random.sample(final_leaves, n):
                 leaf.frequency = 1
@@ -452,32 +453,32 @@ class MutationModel():
         else:
             raise RuntimeError('Unknown option.')
 
-        # prune away lineages that are unobserved
+        # Prune away lineages that are unobserved:
         for node in tree.iter_descendants():
             if sum(node2.frequency for node2 in node.traverse()) == 0:
                 node.detach()
 
-        # remove unobserved unifurcations
+        # Remove unobserved unifurcations:
         for node in tree.iter_descendants():
             parent = node.up
             if node.frequency == 0 and len(node.children) == 1:
                 node.delete(prevent_nondicotomic=False)
                 node.children[0].dist = hamming_distance(node.children[0].sequence, parent.sequence)
 
-        # assign unique names to each node
+        # Assign unique names to each node:
         for i, node in enumerate(tree.traverse(), 1):
             node.name = 'simcell_{}'.format(i)
 
-        # return the uncollapsed tree
+        # Return the uncollapsed tree:
         return tree
 
 
 def simulate(args):
     '''
     Simulation subprogram. Can simulate in two modes.
-    a) Neutral mode. A Galton–Watson process, with mutation probabilities according to a user defined motif model e.g. S5F
-    b) Selection mode. Using the same mutation process as in a), but in selection mode the poisson progeny distribution's lambda
-    is variable accordring to the hamming distance to a list of target sequences. The closer a sequence gets to one of the targets
+    a) Neutral mode. A Galton–Watson process, with mutation probabilities according to a user defined motif model e.g. S5F.
+    b) Selection mode. Using the same mutation process as in a), but in selection mode the poisson progeny distribution's lambda parameter
+    is dynamically adjusted accordring to the hamming distance to a list of target sequences. The closer a sequence gets to one of the targets
     the higher fitness and the closer lambda will approach 2, vice versa when the sequence is far away lambda approaches 0.
     '''
     mutation_model = MutationModel(args.mutability, args.substitution)
@@ -491,11 +492,11 @@ def simulate(args):
             raise Exception('Only one or two lambda0 can be defined for a two sequence simulation.')
 
         # Extract the bounds between sequence 1 and 2:
-        seq_bounds = ((0, len(args.sequence)), (len(args.sequence), len(args.sequence)+len(args.sequence2)))
+        pair_bounds = ((0, len(args.sequence)), (len(args.sequence), len(args.sequence)+len(args.sequence2)))
         # Merge the two seqeunces to simplify future dealing with the pair:
         args.sequence += args.sequence2.upper()
     else:
-        seq_bounds = None
+        pair_bounds = None
     if args.selection:
         assert(args.B_total >= args.f_full)  # the fully activating fraction on BA must be possible to reach within B_total
         # Make a list of target sequences:
@@ -510,12 +511,12 @@ def simulate(args):
         selection_params = None
 
     trials = 1000
-    # this loop makes us resimulate if size too small, or backmutation
+    # This loop makes us resimulate if size too small, or backmutation:
     for trial in range(trials):
         try:
             tree = mutation_model.simulate(args.sequence,
-                                           seq_bounds=seq_bounds,
-                                           progeny=poisson(args.lambda_),
+                                           pair_bounds=pair_bounds,
+                                           lambda_=args.lambda_,
                                            lambda0=args.lambda0,
                                            n=args.n,
                                            N=args.N,
@@ -540,24 +541,24 @@ def simulate(args):
 
     # In the case of a sequence pair print them to separate files:
     if args.sequence2 is not None:
-        fh1 = open(args.outbase+'.simulation_seq1.fasta', 'w')
-        fh2 = open(args.outbase+'.simulation_seq2.fasta', 'w')
+        fh1 = open(args.outbase+'_sim_seq1.fasta', 'w')
+        fh2 = open(args.outbase+'_sim_seq2.fasta', 'w')
         fh1.write('>naive\n')
-        fh1.write(args.sequence[seq_bounds[0][0]:seq_bounds[0][1]]+'\n')
+        fh1.write(args.sequence[pair_bounds[0][0]:pair_bounds[0][1]]+'\n')
         fh2.write('>naive\n')
-        fh2.write(args.sequence[seq_bounds[1][0]:seq_bounds[1][1]]+'\n')
+        fh2.write(args.sequence[pair_bounds[1][0]:pair_bounds[1][1]]+'\n')
         for leaf in tree.iter_leaves():
-            if leaf.frequency != 0:# and '*' not in Seq(leaf.sequence, generic_dna).translate():
+            if leaf.frequency != 0:
                 fh1.write('>' + leaf.name + '\n')
-                fh1.write(leaf.sequence[seq_bounds[0][0]:seq_bounds[0][1]]+'\n')
+                fh1.write(leaf.sequence[pair_bounds[0][0]:pair_bounds[0][1]]+'\n')
                 fh2.write('>' + leaf.name + '\n')
-                fh2.write(leaf.sequence[seq_bounds[1][0]:seq_bounds[1][1]]+'\n')
+                fh2.write(leaf.sequence[pair_bounds[1][0]:pair_bounds[1][1]]+'\n')
     else:
-        with open(args.outbase+'.simulation.fasta', 'w') as f:
+        with open(args.outbase+'_sim.fasta', 'w') as f:
             f.write('>naive\n')
             f.write(args.sequence+'\n')
             for leaf in tree.iter_leaves():
-                if leaf.frequency != 0:# and '*' not in Seq(leaf.sequence, generic_dna).translate():
+                if leaf.frequency != 0:
                     f.write('>' + leaf.name + '\n')
                     f.write(leaf.sequence + '\n')
 
@@ -569,7 +570,7 @@ def simulate(args):
     stats = pd.DataFrame({'genotype abundance':frequency,
                           'Hamming distance to root genotype':distance_from_naive,
                           'Hamming neighbor genotypes':degree})
-    stats.to_csv(args.outbase+'.simulation.stats.tsv', sep='\t', index=False)
+    stats.to_csv(args.outbase+'_sim_stats.tsv', sep='\t', index=False)
 
     print('{} simulated observed sequences'.format(sum(leaf.frequency for leaf in collapsed_tree.tree.traverse())))
 
@@ -603,7 +604,7 @@ def simulate(args):
             nstyle['fgcolor'] = colors[n.sequence]
         n.set_style(nstyle)
 
-    tree.render(args.outbase+'.simulation.lineage_tree.svg', tree_style=ts)
+    tree.render(args.outbase+'_sim_lineage_tree.svg', tree_style=ts)
 
     # render collapsed tree
     # create an id-wise colormap
@@ -612,12 +613,12 @@ def simulate(args):
         colormap = {node.name:colors[node.AAseq] for node in collapsed_tree.tree.traverse()}
     else:
         colormap = {node.name:colors[node.sequence] for node in collapsed_tree.tree.traverse()}
-    collapsed_tree.write(args.outbase+'.simulation.collapsed_tree.p')
-    collapsed_tree.render(args.outbase+'.simulation.collapsed_tree.svg',
+    collapsed_tree.write(args.outbase+'_sim_collapsed_tree.p')
+    collapsed_tree.render(args.outbase+'_sim_collapsed_tree.svg',
                           idlabel=args.idlabel,
                           colormap=colormap)
     # print colormap to file
-    with open(args.outbase+'.simulation.collapsed_tree.colormap.tsv', 'w') as f:
+    with open(args.outbase+'_sim_collapsed_tree.colormap.tsv', 'w') as f:
         for name, color in colormap.items():
             f.write((name if isinstance(name, str) else ','.join(name)) + '\t' + color + '\n')
 
@@ -629,12 +630,12 @@ def simulate(args):
         colors = {i: next(palette) for i in range(int(len(args.sequence) // 3))}
         # The minimum distance to the target is colored:
         colormap = {node.name:colors[node.target_dist] for node in collapsed_tree.tree.traverse()}
-        collapsed_tree.write( args.outbase+'.simulation.collapsed_runstat_color_tree.p')
-        collapsed_tree.render(args.outbase+'.simulation.collapsed_runstat_color_tree.svg',
+        collapsed_tree.write( args.outbase+'_sim_collapsed_runstat_color_tree.p')
+        collapsed_tree.render(args.outbase+'_sim_collapsed_runstat_color_tree.svg',
                               idlabel=args.idlabel,
                               colormap=colormap)
         # Write a file with the selection run stats. These are also plotted:
-        with open(args.outbase + 'selection_sim.runstats.p', 'rb') as fh:
+        with open(args.outbase + 'selection_sim_runstats.p', 'rb') as fh:
             runstats = pickle.load(fh)
             selection_utils.plot_runstats(runstats, args.outbase, colors)
 
