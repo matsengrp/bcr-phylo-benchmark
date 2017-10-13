@@ -18,6 +18,8 @@ git clone --recursive https://github.com/matsengrp/bcr-phylo-benchmark.git
   * [nestly](https://pypi.python.org/pypi/nestly/0.6)
 * X11 or xvfb-run (for rendering phylogenetic trees using ete3)
 * [seqmagick](https://github.com/fhcrc/seqmagick)
+* [GCtree](github.com/matsengrp/gctree) the Git repo should be kept under `./tools/gctree/`
+  * Provided as a Git submodule
 * [PHYLIP](http://evolution.genetics.washington.edu/phylip/getme-new.html) `dnaml` and `dnapars` stored under `./tools/dnaml/dnaml` and `./tools/dnapars/dnapars` respectively
   * Precompile Linux binaries provided for both programs
 * [IQ-TREE](http://www.iqtree.org/) stored under `./tools/IQ-TREE/iqtree`
