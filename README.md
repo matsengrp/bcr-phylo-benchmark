@@ -1,5 +1,10 @@
 # Benchmarking phylogenetic inference for B cell receptors
 
+Clone repo with submodules:
+```
+git clone --recursive https://github.com/matsengrp/bcr-phylo-benchmark.git
+```
+
 
 ## DEPENDENCIES
 * scons
