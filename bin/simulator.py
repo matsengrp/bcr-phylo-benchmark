@@ -654,7 +654,7 @@ def main():
     parser.add_argument('--n', type=int, default=None, help='cells downsampled')
     parser.add_argument('--N', type=int, default=None, help='target simulation size')
     parser.add_argument('--T', type=int, nargs='+', default=None, help='observation time, if None we run until termination and take all leaves')
-    parser.add_argument('--selection', type=bool, default=False, help='Simulation with selection? true/false. When doing simulation with selection an observation time cut must be set.')
+    parser.add_argument('--selection', action='store_true', default=False, help='Simulation with selection? true/false. When doing simulation with selection an observation time cut must be set.')
     parser.add_argument('--stop_dist', type=int, default=None, help='Stop when this distance has been reached in the selection model.')
     parser.add_argument('--carry_cap', type=int, default=1000, help='The carrying capacity of the simulation with selection. This number affects the fixation time of a new mutation.'
                         'Fixation time is approx. log2(carry_cap), e.g. log2(1000) ~= 10.')
@@ -673,8 +673,8 @@ def main():
                         'Cannot be smaller than B_total. It is recommended to keep this as the default.')
     parser.add_argument('--k', type=float, default=2, help='The exponent in the function to map hamming distance to affinity.'
                         'It is recommended to keep this as the default.')
-    parser.add_argument('--plotAA', type=bool, default=False, help='Plot trees with collapsing and coloring on amino acid level.')
-    parser.add_argument('--verbose', type=bool, default=False, help='Print progress during simulation. Mostly useful for simulation with selection since this can take a while.')
+    parser.add_argument('--plotAA', action='store_true', default=False, help='Plot trees with collapsing and coloring on amino acid level.')
+    parser.add_argument('--verbose', action='store_true', default=False, help='Print progress during simulation. Mostly useful for simulation with selection since this can take a while.')
     parser.add_argument('--outbase', type=str, default='gctree.out', help='output file base name')
     parser.add_argument('--idlabel', action='store_true', help='flag for labeling the sequence ids of the nodes in the output tree images, also write associated fasta alignment if True')
 
