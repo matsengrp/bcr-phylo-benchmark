@@ -1,3 +1,6 @@
 [submodule "tools/IgPhyML"]
 	path = tools/IgPhyML
 	url = https://github.com/krdav/IgPhyML.git
+[submodule "tools/gctree"]
+	path = tools/gctree
+	url = https://github.com/matsengrp/gctree.git
