@@ -4,3 +4,6 @@
 [submodule "tools/gctree"]
 	path = tools/gctree
 	url = https://github.com/matsengrp/gctree.git
+[submodule "tools/IQ-TREE"]
+	path = tools/IQ-TREE
+	url = https://github.com/krdav/IQ-TREE.git
