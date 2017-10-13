@@ -648,8 +648,8 @@ def main():
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('--sequence', type=str, default='GGACCTAGCCTCGTGAAACCTTCTCAGACTCTGTCCCTCACCTGTTCTGTCACTGGCGACTCCATCACCAGTGGTTACTGGAACTGGATCCGGAAATTCCCAGGGAATAAACTTGAGTACATGGGGTACATAAGCTACAGTGGTAGCACTTACTACAATCCATCTCTCAAAAGTCGAATCTCCATCACTCGAGACACATCCAAGAACCAGTACTACCTGCAGTTGAATTCTGTGACTACTGAGGACACAGCCACATATTACTGT',
                         help='Seed naive nucleotide sequence')
-    parser.add_argument('--mutability', type=str, default=file_dir+'../S5F/Mutability.csv', help='Path to mutability model file')
-    parser.add_argument('--substitution', type=str, default=file_dir+'../S5F/Substitution.csv', help='Path to substitution model file')
+    parser.add_argument('--mutability', type=str, default=file_dir+'/../S5F/Mutability.csv', help='Path to mutability model file')
+    parser.add_argument('--substitution', type=str, default=file_dir+'/../S5F/Substitution.csv', help='Path to substitution model file')
     parser.add_argument('--sequence2', type=str, default=None, help='Second seed naive nucleotide sequence. For simulating heavy/light chain co-evolution.')
     parser.add_argument('--lambda', dest='lambda_', type=float, default=.9, help='Poisson branching parameter')
     parser.add_argument('--lambda0', type=float, default=None, nargs='*', help='List of one or two elements with the baseline mutation rates. Space separated input values.'
