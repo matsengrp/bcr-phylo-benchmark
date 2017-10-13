@@ -36,11 +36,6 @@ if GetOption('srun'):
     CommandRunner = env.SRun
 else:
     CommandRunner = env.Command
-AddOption('--frame',
-          type='int',
-          default=None,
-          help='codon frame')
-frame = GetOption('frame')
 AddOption('--nogctree',
            action='store_true',
            help='don''t use gctree inference')
@@ -79,8 +74,6 @@ class InputError(Exception):
 
 if not gctree and not igphyml and not GetOption('help'):
     raise InputError('must set at least one inference method')
-if igphyml and frame != 1:
-    raise InputError('frame must equal 1 for igphyml')
 
 if not simulate and not inference and not GetOption('help'):
     raise InputError('Please provide one of the required arguments. Either "--inference" or "--simulate".'
@@ -229,8 +222,8 @@ if simulate and not GetOption('help'):
     if outdir is None:
         raise InputError('outdir must be specified')
     SConscript('SConscript.simulation',
-               exports='env gctree igphyml dnaml quick idlabel outdir naive mutability substitution lambda_list lambda0_list n frame N T nsim CommandRunner experimental_list naiveIDexp selection_param xarg buffarg')
+               exports='env gctree igphyml dnaml quick idlabel outdir naive mutability substitution lambda_list lambda0_list n N T nsim CommandRunner experimental_list naiveIDexp selection_param xarg buffarg')
 elif inference and not GetOption('help'):
     if None in [fasta, outdir]:
         raise InputError('input fasta and outdir must be specified')
-    SConscript('SConscript.inference', exports='env gctree igphyml dnaml quick idlabel frame fasta fasta2 outdir naiveID converter CommandRunner xarg buffarg colorfile')
+    SConscript('SConscript.inference', exports='env gctree igphyml dnaml quick idlabel fasta fasta2 outdir naiveID converter CommandRunner xarg buffarg colorfile')

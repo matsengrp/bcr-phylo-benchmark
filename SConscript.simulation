@@ -5,20 +5,16 @@ import os
 from nestly import Nest
 from nestly.scons import SConsWrap
 # the following must be exported by parent SConstruct/SConscript
-Import('env gctree igphyml dnaml quick idlabel outdir naive mutability substitution lambda_list lambda0_list n frame N T nsim CommandRunner experimental_list naiveIDexp selection_param xarg buffarg')
+Import('env gctree igphyml dnaml quick idlabel outdir naive mutability substitution lambda_list lambda0_list n N T nsim CommandRunner experimental_list naiveIDexp selection_param xarg buffarg')
 
 nest = Nest()
 w = SConsWrap(nest, outdir, alias_environment=env)
 
-if gctree:
-    w.add_aggregate('gctree_outeragg', list) # <-- aggregating results across parameters
 w.add_aggregate('outeragg', list) # <-- aggregating results across parameters
 
 # Initialize our first nest level,
 w.add('lambda', lambda_list)
 w.add('lambda0', lambda0_list)
-if gctree:
-    w.add_aggregate('gctree_agg', list) # <-- for aggregating repeated simulations with the same parameters
 w.add_aggregate('agg', list) # <-- for aggregating inference result from repeated simulations with the same parameters
 w.add_aggregate('simstat_agg', list) # <-- for aggregating simulation stats with the same parameters
 w.add_aggregate('summary_stats', list) # <-- summary stats for CFT study (no abundance)
@@ -27,28 +23,26 @@ w.add_aggregate('summary_stats', list) # <-- summary stats for CFT study (no abu
 w.add('runs', range(1, nsim+1))
 
 @w.add_target()
-def gctree_sim(outdir, c):
+def gc_sim(outdir, c):
     '''
     GCtree simulation
     NOTE: xvfb-run is needed because of issue https://github.com/etetoolkit/ete/issues/101
     '''
-    frame_arg = ' --frame {} '.format(frame) if frame is not None else ''
     idlabel_arg = ' --idlabel' if idlabel else ''
     T_arg = ' --T {} '.format(' '.join(map(str, T))) if T else ''
     N_arg = ' --N {} '.format(N) if N is not None else ''
     n_arg = ' --n {} '.format(n) if n is not None else ''
     sele_arg = ' --selection True --target_dist {} --target_count {} --verbose {} --carry_cap {} --skip_update {}'.format(*selection_param) if selection_param is not None else ''
-    tgt = CommandRunner([os.path.join(outdir, 'gctree.simulation.fasta'),
-                         os.path.join(outdir, 'gctree.simulation.stats.tsv'),
-                         os.path.join(outdir, 'gctree.simulation.collapsed_tree.p'),
-                         os.path.join(outdir, 'gctree.simulation.collapsed_tree.colormap.tsv'),
-                         os.path.join(outdir, 'gctree.simulation.log')],
+    tgt = CommandRunner([os.path.join(outdir, '_sim.fasta'),
+                         os.path.join(outdir, '_sim_stats.tsv'),
+                         os.path.join(outdir, '_sim_collapsed_tree.p'),
+                         os.path.join(outdir, '_sim_collapsed_tree_colormap.tsv'),
+                         os.path.join(outdir, '_sim.log')],
                         [mutability, substitution],
-                        xarg + buffarg + 'python bin/gctree.py simulate '+naive+
-                        ' ${SOURCES[0]} ${SOURCES[1]}'+
-                        ' --outbase '+os.path.join(outdir, 'gctree')+
+                        xarg + buffarg + 'python bin/simulator.py --sequence '+naive+
+                        '--mutability ${SOURCES[0]} --substitution ${SOURCES[1]}'+
+                        ' --outbase '+os.path.join(outdir, 'GCsim')+
                         ' --lambda {0[lambda]} --lambda0 {0[lambda0]}'.format(c)+
-                        frame_arg+
                         idlabel_arg+
                         T_arg+
                         N_arg+
@@ -62,12 +56,12 @@ def gctree_sim(outdir, c):
 @w.add_target()
 def infer(outdir, c):
     '''now do inference on the simulation results'''
-    fasta = c['gctree_sim'][0]
+    fasta = c['gc_sim'][0]
     fasta2 = None
     naiveID = 'naive' # this is what the simulation routine names the naive
     converter = None  # No problem with weird fasta formating from the simulated data
     colorfile = None
-    return SConscript('SConscript.inference', exports='env gctree igphyml dnaml quick idlabel frame fasta fasta2 outdir naiveID converter CommandRunner xarg buffarg colorfile')
+    return SConscript('SConscript.inference', exports='env gctree igphyml dnaml quick idlabel fasta fasta2 outdir naiveID converter CommandRunner xarg buffarg colorfile')
 
 @w.add_target()
 def validate(outdir, c):
@@ -77,28 +71,13 @@ def validate(outdir, c):
     if gctree:
         outputs.append(os.path.join(outdir, 'validation.gctree.tsv')) # <-- special gctree output evaluating parsimony tree ranking
     tgt = CommandRunner(outputs,
-                   [c['gctree_sim'][2:4]] + [x[0] for x in c['infer']],
+                   [c['gc_sim'][2:4]] + [x[0] for x in c['infer']],
                     xarg + buffarg + 'python bin/validation.py $SOURCES --outbase '+os.path.join(outdir, 'validation')+' > ${TARGETS[1]}')
-    if gctree:
-        c['gctree_agg'].append(tgt[2])
     c['agg'].append(tgt[0])
     return tgt
 
 w.pop('runs')
 
-
-if gctree:
-    @w.add_target()
-    def gctree_aggregate(outdir, c):
-        '''aggregate validation results'''
-        allmetrics_arg = ' --allmetrics' if igphyml or dnaml else ''
-        tgt = env.Command([os.path.join(outdir, 'gctree.validaggreg.tsv'),
-                           os.path.join(outdir, 'gctree.validaggreg.log')],
-                          c['gctree_agg'],
-                          buffarg + 'python bin/validaggreg.py $SOURCES --outbase '+os.path.join(outdir, 'gctree.validaggreg') + allmetrics_arg + ' > ${TARGETS[1]}')
-        env.AlwaysBuild(tgt)
-        c['gctree_outeragg'].append(tgt[0])
-        return tgt
 
 @w.add_target()
 def simstat_aggregate(outdir, c):
