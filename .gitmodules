@@ -1,0 +1,3 @@
+[submodule "tools/IgPhyML"]
+	path = tools/IgPhyML
+	url = https://github.com/krdav/IgPhyML.git
