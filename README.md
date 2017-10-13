@@ -16,11 +16,14 @@ git clone --recursive https://github.com/matsengrp/bcr-phylo-benchmark.git
   * biopython
   * [ete3](http://etetoolkit.org/download/)
   * [nestly](https://pypi.python.org/pypi/nestly/0.6)
-* [PHYLIP](http://evolution.genetics.washington.edu/phylip/getme-new.html)
-  * PHYLIP's `dnapars` program is used for generating parsimony trees, so the command-line program `dnapars` should be on your path
 * X11 or xvfb-run (for rendering phylogenetic trees using ete3)
-* IgPhyML (https://github.com/kbhoehn/IgPhyML)
-  * Needs to be in $PATH
+* [seqmagick](https://github.com/fhcrc/seqmagick)
+* [PHYLIP](http://evolution.genetics.washington.edu/phylip/getme-new.html) `dnaml` and `dnapars` stored under `./tools/dnaml/dnaml` and `./tools/dnapars/dnapars` respectively
+  * Precompile Linux binaries provided for both programs
+* [IQ-TREE](http://www.iqtree.org/) stored under `./tools/IQ-TREE/iqtree`
+  * Precompile Linux binaries provided
+* [IgPhyML](https://github.com/kbhoehn/IgPhyML) stored under `./tools/IgPhyML/igphyml`
+  * Precompile Linux binaries provided
 * perl5, with modules:
   * PDL
   * PDL::LinearAlgebra::Trans
