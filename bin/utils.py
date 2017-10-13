@@ -2,6 +2,8 @@
 # -*- coding: utf-8 -*-
 from Bio.Seq import Seq
 from Bio.Alphabet import generic_dna
+from ete3 import TreeNode, NodeStyle, TreeStyle, TextFace, CircleFace, PieChartFace, faces, SVG_COLORS
+import scipy
 
 try:
     import jellyfish
@@ -24,3 +26,161 @@ def translate(seq):
 
 def has_stop(seq):
     return '*' in str(Seq(seq[:], generic_dna).translate())
+
+
+class CollapsedTree():
+    '''
+    Collapsed tree class from GCtree. Collapses an ete3 tree
+    into a genotype collapsed tree based on hamming distance between node seqeunces.
+    '''
+    def __init__(self, params=None, tree=None, collapse_syn=False, allow_repeats=False):
+        '''
+        For intialization, either params or tree (or both) must be provided
+        params: offspring distribution parameters
+        tree: ete tree with frequency node feature. If uncollapsed, it will be collapsed.
+        '''
+        # Collapse synonymous reads:
+        if collapse_syn is True:
+            tree.dist = 0  # no branch above root
+            for node in tree.iter_descendants():
+                aa = translate(node.sequence)
+                aa_parent = translate(node.up.sequence)
+                node.dist = hamming_distance(aa, aa_parent)
+
+        if tree is not None:
+            self.tree = tree.copy()
+            # iterate over the tree below root and collapse edges of zero length
+            # if the node is a leaf and it's parent has nonzero frequency we combine taxa names to a set
+            # this acommodates bootstrap samples that result in repeated genotypes
+            observed_genotypes = set((leaf.name for leaf in self.tree))
+            observed_genotypes.add(self.tree.name)
+            for node in self.tree.get_descendants(strategy='postorder'):
+                if node.dist == 0:
+                    node.up.frequency += node.frequency
+                    node_set = set([node.name]) if isinstance(node.name, str) else set(node.name)
+                    node_up_set = set([node.up.name]) if isinstance(node.up.name, str) else set(node.up.name)
+                    if node_up_set < observed_genotypes:
+                        if node_set < observed_genotypes:
+                            node.up.name = tuple(node_set | node_up_set)
+                            if len(node.up.name) == 1:
+                                node.up.name = node.up.name[0]
+                    elif node_set < observed_genotypes:
+                        node.up.name = tuple(node_set)
+                        if len(node.up.name) == 1:
+                            node.up.name = node.up.name[0]
+                    node.delete(prevent_nondicotomic=False)
+
+            final_observed_genotypes = set([name for node in self.tree.traverse() if node.frequency > 0 or node == self.tree for name in ((node.name,) if isinstance(node.name, str) else node.name)])
+            if final_observed_genotypes != observed_genotypes:
+                raise RuntimeError('observed genotypes don\'t match after collapse\n\tbefore: {}\n\tafter: {}\n\tsymmetric diff: {}'.format(observed_genotypes, final_observed_genotypes, observed_genotypes ^ final_observed_genotypes))
+            assert sum(node.frequency for node in tree.traverse()) == sum(node.frequency for node in self.tree.traverse())
+
+            rep_seq = sum(node.frequency > 0 for node in self.tree.traverse()) - len(set([node.sequence for node in self.tree.traverse() if node.frequency > 0]))
+            if not allow_repeats and rep_seq:
+                raise RuntimeError('Repeated observed sequences in collapsed tree. {} sequences were found repeated.'.format(rep_seq))
+            elif allow_repeats and rep_seq:
+                rep_seq = sum(node.frequency > 0 for node in self.tree.traverse()) - len(set([node.sequence for node in self.tree.traverse() if node.frequency > 0]))
+                print('Repeated observed sequences in collapsed tree. {} sequences were found repeated.'.format(rep_seq))
+            # a custom ladderize accounting for abundance and sequence to break ties in abundance
+            for node in self.tree.traverse(strategy='postorder'):
+                # add a partition feature and compute it recursively up the tree
+                node.add_feature('partition', node.frequency + sum(node2.partition for node2 in node.children))
+                # sort children of this node based on partion and sequence
+                node.children.sort(key=lambda node: (node.partition, node.sequence))
+        else:
+            self.tree = tree
+
+    def __str__(self):
+        '''Return a string representation for printing.'''
+        return 'params = ' + str(self.params)+ '\ntree:\n' + str(self.tree)
+
+    def render(self, outfile, idlabel=False, colormap=None, show_support=False, chain_split=None):
+        '''Render to image file, filetype inferred from suffix, svg for color images'''
+        def my_layout(node):
+            circle_color = 'lightgray' if colormap is None or node.name not in colormap else colormap[node.name]
+            text_color = 'black'
+            if isinstance(circle_color, str):
+                C = CircleFace(radius=max(3, 10*scipy.sqrt(node.frequency)), color=circle_color, label={'text':str(node.frequency), 'color':text_color} if node.frequency > 0 else None)
+                C.rotation = -90
+                C.hz_align = 1
+                faces.add_face_to_node(C, node, 0)
+            else:
+                P = PieChartFace([100*x/node.frequency for x in circle_color.values()], 2*10*scipy.sqrt(node.frequency), 2*10*scipy.sqrt(node.frequency), colors=[(color if color != 'None' else 'lightgray') for color in list(circle_color.keys())], line_color=None)
+                T = TextFace(' '.join([str(x) for x in list(circle_color.values())]), tight_text=True)
+                T.hz_align = 1
+                T.rotation = -90
+                faces.add_face_to_node(P, node, 0, position='branch-right')
+                faces.add_face_to_node(T, node, 1, position='branch-right')
+            if idlabel:
+                T = TextFace(node.name, tight_text=True, fsize=6)
+                T.rotation = -90
+                T.hz_align = 1
+                faces.add_face_to_node(T, node, 1 if isinstance(circle_color, str) else 2, position='branch-right')
+        for node in self.tree.traverse():
+            nstyle = NodeStyle()
+            nstyle['size'] = 0
+            if node.up is not None:
+                if set(node.sequence.upper()) == set('ACGT'):  # Don't know what this do, try and delete
+                    aa = translate(node.sequence)
+                    aa_parent = translate(node.up.sequence)
+                    nonsyn = hamming_distance(aa, aa_parent)
+                    if '*' in aa:
+                        nstyle['bgcolor'] = 'red'
+                    if nonsyn > 0:
+                        nstyle['hz_line_color'] = 'black'
+                        nstyle['hz_line_width'] = nonsyn
+                    else:
+                        nstyle['hz_line_type'] = 1
+            node.set_style(nstyle)
+
+        ts = TreeStyle()
+        ts.show_leaf_name = False
+        ts.rotation = 90
+        ts.draw_aligned_faces_as_table = False
+        ts.allow_face_overlap = True
+        ts.layout_fn = my_layout
+        ts.show_scale = False
+        ts.show_branch_support = show_support
+        self.tree.render(outfile, tree_style=ts)
+        # If we labelled seqs, let's also write the alignment out so we have the sequences (including of internal nodes):
+        if idlabel:
+            aln = MultipleSeqAlignment([])
+            for node in self.tree.traverse():
+                aln.append(SeqRecord(Seq(str(node.sequence), generic_dna), id=node.name, description='abundance={}'.format(node.frequency)))
+            AlignIO.write(aln, open(os.path.splitext(outfile)[0] + '.fasta', 'w'), 'fasta')
+
+    def write(self, file_name):
+        '''serialize tree to file'''
+        with open(file_name, 'wb') as f:
+            pickle.dump(self, f)
+
+
+class CollapsedForest(CollapsedTree):
+    '''
+    A forest of collapsed trees e.g. to store equally parsimonious trees.
+    '''
+    def __init__(self, params=None, n_trees=None, forest=None):
+        '''
+        in addition to p and q, we need number of trees
+        can also intialize with forest, a list of trees, each an instance of CollapsedTree
+        '''
+        CollapsedTree.__init__(self, params=params)
+        if forest is None and params is None:
+            raise ValueError('either params or forest (or both) must be provided')
+        if forest is not None:
+            if len(forest) == 0:
+                raise ValueError('passed empty tree list')
+            if n_trees is not None and len(forest) != n_trees:
+                raise ValueError('n_trees not consistent with forest')
+            self.forest = forest
+        if n_trees is not None:
+            if type(n_trees) is not int or n_trees < 1:
+                raise ValueError('number of trees must be at least one')
+            self.n_trees = n_trees
+        if n_trees is None and forest is not None:
+            self.n_trees = len(forest)
+
+    def __str__(self):
+        '''return a string representation for printing'''
+        return 'params = {}, n_trees = {}\n'.format(self.params, self.n_trees) + \
+                '\n'.join([str(tree) for tree in self.forest])

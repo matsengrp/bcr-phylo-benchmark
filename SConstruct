@@ -36,10 +36,10 @@ if GetOption('srun'):
     CommandRunner = env.SRun
 else:
     CommandRunner = env.Command
-AddOption('--nogctree',
+AddOption('--gctree',
            action='store_true',
-           help='don''t use gctree inference')
-gctree = (GetOption('nogctree') != True)
+           help='gctree inference')
+gctree = GetOption('gctree')
 AddOption('--igphyml',
            action='store_true',
            help='use igphyml inference')
@@ -83,11 +83,13 @@ if not simulate and not inference and not GetOption('help'):
 if simulate:
     AddOption('--naive',
               type='string',
-              default='ggacctagcctcgtgaaaccttctcagactctgtccctcacctgttctgtcactg'
-                      'gcgactccatcaccagtggttactggaactggatccggaaattcccagggaataa'
-                      'acttgagtacatggggtacataagctacagtggtagcacttactacaatccatct'
-                      'ctcaaaagtcgaatctccatcactcgagacacatccaagaaccagtactacctgc'
-                      'agttgaattctgtgactactgaggacacagccacatattactgt',
+              default='GGACCTAGCCTCGTGAAACCTTCTCAGACTCTGTCCCT'
+                      'CACCTGTTCTGTCACTGGCGACTCCATCACCAGTGGTT'
+                      'ACTGGAACTGGATCCGGAAATTCCCAGGGAATAAACTT'
+                      'GAGTACATGGGGTACATAAGCTACAGTGGTAGCACTTA'
+                      'CTACAATCCATCTCTCAAAAGTCGAATCTCCATCACTC'
+                      'GAGACACATCCAAGAACCAGTACTACCTGCAGTTGAAT'
+                      'TCTGTGACTACTGAGGACACAGCCACATATTACTGT',
               help='sequence of naive from which to simulate')
     naive = GetOption('naive')
     AddOption('--mutability',
@@ -154,6 +156,7 @@ if simulate:
               action='store_true',
               help='Simulation with affinity selection.')
     selection = GetOption('selection')
+    selection = '--selection' if selection else ''
     if selection:
         AddOption('--target_dist',
                   type='int',
@@ -169,6 +172,7 @@ if simulate:
                   action='store_true',
                   help='Verbose printing.')
         verbose = GetOption('verbose')
+        verbose = '--verbose' if verbose else '' 
         AddOption('--carry_cap',
                   type='int',
                   default=1000,
@@ -179,7 +183,7 @@ if simulate:
                   default=100,
                   help='Skip update step.')
         skip_update = GetOption('skip_update')
-        selection_param = (target_dist, target_count, verbose, carry_cap, skip_update)
+        selection_param = (target_dist, target_count, carry_cap, skip_update, verbose)
     else:
         selection_param = None
 

@@ -32,15 +32,15 @@ def gc_sim(outdir, c):
     T_arg = ' --T {} '.format(' '.join(map(str, T))) if T else ''
     N_arg = ' --N {} '.format(N) if N is not None else ''
     n_arg = ' --n {} '.format(n) if n is not None else ''
-    sele_arg = ' --selection True --target_dist {} --target_count {} --verbose {} --carry_cap {} --skip_update {}'.format(*selection_param) if selection_param is not None else ''
-    tgt = CommandRunner([os.path.join(outdir, '_sim.fasta'),
-                         os.path.join(outdir, '_sim_stats.tsv'),
-                         os.path.join(outdir, '_sim_collapsed_tree.p'),
-                         os.path.join(outdir, '_sim_collapsed_tree_colormap.tsv'),
-                         os.path.join(outdir, '_sim.log')],
+    sele_arg = ' --selection --target_dist {} --target_count {} --carry_cap {} --skip_update {} {}'.format(*selection_param) if selection_param is not None else ''
+    tgt = CommandRunner([os.path.join(outdir, 'GCsim.fasta'),
+                         os.path.join(outdir, 'GCsim_stats.tsv'),
+                         os.path.join(outdir, 'GCsim_collapsed_tree.p'),
+                         os.path.join(outdir, 'GCsim_collapsed_tree_colormap.tsv'),
+                         os.path.join(outdir, 'simulator.log')],
                         [mutability, substitution],
                         xarg + buffarg + 'python bin/simulator.py --sequence '+naive+
-                        '--mutability ${SOURCES[0]} --substitution ${SOURCES[1]}'+
+                        ' --mutability ${SOURCES[0]} --substitution ${SOURCES[1]}'+
                         ' --outbase '+os.path.join(outdir, 'GCsim')+
                         ' --lambda {0[lambda]} --lambda0 {0[lambda0]}'.format(c)+
                         idlabel_arg+

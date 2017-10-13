@@ -418,7 +418,7 @@ class MutationModel():
 
         if selection_params is not None:
             # Keep a histogram of the hamming distances at each generation:
-            with open(outbase + 'selection_sim.runstats.p', 'wb') as f:
+            with open(outbase + '_selection_runstats.p', 'wb') as f:
                 pickle.dump(hd_generation, f)
 
         if leaves_unterminated < N:
@@ -541,8 +541,8 @@ def simulate(args):
 
     # In the case of a sequence pair print them to separate files:
     if args.sequence2 is not None:
-        fh1 = open(args.outbase+'_sim_seq1.fasta', 'w')
-        fh2 = open(args.outbase+'_sim_seq2.fasta', 'w')
+        fh1 = open(args.outbase+'_seq1.fasta', 'w')
+        fh2 = open(args.outbase+'_seq2.fasta', 'w')
         fh1.write('>naive\n')
         fh1.write(args.sequence[pair_bounds[0][0]:pair_bounds[0][1]]+'\n')
         fh2.write('>naive\n')
@@ -554,7 +554,7 @@ def simulate(args):
                 fh2.write('>' + leaf.name + '\n')
                 fh2.write(leaf.sequence[pair_bounds[1][0]:pair_bounds[1][1]]+'\n')
     else:
-        with open(args.outbase+'_sim.fasta', 'w') as f:
+        with open(args.outbase+'.fasta', 'w') as f:
             f.write('>naive\n')
             f.write(args.sequence+'\n')
             for leaf in tree.iter_leaves():
@@ -570,7 +570,7 @@ def simulate(args):
     stats = pd.DataFrame({'genotype abundance':frequency,
                           'Hamming distance to root genotype':distance_from_naive,
                           'Hamming neighbor genotypes':degree})
-    stats.to_csv(args.outbase+'_sim_stats.tsv', sep='\t', index=False)
+    stats.to_csv(args.outbase+'_stats.tsv', sep='\t', index=False)
 
     print('{} simulated observed sequences'.format(sum(leaf.frequency for leaf in collapsed_tree.tree.traverse())))
 
@@ -604,21 +604,21 @@ def simulate(args):
             nstyle['fgcolor'] = colors[n.sequence]
         n.set_style(nstyle)
 
-    tree.render(args.outbase+'_sim_lineage_tree.svg', tree_style=ts)
+    tree.render(args.outbase+'_lineage_tree.svg', tree_style=ts)
 
-    # render collapsed tree
+    # Render collapsed tree,
     # create an id-wise colormap
     # NOTE: node.name can be a set
     if args.plotAA and args.selection:
         colormap = {node.name:colors[node.AAseq] for node in collapsed_tree.tree.traverse()}
     else:
         colormap = {node.name:colors[node.sequence] for node in collapsed_tree.tree.traverse()}
-    collapsed_tree.write(args.outbase+'_sim_collapsed_tree.p')
-    collapsed_tree.render(args.outbase+'_sim_collapsed_tree.svg',
+    collapsed_tree.write(args.outbase+'_collapsed_tree.p')
+    collapsed_tree.render(args.outbase+'_collapsed_tree.svg',
                           idlabel=args.idlabel,
                           colormap=colormap)
     # print colormap to file
-    with open(args.outbase+'_sim_collapsed_tree.colormap.tsv', 'w') as f:
+    with open(args.outbase+'_collapsed_tree_colormap.tsv', 'w') as f:
         for name, color in colormap.items():
             f.write((name if isinstance(name, str) else ','.join(name)) + '\t' + color + '\n')
 
@@ -630,12 +630,12 @@ def simulate(args):
         colors = {i: next(palette) for i in range(int(len(args.sequence) // 3))}
         # The minimum distance to the target is colored:
         colormap = {node.name:colors[node.target_dist] for node in collapsed_tree.tree.traverse()}
-        collapsed_tree.write( args.outbase+'_sim_collapsed_runstat_color_tree.p')
-        collapsed_tree.render(args.outbase+'_sim_collapsed_runstat_color_tree.svg',
+        collapsed_tree.write( args.outbase+'_collapsed_runstat_color_tree.p')
+        collapsed_tree.render(args.outbase+'_collapsed_runstat_color_tree.svg',
                               idlabel=args.idlabel,
                               colormap=colormap)
         # Write a file with the selection run stats. These are also plotted:
-        with open(args.outbase + 'selection_sim_runstats.p', 'rb') as fh:
+        with open(args.outbase + '_selection_runstats.p', 'rb') as fh:
             runstats = pickle.load(fh)
             selection_utils.plot_runstats(runstats, args.outbase, colors)
 
