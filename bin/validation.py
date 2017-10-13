@@ -6,8 +6,9 @@ comparison of inference and simulated trees
 '''
 
 from __future__ import division, print_function
-from gctree import CollapsedTree, CollapsedForest
-import gctree
+
+import utils
+from utils import CollapsedTree, CollapsedForest
 from utils import hamming_distance
 from random import randint
 try:

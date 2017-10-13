@@ -13,15 +13,14 @@ import re
 import warnings
 from Bio import SeqIO
 from ete3 import Tree, TreeNode, NodeStyle, TreeStyle, TextFace, add_face_to_node, CircleFace, faces, AttrFace
-sys.path.append(os.path.abspath('/'.join(os.path.realpath(__file__).split('/')[:-2]) + "/bin"))
+#sys.path.append(os.path.abspath('/'.join(os.path.realpath(__file__).split('/')[:-2]) + "/bin"))
+sys.path.append(os.path.dirname(os.path.realpath(__file__)) + '/../../bin')
+print(os.path.dirname(os.path.realpath(__file__)) + '/../../bin')
+
 from Bio import AlignIO
 
 class FastaInputError(Exception):
     '''When the fasta file in not reflecting amino acid DNA coding for protein.'''
-
-
-class TreeFileParsingError(Exception):
-    '''When ete3 fails to read the input tree.'''
 
 
 class TreeFileParsingError(Exception):

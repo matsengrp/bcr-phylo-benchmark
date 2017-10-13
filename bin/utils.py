@@ -4,7 +4,10 @@ from Bio.Seq import Seq
 from Bio.Alphabet import generic_dna
 from ete3 import TreeNode, NodeStyle, TreeStyle, TextFace, CircleFace, PieChartFace, faces, SVG_COLORS
 import scipy
-
+try:
+    import cPickle as pickle
+except:
+    import pickle
 try:
     import jellyfish
 
@@ -153,6 +156,48 @@ class CollapsedTree():
         '''serialize tree to file'''
         with open(file_name, 'wb') as f:
             pickle.dump(self, f)
+
+    def compare(self, tree2, method='identity'):
+        '''compare this tree to the other tree'''
+        if method == 'identity':
+            # we compare lists of seq, parent, abundance
+            # return true if these lists are identical, else false
+            list1 = sorted((node.sequence, node.frequency, node.up.sequence if node.up is not None else None) for node in self.tree.traverse())
+            list2 = sorted((node.sequence, node.frequency, node.up.sequence if node.up is not None else None) for node in tree2.tree.traverse())
+            return list1 == list2
+        elif method == 'MRCA':
+            # matrix of hamming distance of common ancestors of taxa
+            # takes a true and inferred tree as CollapsedTree objects
+            taxa = [node.sequence for node in self.tree.traverse() if node.frequency]
+            n_taxa = len(taxa)
+            d = scipy.zeros(shape=(n_taxa, n_taxa))
+            sum_sites = scipy.zeros(shape=(n_taxa, n_taxa))
+            for i in range(n_taxa):
+                nodei_true = self.tree.iter_search_nodes(sequence=taxa[i]).next()
+                nodei      =      tree2.tree.iter_search_nodes(sequence=taxa[i]).next()
+                for j in range(i + 1, n_taxa):
+                    nodej_true = self.tree.iter_search_nodes(sequence=taxa[j]).next()
+                    nodej      =      tree2.tree.iter_search_nodes(sequence=taxa[j]).next()
+                    MRCA_true = self.tree.get_common_ancestor((nodei_true, nodej_true)).sequence
+                    MRCA =           tree2.tree.get_common_ancestor((nodei, nodej)).sequence
+                    d[i, j] = hamming_distance(MRCA_true, MRCA)
+                    sum_sites[i, j] = len(MRCA_true)
+            return d.sum() / sum_sites.sum()
+        elif method == 'RF':
+            tree1_copy = self.tree.copy(method='deepcopy')
+            tree2_copy = tree2.tree.copy(method='deepcopy')
+            for treex in (tree1_copy, tree2_copy):
+                for node in list(treex.traverse()):
+                    if node.frequency > 0:
+                        child = TreeNode()
+                        child.add_feature('sequence', node.sequence)
+                        node.add_child(child)
+            try:
+                return tree1_copy.robinson_foulds(tree2_copy, attr_t1='sequence', attr_t2='sequence', unrooted_trees=True)[0]
+            except:
+                return tree1_copy.robinson_foulds(tree2_copy, attr_t1='sequence', attr_t2='sequence', unrooted_trees=True, allow_dup=True)[0]
+        else:
+            raise ValueError('invalid distance method: ' + method)
 
 
 class CollapsedForest(CollapsedTree):
