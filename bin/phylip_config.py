@@ -10,7 +10,7 @@ meant to mimic the responses to the expected prompts.
 
 Typical usage is,
 
-     $ mkconfig.py sequence.phy >dnapars.cfg
+     $ phylip_parse.py sequence.phy > dnapars.cfg
      $ dnapars <dnapars.cfg
 
 For reference, the dnapars configuration prompt looks like this:

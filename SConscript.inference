@@ -58,8 +58,8 @@ naiveID = naiveID.lower()
 
 if dnaml:
     dnaml_config = env.Command(os.path.join(outdir, 'dnaml/config.cfg'),
-                                 phylip[0],
-                                 buffarg + 'python bin/mkconfig.py ${SOURCE} dnaml > $TARGET')
+                               phylip[0],
+                               buffarg + 'python bin/phylip_parse.py ${SOURCE} dnaml > $TARGET')
 
     # run dnaml (from phylip package) to generate maximum likelihood tree
     dnaml = CommandRunner(map(lambda x: os.path.join(outdir, x), ['dnaml/outtree', 'dnaml/outfile', 'dnaml/log.log']),
@@ -81,7 +81,7 @@ if gctree:
     quick_arg = ' --quick ' if quick else ''
     dnapars_config = env.Command(os.path.join(outdir, 'dnapars/config.cfg'),
                                  phylip[0],
-                                 buffarg + 'python bin/mkconfig.py ${SOURCE} dnapars ' + quick_arg + ' > $TARGET')
+                                 buffarg + 'python bin/phylip_parse.py ${SOURCE} dnapars ' + quick_arg + ' > $TARGET')
 
     # run dnapars (from phylip package) to generate parsimony trees
     dnapars = CommandRunner(map(lambda x: os.path.join(outdir, x), ['dnapars/outtree', 'dnapars/outfile', 'dnapars/log.log']),

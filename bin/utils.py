@@ -199,6 +199,30 @@ class CollapsedTree():
         else:
             raise ValueError('invalid distance method: ' + method)
 
+    # This was added because of complaints from validation.py but now this is turned off
+    """
+    def l(self, params, sign=1):
+        '''
+        log likelihood of params, conditioned on collapsed tree, and its gradient wrt params
+        optional parameter sign must be 1 or -1, with the latter useful for MLE by minimization
+        '''
+        if self.tree is None:
+            raise ValueError('tree data must be defined to compute likelihood')
+        if sign not in (-1, 1):
+            raise ValueError('sign must be 1 or -1')
+        leaves_and_clades_list = [LeavesAndClades(c=node.frequency, m=len(node.children)) for node in self.tree.traverse()]
+        if leaves_and_clades_list[0].c == 0 and leaves_and_clades_list[0].m == 1 and leaves_and_clades_list[0].f(params)[0] == 0:
+            # if unifurcation not possible under current model, add a psuedocount for the naive
+            leaves_and_clades_list[0].c = 1
+        # extract vector of function values and gradient components
+        f_data = [leaves_and_clades.f(params) for leaves_and_clades in leaves_and_clades_list]
+        fs = scipy.array([[x[0]] for x in f_data])
+        logf = scipy.log(fs).sum()
+        grad_fs = scipy.array([x[1] for x in f_data])
+        grad_logf = (grad_fs/fs).sum(axis=0)
+        return sign*logf, sign*grad_logf
+    """
+
 
 class CollapsedForest(CollapsedTree):
     '''

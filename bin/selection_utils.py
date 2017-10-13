@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 '''
-utility functions for selection simulation
+Utility functions for selection simulation.
 '''
 
 from __future__ import division, print_function
