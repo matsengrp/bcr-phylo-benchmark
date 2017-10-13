@@ -33,7 +33,7 @@ def ASR_parser(args):
         import cPickle as pickle
     except:
         import pickle
-    from gctree import CollapsedForest, CollapsedTree, hamming_distance
+    from utils import CollapsedForest, CollapsedTree, hamming_distance
 
     try:
         tree = Tree(args.tree)
