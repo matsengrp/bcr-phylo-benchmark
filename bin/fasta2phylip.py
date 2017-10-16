@@ -11,11 +11,10 @@ from Bio import AlignIO
 from Bio.Phylo.TreeConstruction import MultipleSeqAlignment
 from collections import defaultdict, Counter
 
-def fasta_parse(aln_file, naive, frame=None, aln_file2=None, converter=None):
-    # naive = naive.lower()
+
+def fasta_parse(aln_file, naive, aln_file2=None, converter=None):
     aln = AlignIO.read(aln_file, 'fasta')
     if aln_file2 is not None:
-        assert frame is None
         aln_combined = MultipleSeqAlignment([])
         aln2 = AlignIO.read(aln_file2, 'fasta')
         for seq in aln:
@@ -26,29 +25,21 @@ def fasta_parse(aln_file, naive, frame=None, aln_file2=None, converter=None):
                     aln_combined.append(SeqRecord(Seq(str(seq.seq) + str(seq2.seq), generic_dna), id=cell))
         aln = aln_combined
 
-    sequence_length = aln.get_alignment_length()
-    if frame is not None:
-        start = frame-1
-        end = start + 3*((sequence_length - start)//3)
-    else:
-        start = 0
-        end = sequence_length
-
     seqs_unique_counts = defaultdict(list)
     id_set = set()
     naive_seq = None
     for seq in aln:
-        # seq.id = seq.id.lower()
+        assert len(seq) % 3 == 0
         # if id is just an integer, assume it represents count of that sequence
         if seq.id in id_set:
             raise ValueError('Sequence ID found multiple times:', seq.id)
         else:
             id_set.add(seq.id)
-        seqstr = str(seq.seq)[start:end]
+        seqstr = str(seq.seq)
         if seq.id == naive:
             naive_seq = seqstr
             if seqstr not in seqs_unique_counts:
-                seqs_unique_counts[seqstr] = [] # no observed naive unless we see it elsewhere
+                seqs_unique_counts[seqstr] = []  # no observed naive unless we see it elsewhere
         elif seq.id.isdigit() and converter is not None:
             if converter.lower() == 'tas':
                 seqs_unique_counts[seqstr] = [seq.id for _ in range(int(seq.id))]
@@ -72,6 +63,7 @@ def fasta_parse(aln_file, naive, frame=None, aln_file2=None, converter=None):
 
     return new_aln, counts, id_map
 
+
 def check_header(header):
     try:
         header.decode('ascii')
@@ -93,17 +85,14 @@ def main():
                                                  'or equal to 10 ASCII characters. A special option for converting a Victora lab '
                                                  'GC fasta file to phylip is also included. All headers are converted to lower case.')
     parser.add_argument('infile', type=str, nargs='+', help='Fasta file with less than or equal to 10 characters unique header ID. '
-                                                 'For Vitora data any integer ids indicats frequency.'
-                                                 'Because dnapars will name internal nodes by intergers a node name must include'
-                                                 'at least one non number character.')
+                                                  'For Vitora data any integer ids indicats frequency.'
+                                                  'Because dnapars will name internal nodes by intergers a node name must include'
+                                                  'at least one non number character.')
     parser.add_argument('--countfile', type=str, default=None, help='filename for the output file containing the counts.')
     parser.add_argument('--idmapfile', type=str, default=None, help='filename for the output file containing the map of new unique ids to original seq ids.')
     parser.add_argument('--converter', type=str, default=None, help='use a special format convertion scheme e.g. for a Vitora lab GC fasta file. Options: [tas]')
     specified_coverters = ['tas']
     parser.add_argument('--naive', type=str, default='naive', help='naive sequence id')
-    parser.add_argument('--frame', type=int, default=None, help='codon frame', choices=(1,2,3))
-    parser.add_argument('--colorfile', type=str, default=None, help='optional input csv filename for colors of each cell.')
-    parser.add_argument('--colormap', type=str, default=None, help='optional output filename for colors map.')
     args = parser.parse_args()
 
     if args.converter is not None and args.converter.lower() not in specified_coverters:
@@ -112,7 +101,6 @@ def main():
         raise Exception
     new_aln, counts, id_map = fasta_parse(args.infile[0],
                                           args.naive,
-                                          frame=args.frame,
                                           aln_file2=args.infile[1] if len(args.infile) == 2 else None,
                                           converter=args.converter)
     print(new_aln.format('phylip'))
@@ -124,18 +112,6 @@ def main():
         with open(args.idmapfile, 'w') as f:
             for seq_id, cell_ids in id_map.items():
                 print('{},{}'.format(seq_id, ':'.join(cell_ids)), file=f)
-    if args.colorfile is not None:
-        with open(args.colorfile, 'r') as f:
-            cell_colors = dict(line.rstrip().split(',') for line in f)
-        with open(args.colormap, 'w') as f:
-            for seq_id, cell_ids in id_map.items():
-                colors_counts = Counter(cell_colors[cell_id] if cell_id in cell_colors else None for cell_id in cell_ids).items()
-                if len(colors_counts) == 1 and colors_counts[0][0] != None and colors_counts != []:
-                    colors_str = colors_counts[0][0]
-                    print('{}\t{}'.format(seq_id, colors_str), file=f)
-                elif len(colors_counts) > 1:
-                    colors_strs = ['{}:{}'.format(color, count) for color, count in colors_counts]
-                    print('{}\t{}'.format(seq_id, ','.join(colors_strs)), file=f)
 
 
 if __name__ == '__main__':
