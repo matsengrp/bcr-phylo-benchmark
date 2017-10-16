@@ -3,7 +3,7 @@
 
 import numpy as np
 from utils import hamming_distance
-
+from random import randint
 
 '''
 Calculate COAR values.

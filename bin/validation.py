@@ -10,7 +10,6 @@ from __future__ import division, print_function
 import utils
 from utils import CollapsedTree, CollapsedForest, hamming_distance
 from COAR import COAR
-from random import randint
 try:
     import cPickle as pickle
 except:
