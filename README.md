@@ -16,11 +16,16 @@ git clone --recursive https://github.com/matsengrp/bcr-phylo-benchmark.git
   * biopython
   * [ete3](http://etetoolkit.org/download/)
   * [nestly](https://pypi.python.org/pypi/nestly/0.6)
-* [PHYLIP](http://evolution.genetics.washington.edu/phylip/getme-new.html)
-  * PHYLIP's `dnapars` program is used for generating parsimony trees, so the command-line program `dnapars` should be on your path
 * X11 or xvfb-run (for rendering phylogenetic trees using ete3)
-* IgPhyML (https://github.com/kbhoehn/IgPhyML)
-  * Needs to be in $PATH
+* [seqmagick](https://github.com/fhcrc/seqmagick)
+* [GCtree](github.com/matsengrp/gctree) the Git repo should be kept under `./tools/gctree/`
+  * Provided as a Git submodule
+* [PHYLIP](http://evolution.genetics.washington.edu/phylip/getme-new.html) `dnaml` and `dnapars` stored under `./tools/dnaml/dnaml` and `./tools/dnapars/dnapars` respectively
+  * Precompile Linux binaries provided for both programs
+* [IQ-TREE](http://www.iqtree.org/) stored under `./tools/IQ-TREE/iqtree`
+  * Precompile Linux binaries provided
+* [IgPhyML](https://github.com/kbhoehn/IgPhyML) stored under `./tools/IgPhyML/igphyml`
+  * Precompile Linux binaries provided
 * perl5, with modules:
   * PDL
   * PDL::LinearAlgebra::Trans
@@ -72,8 +77,6 @@ Results are saved in directory `test/`. The `--converter=tas` argument means tha
 `--naiveID=[string]` ID of naive sequence in FASTA file used for outgroup rooting, default 'naive'
 
 `colorfile=[path]  ` path to a file of plotting colors for cells in the input FASTA file. Example, if the FASTA contains a sequence with ID `cell_1`, this cell could be colored red in the tree image by including the line `cell_1,red` in the color file.
-
-`--bootstrap=[int] ` boostrap resampling, and inference on each, default no bootstrap
 
 `--converter=[string]` if set to "tas", parse FASTA input IDs that are integers as indicating sequence abundance. Otherwise each line in the FASTA is assumed to indicate an individual (non-deduplicated) sequence. **NOTE:** the included FASTA file `Victora_data/150228_Clone_3-8.fasta` requires this option.
 
