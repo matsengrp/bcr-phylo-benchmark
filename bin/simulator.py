@@ -524,7 +524,7 @@ def main():
     parser.add_argument('--substitution', type=str, default=file_dir+'/../S5F/Substitution.csv', help='Path to substitution model file')
     parser.add_argument('--sequence2', type=str, default=None, help='Second seed naive nucleotide sequence. For simulating heavy/light chain co-evolution.')
     parser.add_argument('--lambda', dest='lambda_', type=float, default=.9, help='Poisson branching parameter')
-    parser.add_argument('--lambda0', type=float, default=None, nargs='*', help='List of one or two elements with the baseline mutation rates. Space separated input values.'
+    parser.add_argument('--lambda0', type=float, default=None, nargs='*', help='List of one or two elements with the baseline mutation rates. Space separated input values. '
                         'First element belonging to seed sequence one and optionally the next to sequence 2. If only one rate is provided for two sequences,'
                         'this rate will be used on both.')
     parser.add_argument('--n', type=int, default=None, help='Cells downsampled')
@@ -532,22 +532,22 @@ def main():
     parser.add_argument('--T', type=int, nargs='+', default=None, help='Observation time, if None we run until termination and take all leaves')
     parser.add_argument('--selection', action='store_true', default=False, help='Simulation with selection? true/false. When doing simulation with selection an observation time cut must be set.')
     parser.add_argument('--stop_dist', type=int, default=None, help='Stop when this distance has been reached in the selection model.')
-    parser.add_argument('--carry_cap', type=int, default=1000, help='The carrying capacity of the simulation with selection. This number affects the fixation time of a new mutation.'
+    parser.add_argument('--carry_cap', type=int, default=1000, help='The carrying capacity of the simulation with selection. This number affects the fixation time of a new mutation. '
                         'Fixation time is approx. log2(carry_cap), e.g. log2(1000) ~= 10.')
     parser.add_argument('--target_count', type=int, default=10, help='The number of targets to generate.')
     parser.add_argument('--target_dist', type=int, default=10, help='The number of non-synonymous mutations the target should be away from the naive.')
     parser.add_argument('--naive_affy', type=float, default=100, help='Affinity of the naive sequence in nano molar.')
     parser.add_argument('--mature_affy', type=float, default=1, help='Affinity of the mature sequences in nano molar.')
-    parser.add_argument('--skip_update', type=int, default=100, help='When iterating through the leafs the B:A fraction is recalculated every time.'
-                        'It is possible though to update less often and get the same approximate results. This parameter sets the number of iterations to skip,'
+    parser.add_argument('--skip_update', type=int, default=100, help='When iterating through the leafs the B:A fraction is recalculated every time. '
+                        'It is possible though to update less often and get the same approximate results. This parameter sets the number of iterations to skip, '
                         'before updating the B:A results. skip_update < carry_cap/10 recommended.')
-    parser.add_argument('--B_total', type=float, default=1, help='Total number of BCRs per B cell normalized to 10e4. So 1 equals 10e4, 100 equals 10e6 etc.'
+    parser.add_argument('--B_total', type=float, default=1, help='Total number of BCRs per B cell normalized to 10e4. So 1 equals 10e4, 100 equals 10e6 etc. '
                         'It is recommended to keep this as the default.')
-    parser.add_argument('--U', type=float, default=5, help='Controls the fraction of BCRs binding antigen necessary to only sustain the life of the B cell'
+    parser.add_argument('--U', type=float, default=5, help='Controls the fraction of BCRs binding antigen necessary to only sustain the life of the B cell '
                         'It is recommended to keep this as the default.')
     parser.add_argument('--f_full', type=float, default=1, help='The fraction of antigen bound BCRs on a B cell that is needed to elicit close to maximum reponse.'
                         'Cannot be smaller than B_total. It is recommended to keep this as the default.')
-    parser.add_argument('--k', type=float, default=2, help='The exponent in the function to map hamming distance to affinity.'
+    parser.add_argument('--k', type=float, default=2, help='The exponent in the function to map hamming distance to affinity. '
                         'It is recommended to keep this as the default.')
     parser.add_argument('--plotAA', action='store_true', default=False, help='Plot trees with collapsing and coloring on amino acid level.')
     parser.add_argument('--verbose', action='store_true', default=False, help='Print progress during simulation. Mostly useful for simulation with selection since this can take a while.')
