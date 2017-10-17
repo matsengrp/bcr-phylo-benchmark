@@ -94,10 +94,7 @@ def map_asr_to_tree(asr_seq, tree, naiveID, counts):
     return tree
 
 
-
-
 def make_igphyml_config(args):
-
     igphyml_path = which(args.igphyml_exe.rstrip('/'))
     assert(igphyml_path is not None)
     IGPHYML_DIR = re.sub(r'/src/\w+$', '', igphyml_path)
@@ -107,7 +104,7 @@ def make_igphyml_config(args):
     len_nt = AlignIO.read(args.fasta_file, 'fasta').get_alignment_length()
     if len_nt % 3 != 0:
         raise FastaInputError('Problem with the input fasta file. Either is the not a multiple of three or it has indels.')
-    LEN_AA = len_nt/3
+    LEN_AA = len_nt / 3
 
     # Replace the keyword in the template file:
     with open(args.template) as fh:
@@ -121,11 +118,9 @@ def make_igphyml_config(args):
     template = template.replace('MODEL', MODEL)
     template = template.replace('AMBIG', AMBIG)
 
-
     # Write the new config file:
     with open(args.outfile, 'w') as fh_out:
         fh_out.write(template)
-
     print('Done making IgPhyML config file.')
 
 
@@ -134,8 +129,6 @@ def which(executable):
         if os.path.exists(os.path.join(path, executable)):
             return os.path.realpath(os.path.join(path, executable))
     return None
-
-
 
 
 def dedup_fasta(args):
@@ -199,15 +192,15 @@ def find_node(tree, pattern):
 
 # reroot the tree on node matching regex pattern.
 # Usually this is used to root on the naive germline sequence with a name matching '.*naive.*'
-def reroot_tree(tree, pattern='.*naive.*', outgroup=0):
+def reroot_tree(tree, pattern='.*naive.*', outgroup=False):
     # find all nodes matching pattern
     node = find_node(tree, pattern)
     tree.set_outgroup(node)
-    if tree != node and outgroup == 1:
-        s = node.get_sisters() # KBH - want the outgroup with a branch length of (near) zero
+    if tree != node and outgroup:
+        s = node.get_sisters()  # KBH - want the outgroup with a branch length of (near) zero
         s[0].dist = node.dist * 2
-        node.dist = 0.0000001  # KBH - actual zero length branches cause problems
-        tree.swap_children()   # KBH - want root to be at the last taxon in the newick file.
+        node.dist = 0.0000001   # KBH - actual zero length branches cause problems
+        tree.swap_children()    # KBH - want root to be at the last taxon in the newick file.
     elif tree != node:
         tree.remove_child(node)
         # Notice that an internal node between the outgroup (naive seq.)
@@ -266,7 +259,7 @@ def main():
     parser_reroot.add_argument('--tree', required=True, metavar='NEWICK TREE', help='Input tree to root, in newick format.')
     parser_reroot.add_argument('--reroot_tree', required=True, metavar='FILENAME', help='Filename for the output rerooted tree.')
     parser_reroot.add_argument('--pattern', metavar='REGEX PATTERN', required=True, help="Pattern to search for the node to root on.")
-    parser_reroot.add_argument('--outgroup', required=False, type=int, default=0, metavar="0/1", help="Set as outgroup instead of tree root.")
+    parser_reroot.add_argument('--outgroup', required=False, action='store_true', default=False, help="Set as outgroup instead of tree root.")
     parser_reroot.set_defaults(func=reroot)
 
 
