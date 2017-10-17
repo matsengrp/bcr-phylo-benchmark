@@ -80,6 +80,10 @@ if not simulate and not inference and not GetOption('help'):
                      'Command line help can then be evoked by "-h" or "--help" and found in the bottom'
                      'of the output under "Local Options".')
 
+# Defailt naive IDs:
+naiveIDexp = 'naive0'
+naiveID = 'naive'
+
 if simulate:
     AddOption('--naive',
               type='string',
@@ -145,12 +149,12 @@ if simulate:
               type='string',
               action='append',
               default=[],
-              help='experimental fastas for comparing summary stats')
+              help='Experimental fastas for comparing summary stats.')
     experimental_list = GetOption('experimental')
     AddOption('--naiveIDexp',
               type='string',
               default='naive0',
-              help='id of naive seq in the experimental data')
+              help='Id of naive seq in the experimental data fasta file. Must be lowercase. If not correct in file.')
     naiveIDexp = GetOption('naiveIDexp')
     AddOption('--selection',
               action='store_true',
@@ -212,7 +216,7 @@ elif inference:
               type='string',
               metavar='seqID',
               default='naive',
-              help='id of naive sequence')
+              help='Id of naive sequence in input fasta. Must be lowercase. If not correct in file.')
     naiveID = GetOption('naiveID')
     AddOption('--converter',
               type='string',
@@ -220,11 +224,16 @@ elif inference:
               help='Converter to convert input fasta format e.g. the Victora lab GC fasta format')
     converter = GetOption('converter')
 
+# Require the naive ID to be lower case because of downstream software compatability:
+if naiveIDexp != naiveIDexp.lower() or naiveID != naiveID.lower():
+    raise InputError('Naive id must be lowercase.')
+
+
 # First call after all arguments have been parsed
 # to enable correct command line help.
 if simulate and not GetOption('help'):
     if outdir is None:
-        raise InputError('outdir must be specified')
+        raise InputError('Outdir must be specified.')
     SConscript('SConscript.simulation',
                exports='env gctree igphyml dnaml quick idlabel outdir naive mutability substitution lambda_list lambda0_list n N T nsim CommandRunner experimental_list naiveIDexp selection_param xarg buffarg')
 elif inference and not GetOption('help'):

@@ -69,7 +69,7 @@ def validate(outdir, c):
     outputs = [os.path.join(outdir, 'validation.tsv'), # <-- this one compares different methods
                os.path.join(outdir, 'validation.log')]
     if gctree:
-        outputs.append(os.path.join(outdir, 'validation.gctree.tsv')) # <-- special gctree output evaluating parsimony tree ranking
+        outputs.append(os.path.join(outdir, 'validation_gctree.tsv')) # <-- special gctree output evaluating parsimony tree ranking
     tgt = CommandRunner(outputs,
                    [c['gc_sim'][2:4]] + [x[0] for x in c['infer']],
                     xarg + buffarg + 'python bin/validation.py $SOURCES --outbase '+os.path.join(outdir, 'validation')+' > ${TARGETS[1]}')
@@ -82,9 +82,9 @@ w.pop('runs')
 @w.add_target()
 def simstat_aggregate(outdir, c):
     '''aggregate simulation stats'''
-    tgt = env.Command([os.path.join(outdir, 'gctree.simulation.stats.log')],
+    tgt = env.Command([os.path.join(outdir, 'simulation_stats.log')],
                       c['simstat_agg'],
-                      buffarg + 'python bin/simstatagg.py $SOURCES --outbase '+os.path.join(outdir, 'gctree.simulation.stats')+
+                      buffarg + 'python bin/simstatagg.py $SOURCES --outbase '+os.path.join(outdir, 'simulation.stats')+
                       ' --experimental Victora_data/150228_Clone_3-8.fasta > ${TARGETS[0]}')
     env.AlwaysBuild(tgt)
     return tgt
@@ -93,9 +93,9 @@ def simstat_aggregate(outdir, c):
 def summary_stats(outdir, c):
     '''aggregate simulation stats CFT version'''
     exp_arg = ' --experimental ' + ' '.join(experimental_list) if len(experimental_list) > 0 else ''
-    tgt = env.Command([os.path.join(outdir, 'gctree.simulation.summary_stats.log')],
+    tgt = env.Command([os.path.join(outdir, 'simulation_summary_stats.log')],
                       c['summary_stats'],
-                      buffarg + 'python bin/summary_stats.py $SOURCES --outbase '+os.path.join(outdir, 'gctree.simulation.summary_stats')+
+                      buffarg + 'python bin/summary_stats.py $SOURCES --outbase '+os.path.join(outdir, 'simulation_summary_stats')+
                       exp_arg +
                       ' --naiveIDexp ' + naiveIDexp + ' > ${TARGETS[0]}')
     env.AlwaysBuild(tgt)
