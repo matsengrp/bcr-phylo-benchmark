@@ -18,7 +18,7 @@ def sections(fh):
         "parents": "\s+between\s+and\s+length",
         ("sequences", 'dnaml'): "\s*node\s+reconstructed\s+sequence",
         ('sequences', 'dnapars'): "from\s+to\s+any steps"}
-    patterns = {k: re.compile(v, re.IGNORECASE) for (k,v) in patterns.items()}
+    patterns = {k: re.compile(v, re.IGNORECASE) for (k, v) in patterns.items()}
     for line in fh:
         for k, pat in patterns.items():
             if pat.match(line):
@@ -89,7 +89,7 @@ def parse_outfile(outfile, countfile=None, naive='naive'):
     with open(outfile, 'rU') as fh:
         for sect in sections(fh):
             if sect == 'parents':
-                parents = { child:parent for child, parent in iter_edges(fh) }
+                parents = {child:parent for child, parent in iter_edges(fh)}
             elif sect[0] == 'sequences':
                 sequences = parse_seqdict(fh, sect[1])
                 # sanity check;  a valid tree should have exactly one node that is parentless
@@ -135,9 +135,9 @@ def build_tree(sequences, parents, counts=None, naive='naive'):
             nodes[parents[name]].add_child(nodes[name])
         else:
             tree = nodes[name]
-    # reroot on naive
+    # Reroot on naive:
     if naive is not None:
-        naive_id = [node for node in nodes if naive in node][0]
+        naive_id = [n for n in nodes if naive in n][0]
         assert len(nodes[naive_id].children) == 0
         naive_parent = nodes[naive_id].up
         naive_parent.remove_child(nodes[naive_id])
@@ -164,28 +164,29 @@ def main():
 
     def existing_file(fname):
         """
-        Argparse type for an existing file
+        Argparse type for an existing file.
         """
         if not os.path.isfile(fname):
-            raise ValueError("Invalid file: " + str(fname))
+            raise ValueError("File not found: " + str(fname))
         return fname
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        'phylip_outfile', type=existing_file, help='dnaml outfile (verbose output with inferred ancestral sequences, option 5).')
-    parser.add_argument(
-        'countfile', type=existing_file, help="count file")
-    parser.add_argument(
-        '--outputfile', default=None, help="output file.")
-    parser.add_argument(
-        '--naive', default='naive', help="naive sequence id")
-
+    parser.add_argument('phylip_outfile', type=existing_file, help='dnaml or dnapars outfile (verbose output with inferred ancestral sequences, option 5).')
+    parser.add_argument('countfile', type=existing_file, help="Count file.")
+    parser.add_argument('--outbase', default='collapsed_forest', help="Output file basename.")
+    parser.add_argument('--naive', default='naive', help="Naive sequence id.")
+    parser.add_argument('--dump_newick', action='store_true', default=False, help='Dump trees in newick format.')
     args = parser.parse_args()
 
-    if args.outputfile is None:
-        args.outputfile = args.phylip_outfile + '_collapsed_forest.p'
+    # Parse dnaml/dnapars trees into a collapsed trees and pack them into a forest:
     tree_list = parse_outfile(args.phylip_outfile, args.countfile, args.naive)
     trees = [CollapsedTree(tree=tree) for tree in tree_list]
-    pickle.dump(CollapsedForest(forest=trees), open(args.outputfile, 'w'))
+    forest_obj = CollapsedForest(forest=trees)
+    pickle.dump(forest_obj, open(args.outbase+'.p', 'w'))
+    if args.dump_newick:
+        if forest_obj.n_trees > 1:
+            forest_obj.write_trees(args.outbase)
+        forest_obj.write_random_tree(args.outbase+'.tree')
+    print('Done')
 
 if __name__ == "__main__":
     main()
