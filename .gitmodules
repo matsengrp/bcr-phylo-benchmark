@@ -7,3 +7,6 @@
 [submodule "tools/IQ-TREE"]
 	path = tools/IQ-TREE
 	url = https://github.com/krdav/IQ-TREE.git
+[submodule "tools/samm"]
+	path = tools/samm
+	url = https://github.com/matsengrp/samm.git
