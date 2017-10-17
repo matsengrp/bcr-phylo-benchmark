@@ -4,6 +4,7 @@ from Bio.Seq import Seq
 from Bio.Alphabet import generic_dna
 from ete3 import TreeNode, NodeStyle, TreeStyle, TextFace, CircleFace, PieChartFace, faces, SVG_COLORS
 import scipy
+import random
 try:
     import cPickle as pickle
 except:
@@ -97,7 +98,7 @@ class CollapsedTree():
         '''Return a string representation for printing.'''
         return 'params = ' + str(self.params)+ '\ntree:\n' + str(self.tree)
 
-    def render(self, outfile, idlabel=False, colormap=None, show_support=False, chain_split=None):
+    def render(self, outfile, idlabel=False, colormap=None, chain_split=None):
         '''Render to image file, filetype inferred from suffix, svg for color images'''
         def my_layout(node):
             circle_color = 'lightgray' if colormap is None or node.name not in colormap else colormap[node.name]
@@ -143,7 +144,6 @@ class CollapsedTree():
         ts.allow_face_overlap = True
         ts.layout_fn = my_layout
         ts.show_scale = False
-        ts.show_branch_support = show_support
         self.tree.render(outfile, tree_style=ts)
         # If we labelled seqs, let's also write the alignment out so we have the sequences (including of internal nodes):
         if idlabel:
@@ -199,42 +199,18 @@ class CollapsedTree():
         else:
             raise ValueError('invalid distance method: ' + method)
 
-    # This was added because of complaints from validation.py but now this is turned off
-    """
-    def l(self, params, sign=1):
-        '''
-        log likelihood of params, conditioned on collapsed tree, and its gradient wrt params
-        optional parameter sign must be 1 or -1, with the latter useful for MLE by minimization
-        '''
-        if self.tree is None:
-            raise ValueError('tree data must be defined to compute likelihood')
-        if sign not in (-1, 1):
-            raise ValueError('sign must be 1 or -1')
-        leaves_and_clades_list = [LeavesAndClades(c=node.frequency, m=len(node.children)) for node in self.tree.traverse()]
-        if leaves_and_clades_list[0].c == 0 and leaves_and_clades_list[0].m == 1 and leaves_and_clades_list[0].f(params)[0] == 0:
-            # if unifurcation not possible under current model, add a psuedocount for the naive
-            leaves_and_clades_list[0].c = 1
-        # extract vector of function values and gradient components
-        f_data = [leaves_and_clades.f(params) for leaves_and_clades in leaves_and_clades_list]
-        fs = scipy.array([[x[0]] for x in f_data])
-        logf = scipy.log(fs).sum()
-        grad_fs = scipy.array([x[1] for x in f_data])
-        grad_logf = (grad_fs/fs).sum(axis=0)
-        return sign*logf, sign*grad_logf
-    """
-
 
 class CollapsedForest(CollapsedTree):
     '''
     A forest of collapsed trees e.g. to store equally parsimonious trees.
     '''
-    def __init__(self, params=None, n_trees=None, forest=None):
+    def __init__(self, n_trees=None, forest=None):
         '''
         in addition to p and q, we need number of trees
         can also intialize with forest, a list of trees, each an instance of CollapsedTree
         '''
-        CollapsedTree.__init__(self, params=params)
-        if forest is None and params is None:
+        CollapsedTree.__init__(self)
+        if forest is None:
             raise ValueError('either params or forest (or both) must be provided')
         if forest is not None:
             if len(forest) == 0:
@@ -251,5 +227,18 @@ class CollapsedForest(CollapsedTree):
 
     def __str__(self):
         '''return a string representation for printing'''
-        return 'params = {}, n_trees = {}\n'.format(self.params, self.n_trees) + \
-                '\n'.join([str(tree) for tree in self.forest])
+        return 'n_trees = {}\n'.format(self.n_trees) + '\n'.join([str(tree) for tree in self.forest])
+
+    def write_trees(self, outbase):
+        '''
+        Write all the trees of the forest in newick format.
+        Each tree is named by thee "outbase" and suffixed with _1.tree, _2.tree etc.
+        '''
+        for i, tree in enumerate(self.forest):
+            tree.tree.write(outfile='{}_{}.tree'.format(outbase, i))
+
+    def write_random_tree(self, outname):
+        '''Pick a random tree in the forest and write it in newick format.'''
+        assert outname[-5:] == '.tree'
+        i = random.randint(0, self.n_trees - 1)
+        self.forest[i].tree.write(outfile=outname)
