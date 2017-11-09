@@ -5,7 +5,7 @@ import os
 from nestly import Nest
 from nestly.scons import SConsWrap
 # the following must be exported by parent SConstruct/SConscript
-Import('env gctree igphyml dnaml quick idlabel outdir naive mutability substitution lambda_list lambda0_list n N T nsim CommandRunner experimental_list naiveIDexp selection_param xarg buffarg')
+Import('env tool_dict quick idlabel outdir naive mutability substitution lambda_list lambda0_list n N T nsim CommandRunner experimental_list naiveIDexp selection_param xarg buffarg')
 
 nest = Nest()
 w = SConsWrap(nest, outdir, alias_environment=env)
@@ -61,14 +61,14 @@ def infer(outdir, c):
     naiveID = 'naive' # this is what the simulation routine names the naive
     converter = None  # No problem with weird fasta formating from the simulated data
     colorfile = None
-    return SConscript('SConscript.inference', exports='env gctree igphyml dnaml quick idlabel fasta fasta2 outdir naiveID converter CommandRunner xarg buffarg colorfile')
+    return SConscript('SConscript.inference', exports='env tool_dict quick idlabel fasta fasta2 outdir naiveID converter CommandRunner xarg buffarg colorfile')
 
 @w.add_target()
 def validate(outdir, c):
     '''do validation'''
     outputs = [os.path.join(outdir, 'validation.tsv'), # <-- this one compares different methods
                os.path.join(outdir, 'validation.log')]
-    if gctree:
+    if tool_dict['gctree']:
         outputs.append(os.path.join(outdir, 'validation_gctree.tsv')) # <-- special gctree output evaluating parsimony tree ranking
     tgt = CommandRunner(outputs,
                    [c['gc_sim'][2:4]] + [x[0] for x in c['infer']],

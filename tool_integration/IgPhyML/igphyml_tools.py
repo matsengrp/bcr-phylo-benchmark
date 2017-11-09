@@ -10,13 +10,10 @@ from __future__ import division, print_function
 import sys
 import os
 import re
-import warnings
+from warnings import warn
 from Bio import SeqIO
 from ete3 import Tree, TreeNode, NodeStyle, TreeStyle, TextFace, add_face_to_node, CircleFace, faces, AttrFace
-#sys.path.append(os.path.abspath('/'.join(os.path.realpath(__file__).split('/')[:-2]) + "/bin"))
 sys.path.append(os.path.dirname(os.path.realpath(__file__)) + '/../../bin')
-print(os.path.dirname(os.path.realpath(__file__)) + '/../../bin')
-
 from Bio import AlignIO
 
 class FastaInputError(Exception):
@@ -45,7 +42,7 @@ def ASR_parser(args):
     tree = map_asr_to_tree(args.asr_seq, tree, args.naive, counts)
 
     # Reroot to make the naive sequence the real root instead of just an outgroup:
-    tree = reroot_tree(tree)
+    tree = reroot_tree(tree, pattern=args.naive)
 
     # Recompute branch lengths as hamming distances:
     tree.dist = 0  # No branch above root
@@ -55,6 +52,8 @@ def ASR_parser(args):
     igphyml_tree = CollapsedTree(tree=tree)
     igphyml_tree.render(args.outbase + '.svg')
     igphyml_forest = CollapsedForest(forest=[igphyml_tree])
+    # Dump tree as newick:
+    igphyml_forest.write_random_tree(args.outbase+'.tree')
     print('number of trees with integer branch lengths:', igphyml_forest.n_trees)
 
     # check for unifurcations at root

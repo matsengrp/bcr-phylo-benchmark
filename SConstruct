@@ -27,7 +27,7 @@ AddOption('--inference',
 inference = GetOption('inference')
 AddOption('--simulate',
           action='store_true',
-          help='validation subprogram, instead of inference')
+          help='Validation subprogram, instead of inference')
 simulate = GetOption('simulate')
 AddOption('--srun',
           action='store_true',
@@ -36,18 +36,51 @@ if GetOption('srun'):
     CommandRunner = env.SRun
 else:
     CommandRunner = env.Command
+
+# Tool options:
 AddOption('--gctree',
            action='store_true',
-           help='gctree inference')
+           help='GCtree inference')
 gctree = GetOption('gctree')
+
 AddOption('--igphyml',
            action='store_true',
-           help='use igphyml inference')
+           help='Use igphyml inference')
 igphyml = GetOption('igphyml')
+
 AddOption('--dnaml',
            action='store_true',
-           help='use dnaml inference')
+           help='Use dnaml inference')
 dnaml = GetOption('dnaml')
+
+AddOption('--dnapars',
+           action='store_true',
+           help='Use dnapars inference')
+dnapars = GetOption('dnapars')
+
+AddOption('--samm_rank',
+           action='store_true',
+           help='Use SAMM to rank dnapars trees.')
+samm_rank = GetOption('samm_rank')
+
+AddOption('--iqtree',
+           action='store_true',
+           help='Use IQ-TREE inference')
+iqtree = GetOption('iqtree')
+iqtree_options = False
+if iqtree:
+    AddOption('--iqtree_option_str',
+              type='str',
+              action='append',
+              default=[],
+              help='IQ-TREE run options. Can be specified multiple times')
+    iqtree_options = GetOption('iqtree_option_str')
+    if len(iqtree_options) == 0:
+        raise Exception('At least one --iqtree_option_str must be defined when requesting to run IQ-TREE.')
+
+# Fill a dictionary with the tools:
+tool_dict = {name: tool for tool, name in zip([gctree, igphyml, dnaml, dnapars, samm_rank, iqtree_options], ['gctree', 'igphyml', 'dnaml', 'dnapars', 'samm_rank', 'iqtree'])}
+
 AddOption('--outdir',
           type='string',
           help="directory in which to output results")
@@ -69,14 +102,11 @@ AddOption('--nobuff',
           help='use stdbuf to prevent line buffering on linux')
 buffarg = 'stdbuf -oL ' if GetOption('nobuff') else ''
 
-class InputError(Exception):
-    """Exception raised for errors in the input."""
-
-if not gctree and not igphyml and not GetOption('help'):
-    raise InputError('must set at least one inference method')
+if len([True for v in tool_dict.values() if v]) == 0 and not GetOption('help'):
+    raise Exception('must set at least one inference method')
 
 if not simulate and not inference and not GetOption('help'):
-    raise InputError('Please provide one of the required arguments. Either "--inference" or "--simulate".'
+    raise Exception('Please provide one of the required arguments. Either "--inference" or "--simulate".'
                      'Command line help can then be evoked by "-h" or "--help" and found in the bottom'
                      'of the output under "Local Options".')
 
@@ -235,8 +265,8 @@ if simulate and not GetOption('help'):
     if outdir is None:
         raise InputError('Outdir must be specified.')
     SConscript('SConscript.simulation',
-               exports='env gctree igphyml dnaml quick idlabel outdir naive mutability substitution lambda_list lambda0_list n N T nsim CommandRunner experimental_list naiveIDexp selection_param xarg buffarg')
+               exports='env tool_dict quick idlabel outdir naive mutability substitution lambda_list lambda0_list n N T nsim CommandRunner experimental_list naiveIDexp selection_param xarg buffarg')
 elif inference and not GetOption('help'):
     if None in [fasta, outdir]:
         raise InputError('input fasta and outdir must be specified')
-    SConscript('SConscript.inference', exports='env gctree igphyml dnaml quick idlabel fasta fasta2 outdir naiveID converter CommandRunner xarg buffarg colorfile')
+    SConscript('SConscript.inference', exports='env tool_dict quick idlabel fasta fasta2 outdir naiveID converter CommandRunner xarg buffarg colorfile')
