@@ -150,32 +150,27 @@ if tool_dict['samm_rank']:
 
 
 if tool_dict['iqtree']:
+    # Loop through the IQ-TREE settings:
     for setting in tool_dict['iqtree']:
         setting_id = 'iqtree'+''.join(setting.split())
 
         iqtree_outdir = outdir + '/'+setting_id
         make_dir_if_nonexisting(iqtree_outdir)
-        iqtree_basename_dir = os.path.join(outdir, iqtree_outdir+'/'+basename)
+        iqtree_basename_dir = iqtree_outdir+'/'+basename
         # Run IQ-TREE:
         iqtree = CommandRunner([iqtree_basename_dir+'.phylip.treefile',
                                 iqtree_basename_dir+'.phylip.state',
-                               iqtree_basename_dir+'.log'],
-                               [phylip[0], dedup_fasta[0]],
-                               'cp '+run_dir+'*.phylip '+iqtree_outdir+' && cd '+iqtree_outdir+' && '+buffarg+repo_home+'/tools/IQ-TREE/iqtree -redo -nt AUTO -asr -s ${SOURCES[0].file} '+setting+' > ${TARGETS[1].file}')
+                               iqtree_basename_dir+'_iqtree.log'],
+                               [phylip[0]],
+                               'cp '+run_dir+'*.phylip '+iqtree_outdir+' && cd '+iqtree_outdir+' && '+buffarg+repo_home+'/tools/IQ-TREE/iqtree -redo -nt AUTO -asr -s ${SOURCES[0].file} '+setting+' > ${TARGETS[2].file}')
         env.Depends(iqtree, phylip)
 
         # Convert the ASR output to a collapsed forest with an ete3 tree and pickle it:
-        '''
-        igphyml_infer = env.Command([igphyml_basename_dir+'_inferred_tree.p',
-                                    igphyml_basename_dir+'_inferred_tree.tree',
-                                    igphyml_outdir+'/igphyml_tools.log'],
-                                    [naive_outgroup[0], phylip[1], run_ASR[0]],
-                                    xarg + 'python '+repo_home+'/tool_integration/IgPhyML/igphyml_tools.py ASR_parser --tree ${SOURCES[0]} --counts ${SOURCES[1]} --asr_seq ${SOURCES[2]} --outbase '+igphyml_outbase+'_inferred_tree --naive '+naiveID+' > ${TARGETS[2]}')
-        return_list.append(iqtree_tree)
-        '''
-
-
-
+        igphyml_infer = env.Command([iqtree_basename_dir+'_inferred_tree.p',
+                                    iqtree_basename_dir+'_inferred_tree.tree',
+                                    iqtree_outdir+'/iqtree_tools.log'],
+                                    [phylip[0], phylip[1], iqtree[0], iqtree[1]],
+                                    xarg + 'python '+repo_home+'/tool_integration/IQ-TREE/iqtree_tools.py ASR_parser --tree ${SOURCES[2]} --counts ${SOURCES[1]} --asr_seq ${SOURCES[3]} --leaf_seq ${SOURCES[0]} --outbase '+iqtree_basename_dir+'_inferred_tree --naive '+naiveID+' > ${TARGETS[2]}')
 
 
 
