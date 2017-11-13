@@ -175,6 +175,7 @@ def main():
     parser.add_argument('--outbase', default='collapsed_forest', help="Output file basename.")
     parser.add_argument('--naive', default='naive', help="Naive sequence id.")
     parser.add_argument('--dump_newick', action='store_true', default=False, help='Dump trees in newick format.')
+    parser.add_argument('--colormap', required=False, help='Colormap for ETE3.')
     args = parser.parse_args()
 
     # Parse dnaml/dnapars trees into a collapsed trees and pack them into a forest:
@@ -186,6 +187,14 @@ def main():
         if forest_obj.n_trees > 1:
             forest_obj.write_trees(args.outbase)
         forest_obj.write_random_tree(args.outbase+'.tree')
+
+    # Render svg:
+    if args.colormap is not None:
+        with open(args.colormap, 'rb') as fh:
+            colormap = pickle.load(fh)
+    else:
+        colormap = None
+    trees[0].render(args.outbase + '.svg', colormap=colormap)
     print('Done')
 
 if __name__ == "__main__":

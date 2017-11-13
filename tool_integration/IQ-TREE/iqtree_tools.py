@@ -51,7 +51,13 @@ def ASR_parser(args):
         node.dist = hamming_distance(node.sequence, node.up.sequence)
 
     iqtree_tree = CollapsedTree(tree=tree)
-    iqtree_tree.render(args.outbase + '.svg')
+
+    if args.colormap is not None:
+        with open(args.colormap, 'rb') as fh:
+            colormap = pickle.load(fh)
+    else:
+        colormap = None
+    iqtree_tree.render(args.outbase + '.svg', colormap=colormap)
     iqtree_forest = CollapsedForest(forest=[iqtree_tree])
     # Dump tree as newick:
     iqtree_forest.write_random_tree(args.outbase+'.tree')
@@ -169,6 +175,7 @@ def main():
                                        help='Reroot a tree based on node containing a keyword.',
                                        formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser_asr.add_argument('--tree', required=True, metavar='NEWICK TREE', help='Input tree used for topology.')
+    parser_asr.add_argument('--colormap', required=False, help='Colormap for ETE3.')
     parser_asr.add_argument('--counts', required=True, metavar='ALLELE_FREQUENCY', help='File containing allele frequencies (sequence counts) in the format: "SeqID,Nobs"')
     parser_asr.add_argument('--asr_seq', required=True, help='Input ancestral sequences file.')
     parser_asr.add_argument('--leaf_seq', required=True, help='Phylip file with leaf sequences.')

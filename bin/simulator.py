@@ -488,11 +488,12 @@ def simulate(args):
     collapsed_tree.render(args.outbase+'_collapsed_tree.svg',
                           idlabel=args.idlabel,
                           colormap=colormap)
-    # print colormap to file
+    # Print colormap to file:
     with open(args.outbase+'_collapsed_tree_colormap.tsv', 'w') as f:
         for name, color in colormap.items():
             f.write((name if isinstance(name, str) else ','.join(name)) + '\t' + color + '\n')
-
+    with open(args.outbase+'_collapsed_tree_colormap.p', 'wb') as f:
+        pickle.dump(colormap, f)
 
     if args.selection:
         # Define a list a suitable colors that are easy to distinguish:

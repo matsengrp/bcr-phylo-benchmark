@@ -37,6 +37,7 @@ def gc_sim(outdir, c):
                          os.path.join(outdir, 'GCsim_stats.tsv'),
                          os.path.join(outdir, 'GCsim_collapsed_tree.p'),
                          os.path.join(outdir, 'GCsim_collapsed_tree_colormap.tsv'),
+                         os.path.join(outdir, 'GCsim_collapsed_tree_colormap.p'),
                          os.path.join(outdir, 'simulator.log')],
                         [mutability, substitution],
                         xarg + buffarg + 'python bin/simulator.py --sequence '+naive+
@@ -48,24 +49,24 @@ def gc_sim(outdir, c):
                         N_arg+
                         n_arg+
                         sele_arg+
-                        ' > ${TARGETS[4]}')
+                        ' > ${TARGETS[5]}')
     c['simstat_agg'].append(tgt[1])
     c['summary_stats'].append(tgt[0])
     return tgt
 
 @w.add_target()
 def infer(outdir, c):
-    '''now do inference on the simulation results'''
+    '''Now do inference on the simulation results.'''
     fasta = c['gc_sim'][0]
     fasta2 = None
-    naiveID = 'naive' # this is what the simulation routine names the naive
-    converter = None  # No problem with weird fasta formating from the simulated data
-    colorfile = None
-    return SConscript('SConscript.inference', exports='env tool_dict quick idlabel fasta fasta2 outdir naiveID converter CommandRunner xarg buffarg colorfile')
+    naiveID = 'naive'  # This is what the simulation routine names the naive
+    converter = None   # No problem with weird fasta formating from the simulated data
+    colormap = c['gc_sim'][4]
+    return SConscript('SConscript.inference', exports='env tool_dict quick idlabel fasta fasta2 outdir naiveID converter CommandRunner xarg buffarg colormap')
 
 @w.add_target()
 def validate(outdir, c):
-    '''do validation'''
+    '''Do validation.'''
     outputs = [os.path.join(outdir, 'validation.tsv'), # <-- this one compares different methods
                os.path.join(outdir, 'validation.log')]
     if tool_dict['gctree']:

@@ -126,18 +126,21 @@ if simulate:
                       'TCTGTGACTACTGAGGACACAGCCACATATTACTGT',
               help='sequence of naive from which to simulate')
     naive = GetOption('naive')
+
     AddOption('--mutability',
               type='string',
               metavar='PATH',
               default='S5F/Mutability.csv',
               help='path to S5F mutability data')
     mutability = GetOption('mutability')
+
     AddOption('--substitution',
               type='string',
               metavar='PATH',
               default='S5F/Substitution.csv',
               help='path to S5F substitution data')
     substitution = GetOption('substitution')
+
     AddOption('--lambda',
               type='float',
               action='append',
@@ -146,6 +149,7 @@ if simulate:
     lambda_list = GetOption('lambda')
     if len(lambda_list) == 0:
         lambda_list = [2.]
+
     AddOption('--lambda0',
               type='float',
               action='append',
@@ -154,38 +158,45 @@ if simulate:
     lambda0_list = GetOption('lambda0')
     if len(lambda0_list) == 0:
         lambda0_list = [.25]
+
     AddOption('--n',
               type='int',
               default=None,
               help='cells downsampled')
     n = GetOption('n')
+
     AddOption('--N',
               type='int',
-              default=None,
-              help='simulation size (number of cells observerved)')
+              default=100,
+              help='Simulation size (number of cells observerved)')
     N = GetOption('N')
+
     AddOption('--T',
               type='int',
               action='append',
               default=[],
-              help='observation time')
+              help='Sampling time. Can be defined multiple times to make intermediate sampling.')
     T = GetOption('T')
+
     AddOption('--nsim',
               type='int',
               default=10,
-              help='number of simulations with each parameter parameter choice')
+              help='Number of simulations with each parameter parameter choice.')
     nsim = GetOption('nsim')
+
     AddOption('--experimental',
               type='string',
               action='append',
               default=[],
               help='Experimental fastas for comparing summary stats.')
     experimental_list = GetOption('experimental')
+
     AddOption('--naiveIDexp',
               type='string',
               default='naive0',
               help='Id of naive seq in the experimental data fasta file. Must be lowercase. If not correct in file.')
     naiveIDexp = GetOption('naiveIDexp')
+
     AddOption('--selection',
               action='store_true',
               help='Simulation with affinity selection.')
@@ -197,21 +208,25 @@ if simulate:
                   default=10,
                   help='Distance to selection target.')
         target_dist = GetOption('target_dist')
+
         AddOption('--target_count',
                   type='int',
                   default=10,
                   help='Number of targets.')
         target_count = GetOption('target_count')
+
         AddOption('--verbose',
                   action='store_true',
                   help='Verbose printing.')
         verbose = GetOption('verbose')
         verbose = '--verbose' if verbose else '' 
+
         AddOption('--carry_cap',
                   type='int',
                   default=1000,
                   help='Number of targets.')
         carry_cap = GetOption('carry_cap')
+
         AddOption('--skip_update',
                   type='int',
                   default=100,
@@ -235,19 +250,14 @@ elif inference:
         fasta2 = None
     else:
         fasta, fasta2 = fasta
-    AddOption('--colorfile',
-              dest='colorfile',
-              type='string',
-              default=None,
-              metavar='PATH',
-              help='optional two column csv file with colors to associate with each cell')
-    colorfile = GetOption('colorfile')
+
     AddOption('--naiveID',
               type='string',
               metavar='seqID',
               default='naive',
               help='Id of naive sequence in input fasta. Must be lowercase. If not correct in file.')
     naiveID = GetOption('naiveID')
+
     AddOption('--converter',
               type='string',
               default=None,
@@ -269,4 +279,5 @@ if simulate and not GetOption('help'):
 elif inference and not GetOption('help'):
     if None in [fasta, outdir]:
         raise InputError('input fasta and outdir must be specified')
-    SConscript('SConscript.inference', exports='env tool_dict quick idlabel fasta fasta2 outdir naiveID converter CommandRunner xarg buffarg colorfile')
+    colormap = None  # Not available with inference 
+    SConscript('SConscript.inference', exports='env tool_dict quick idlabel fasta fasta2 outdir naiveID converter CommandRunner xarg buffarg colormap')

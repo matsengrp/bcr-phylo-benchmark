@@ -14,7 +14,7 @@ this_sconscript_file = (lambda x:x).func_code.co_filename
 repo_home = os.path.dirname(this_sconscript_file)  # <- this is the directory where the file lives
 
 # the following must be exported by parent SConstruct/SConscript
-Import('env tool_dict quick idlabel fasta fasta2 outdir naiveID converter CommandRunner xarg buffarg colorfile')
+Import('env tool_dict quick idlabel fasta fasta2 outdir naiveID converter CommandRunner xarg buffarg colormap')
 
 def delete_on_failure():
     from SCons.Script import GetBuildFailures
@@ -86,8 +86,8 @@ if tool_dict['dnaml']:
     dnaml_tree = env.Command([dnaml_outbase+'.p',
                               dnaml_outbase+'.tree',
                               dnaml_outbase+'.log'],
-                              [dnaml[1], phylip[1]],
-                              xarg + 'python bin/phylip_parse.py ${SOURCES} --outbase '+dnaml_outbase+' --naive '+naiveID+' --dump_newick > ${TARGETS[2]}')
+                              [dnaml[1], phylip[1], colormap],
+                              xarg + 'python bin/phylip_parse.py ${SOURCES[0]} ${SOURCES[1]} --outbase '+dnaml_outbase+' --naive '+naiveID+' --dump_newick > ${TARGETS[2]} --colormap ${SOURCES[2]}')
     return_list.append(dnaml_tree)
 
 
@@ -113,8 +113,8 @@ if tool_dict['gctree'] or tool_dict['samm_rank'] or tool_dict['dnapars']:
         dnapars_tree = env.Command([dnapars_outbase+'.p',
                                   dnapars_outbase+'.tree',
                                   dnapars_outbase+'.log'],
-                                  [dnapars[1], phylip[1]],
-                                  xarg + 'python bin/phylip_parse.py ${SOURCES} --outbase '+dnapars_outbase+' --naive '+naiveID+' --dump_newick > ${TARGETS[2]}')
+                                  [dnaml[1], phylip[1], colormap],
+                                  xarg + 'python bin/phylip_parse.py ${SOURCES[0]} ${SOURCES[1]} --outbase '+dnaml_outbase+' --naive '+naiveID+' --dump_newick > ${TARGETS[2]} --colormap ${SOURCES[2]}')
         return_list.append(dnapars_tree)
 
 
@@ -123,6 +123,7 @@ if tool_dict['gctree']:
     make_dir_if_nonexisting(gctree_outdir)
     gctree_outbase = os.path.join(gctree_outdir, 'gctree')
     idlabel_arg = ' --idlabel' if idlabel else ''
+    #### --colormapfile
     gctree_infer = CommandRunner([gctree_outbase+'.inference.parsimony_forest.p',
                                  gctree_outbase+'_inference.log'],
                                  [dnapars[1], phylip[1]],
@@ -169,8 +170,8 @@ if tool_dict['iqtree']:
         igphyml_infer = env.Command([iqtree_basename_dir+'_inferred_tree.p',
                                     iqtree_basename_dir+'_inferred_tree.tree',
                                     iqtree_outdir+'/iqtree_tools.log'],
-                                    [phylip[0], phylip[1], iqtree[0], iqtree[1]],
-                                    xarg + 'python '+repo_home+'/tool_integration/IQ-TREE/iqtree_tools.py ASR_parser --tree ${SOURCES[2]} --counts ${SOURCES[1]} --asr_seq ${SOURCES[3]} --leaf_seq ${SOURCES[0]} --outbase '+iqtree_basename_dir+'_inferred_tree --naive '+naiveID+' > ${TARGETS[2]}')
+                                    [phylip[0], phylip[1], iqtree[0], iqtree[1], colormap],
+                                    xarg + 'python '+repo_home+'/tool_integration/IQ-TREE/iqtree_tools.py ASR_parser --tree ${SOURCES[2]} --colormap ${SOURCES[4]} --counts ${SOURCES[1]} --asr_seq ${SOURCES[3]} --leaf_seq ${SOURCES[0]} --outbase '+iqtree_basename_dir+'_inferred_tree --naive '+naiveID+' > ${TARGETS[2]}')
 
 
 
