@@ -5,6 +5,10 @@ Clone repo with submodules:
 git clone --recursive https://github.com/matsengrp/bcr-phylo-benchmark.git
 ```
 
+IgPhyML is provided but needs to be recompiled due to its use of hard-coded full path. Recompile by navigating to `tools/IgPhyML` and execute the OMP install:
+```
+./make_phyml_omp
+```
 
 ## DEPENDENCIES
 * scons
