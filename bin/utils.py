@@ -37,12 +37,15 @@ class CollapsedTree():
     Collapsed tree class from GCtree. Collapses an ete3 tree
     into a genotype collapsed tree based on hamming distance between node seqeunces.
     '''
-    def __init__(self, params=None, tree=None, collapse_syn=False, allow_repeats=False):
+    def __init__(self, tree, name, params=None, collapse_syn=False, allow_repeats=False):
         '''
         For intialization, either params or tree (or both) must be provided
         params: offspring distribution parameters
         tree: ete tree with frequency node feature. If uncollapsed, it will be collapsed.
         '''
+        self.tree = tree
+        self.name = name
+
         # Collapse synonymous reads:
         if collapse_syn is True:
             tree.dist = 0  # no branch above root
@@ -51,48 +54,45 @@ class CollapsedTree():
                 aa_parent = translate(node.up.sequence)
                 node.dist = hamming_distance(aa, aa_parent)
 
-        if tree is not None:
-            self.tree = tree.copy()
-            # iterate over the tree below root and collapse edges of zero length
-            # if the node is a leaf and it's parent has nonzero frequency we combine taxa names to a set
-            # this acommodates bootstrap samples that result in repeated genotypes
-            observed_genotypes = set((leaf.name for leaf in self.tree))
-            observed_genotypes.add(self.tree.name)
-            for node in self.tree.get_descendants(strategy='postorder'):
-                if node.dist == 0:
-                    node.up.frequency += node.frequency
-                    node_set = set([node.name]) if isinstance(node.name, str) else set(node.name)
-                    node_up_set = set([node.up.name]) if isinstance(node.up.name, str) else set(node.up.name)
-                    if node_up_set < observed_genotypes:
-                        if node_set < observed_genotypes:
-                            node.up.name = tuple(node_set | node_up_set)
-                            if len(node.up.name) == 1:
-                                node.up.name = node.up.name[0]
-                    elif node_set < observed_genotypes:
-                        node.up.name = tuple(node_set)
+        self.tree = tree.copy()
+        # iterate over the tree below root and collapse edges of zero length
+        # if the node is a leaf and it's parent has nonzero frequency we combine taxa names to a set
+        # this acommodates bootstrap samples that result in repeated genotypes
+        observed_genotypes = set((leaf.name for leaf in self.tree))
+        observed_genotypes.add(self.tree.name)
+        for node in self.tree.get_descendants(strategy='postorder'):
+            if node.dist == 0:
+                node.up.frequency += node.frequency
+                node_set = set([node.name]) if isinstance(node.name, str) else set(node.name)
+                node_up_set = set([node.up.name]) if isinstance(node.up.name, str) else set(node.up.name)
+                if node_up_set < observed_genotypes:
+                    if node_set < observed_genotypes:
+                        node.up.name = tuple(node_set | node_up_set)
                         if len(node.up.name) == 1:
                             node.up.name = node.up.name[0]
-                    node.delete(prevent_nondicotomic=False)
+                elif node_set < observed_genotypes:
+                    node.up.name = tuple(node_set)
+                    if len(node.up.name) == 1:
+                        node.up.name = node.up.name[0]
+                node.delete(prevent_nondicotomic=False)
 
-            final_observed_genotypes = set([name for node in self.tree.traverse() if node.frequency > 0 or node == self.tree for name in ((node.name,) if isinstance(node.name, str) else node.name)])
-            if final_observed_genotypes != observed_genotypes:
-                raise RuntimeError('observed genotypes don\'t match after collapse\n\tbefore: {}\n\tafter: {}\n\tsymmetric diff: {}'.format(observed_genotypes, final_observed_genotypes, observed_genotypes ^ final_observed_genotypes))
-            assert sum(node.frequency for node in tree.traverse()) == sum(node.frequency for node in self.tree.traverse())
+        final_observed_genotypes = set([name for node in self.tree.traverse() if node.frequency > 0 or node == self.tree for name in ((node.name,) if isinstance(node.name, str) else node.name)])
+        if final_observed_genotypes != observed_genotypes:
+            raise RuntimeError('observed genotypes don\'t match after collapse\n\tbefore: {}\n\tafter: {}\n\tsymmetric diff: {}'.format(observed_genotypes, final_observed_genotypes, observed_genotypes ^ final_observed_genotypes))
+        assert sum(node.frequency for node in tree.traverse()) == sum(node.frequency for node in self.tree.traverse())
 
+        rep_seq = sum(node.frequency > 0 for node in self.tree.traverse()) - len(set([node.sequence for node in self.tree.traverse() if node.frequency > 0]))
+        if not allow_repeats and rep_seq:
+            raise RuntimeError('Repeated observed sequences in collapsed tree. {} sequences were found repeated.'.format(rep_seq))
+        elif allow_repeats and rep_seq:
             rep_seq = sum(node.frequency > 0 for node in self.tree.traverse()) - len(set([node.sequence for node in self.tree.traverse() if node.frequency > 0]))
-            if not allow_repeats and rep_seq:
-                raise RuntimeError('Repeated observed sequences in collapsed tree. {} sequences were found repeated.'.format(rep_seq))
-            elif allow_repeats and rep_seq:
-                rep_seq = sum(node.frequency > 0 for node in self.tree.traverse()) - len(set([node.sequence for node in self.tree.traverse() if node.frequency > 0]))
-                print('Repeated observed sequences in collapsed tree. {} sequences were found repeated.'.format(rep_seq))
-            # a custom ladderize accounting for abundance and sequence to break ties in abundance
-            for node in self.tree.traverse(strategy='postorder'):
-                # add a partition feature and compute it recursively up the tree
-                node.add_feature('partition', node.frequency + sum(node2.partition for node2 in node.children))
-                # sort children of this node based on partion and sequence
-                node.children.sort(key=lambda node: (node.partition, node.sequence))
-        else:
-            self.tree = tree
+            print('Repeated observed sequences in collapsed tree. {} sequences were found repeated.'.format(rep_seq))
+        # a custom ladderize accounting for abundance and sequence to break ties in abundance
+        for node in self.tree.traverse(strategy='postorder'):
+            # add a partition feature and compute it recursively up the tree
+            node.add_feature('partition', node.frequency + sum(node2.partition for node2 in node.children))
+            # sort children of this node based on partion and sequence
+            node.children.sort(key=lambda node: (node.partition, node.sequence))
 
     def __str__(self):
         '''Return a string representation for printing.'''
@@ -200,24 +200,17 @@ class CollapsedTree():
             raise ValueError('invalid distance method: ' + method)
 
 
-class CollapsedForest(CollapsedTree):
+class CollapsedForest():
     '''
     A forest of collapsed trees e.g. to store equally parsimonious trees.
     '''
-    def __init__(self, n_trees=None, forest=None):
-        '''
-        in addition to p and q, we need number of trees
-        can also intialize with forest, a list of trees, each an instance of CollapsedTree
-        '''
-        CollapsedTree.__init__(self)
-        if forest is None:
-            raise ValueError('either params or forest (or both) must be provided')
-        if forest is not None:
-            if len(forest) == 0:
-                raise ValueError('passed empty tree list')
-            if n_trees is not None and len(forest) != n_trees:
-                raise ValueError('n_trees not consistent with forest')
-            self.forest = forest
+    def __init__(self, forest, name, n_trees=None):
+        self.forest = forest
+        self.name = name
+        if len(forest) == 0:
+            raise ValueError('Passed empty tree list')
+        if n_trees is not None and len(forest) != n_trees:
+            raise ValueError('n_trees not consistent with forest')
         if n_trees is not None:
             if type(n_trees) is not int or n_trees < 1:
                 raise ValueError('number of trees must be at least one')

@@ -10,6 +10,10 @@ from Bio.Alphabet import generic_dna
 from Bio import AlignIO
 from Bio.Phylo.TreeConstruction import MultipleSeqAlignment
 from collections import defaultdict, Counter
+try:
+    import cPickle as pickle
+except:
+    import pickle
 
 
 def fasta_parse(aln_file, naive, aln_file2=None, converter=None):
@@ -109,9 +113,11 @@ def main():
             for seqID, count in counts.items():
                 print('{},{}'.format(seqID, count), file=f)
     if args.idmapfile is not None:
-        with open(args.idmapfile, 'w') as f:
+        with open(args.idmapfile+'_idmap.tsv', 'w') as f:
             for seq_id, cell_ids in id_map.items():
                 print('{},{}'.format(seq_id, ':'.join(cell_ids)), file=f)
+        with open(args.idmapfile+'_idmap.p', 'wb') as f:
+            runstats = pickle.dump(id_map, f)
 
 
 if __name__ == '__main__':

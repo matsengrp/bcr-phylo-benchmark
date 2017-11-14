@@ -170,30 +170,47 @@ def main():
             raise ValueError("File not found: " + str(fname))
         return fname
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('name', help="Name of the tree.")
     parser.add_argument('phylip_outfile', type=existing_file, help='dnaml or dnapars outfile (verbose output with inferred ancestral sequences, option 5).')
     parser.add_argument('countfile', type=existing_file, help="Count file.")
     parser.add_argument('--outbase', default='collapsed_forest', help="Output file basename.")
     parser.add_argument('--naive', default='naive', help="Naive sequence id.")
     parser.add_argument('--dump_newick', action='store_true', default=False, help='Dump trees in newick format.')
     parser.add_argument('--colormap', required=False, help='Colormap for ETE3.')
+    parser.add_argument('--idmap', required=False, help='Id mapping from simulation to Phylip file sequence names.')
     args = parser.parse_args()
 
     # Parse dnaml/dnapars trees into a collapsed trees and pack them into a forest:
     tree_list = parse_outfile(args.phylip_outfile, args.countfile, args.naive)
-    trees = [CollapsedTree(tree=tree) for tree in tree_list]
-    forest_obj = CollapsedForest(forest=trees)
+    trees = [CollapsedTree(tree=tree, name=args.name) for tree in tree_list]
+    forest_obj = CollapsedForest(forest=trees, name=args.name)
     pickle.dump(forest_obj, open(args.outbase+'.p', 'w'))
     if args.dump_newick:
         if forest_obj.n_trees > 1:
             forest_obj.write_trees(args.outbase)
         forest_obj.write_random_tree(args.outbase+'.tree')
 
-    # Render svg:
+    # Add colors:
     if args.colormap is not None:
         with open(args.colormap, 'rb') as fh:
             colormap = pickle.load(fh)
+        with open(args.idmap, 'rb') as fh:
+            id_map = pickle.load(fh)
+        # Reverse the id_map:
+        id_map = {cs:seq_id for seq_id, cell_ids in id_map.items() for cs in cell_ids}
+        # Expand the colormap and map to sequence ids:
+        colormap_seqid = dict()
+        for key, color in colormap.items():
+            if isinstance(key, str) and key in id_map:
+                colormap_seqid[id_map[key]] = color
+            else:
+                for cell_id in key:
+                    if cell_id in id_map:
+                        colormap_seqid[id_map[cell_id]] = color
+        colormap = colormap_seqid
     else:
         colormap = None
+    # Render svg:
     trees[0].render(args.outbase + '.svg', colormap=colormap)
     print('Done')
 

@@ -128,7 +128,8 @@ def main():
     inferences = {}
     for forest_file in args.forest_files:
         with open(forest_file, 'rb') as f:
-            inferences[os.path.basename(forest_file).split('.')[0]] = pickle.load(f)
+            forest = pickle.load(f)
+            inferences[forest.name] = forest
     # now we rerender the inferred trees, but using colormap from true tree, makes visual comaprison easier
     true_tree_colormap = {} # map for tree sequences
     with open(args.true_tree_colormap, 'r') as f:

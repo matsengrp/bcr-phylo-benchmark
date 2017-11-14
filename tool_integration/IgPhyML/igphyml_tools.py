@@ -49,9 +49,29 @@ def ASR_parser(args):
     for node in tree.iter_descendants():
         node.dist = hamming_distance(node.sequence, node.up.sequence)
 
-    igphyml_tree = CollapsedTree(tree=tree)
-    igphyml_tree.render(args.outbase + '.svg')
-    igphyml_forest = CollapsedForest(forest=[igphyml_tree])
+    igphyml_tree = CollapsedTree(tree=tree, name=args.name)
+    # Add colors:
+    if args.colormap is not None:
+        with open(args.colormap, 'rb') as fh:
+            colormap = pickle.load(fh)
+        with open(args.idmap, 'rb') as fh:
+            id_map = pickle.load(fh)
+        # Reverse the id_map:
+        id_map = {cs:seq_id for seq_id, cell_ids in id_map.items() for cs in cell_ids}
+        # Expand the colormap and map to sequence ids:
+        colormap_seqid = dict()
+        for key, color in colormap.items():
+            if isinstance(key, str) and key in id_map:
+                colormap_seqid[id_map[key]] = color
+            else:
+                for cell_id in key:
+                    if cell_id in id_map:
+                        colormap_seqid[id_map[cell_id]] = color
+        colormap = colormap_seqid
+    else:
+        colormap = None
+    igphyml_tree.render(args.outbase + '.svg', colormap=colormap)
+    igphyml_forest = CollapsedForest(forest=[igphyml_tree], name=args.name)
     # Dump tree as newick:
     igphyml_forest.write_random_tree(args.outbase+'.tree')
     print('number of trees with integer branch lengths:', igphyml_forest.n_trees)
@@ -225,6 +245,9 @@ def main():
                                        help='Reroot a tree based on node containing a keyword.',
                                        formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser_asr.add_argument('--tree', required=True, metavar='NEWICK TREE', help='Input tree used for topology.')
+    parser_asr.add_argument('--name', required=True, help='Name of tree.')
+    parser_asr.add_argument('--colormap', required=False, help='Colormap for ETE3.')
+    parser_asr.add_argument('--idmap', required=False, help='Id mapping from simulation to Phylip file sequence names.')
     parser_asr.add_argument('--counts', required=True, metavar='ALLELE_FREQUENCY', help='File containing allele frequencies (sequence counts) in the format: "SeqID,Nobs"')
     parser_asr.add_argument('--asr_seq', required=True, help='Input ancestral sequences.')
     parser_asr.add_argument('--outbase', required=True, metavar='FILENAME', help='Filename for the output ASR tree.')
