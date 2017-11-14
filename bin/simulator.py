@@ -395,9 +395,9 @@ def simulate(args):
                                            verbose=args.verbose,
                                            selection_params=selection_params)
             if args.selection:
-                collapsed_tree = CollapsedTree(tree=tree, collapse_syn=False, allow_repeats=True)
+                collapsed_tree = CollapsedTree(tree=tree, name='GCsim selection', collapse_syn=False, allow_repeats=True)
             else:
-                collapsed_tree = CollapsedTree(tree=tree)  # <-- this will fail if backmutations
+                collapsed_tree = CollapsedTree(tree=tree, name='GCsim neutral')  # <-- this will fail if backmutations
             tree.ladderize()
             uniques = sum(node.frequency > 0 for node in collapsed_tree.tree.traverse())
             if uniques < 2:
