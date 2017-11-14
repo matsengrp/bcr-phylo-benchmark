@@ -52,9 +52,9 @@ run_dir = os.path.join(outdir, basename)
 converter_arg = ' --converter {} '.format(converter) if converter is not None else ''
 phylip = env.Command([run_dir+'.phylip',
                       run_dir+'.counts',
-                      run_dir+'.idmap'],
+                      run_dir+'_idmap.p'],
                       [fasta],
-                      'python bin/fasta2phylip.py ${SOURCES[0]} --countfile ${TARGETS[1]} --idmapfile ${TARGETS[2]} --naive '+naiveID+converter_arg+' > ${TARGETS[0]}')
+                      'python bin/fasta2phylip.py ${SOURCES[0]} --countfile ${TARGETS[1]} --idmapfile '+run_dir+' --naive '+naiveID+converter_arg+' > ${TARGETS[0]}')
 
 # Need the dedup phy as fa for ASR:
 dedup_fasta = env.Command([os.path.join(outdir, basename+'_dedup.fasta'),
@@ -86,8 +86,8 @@ if tool_dict['dnaml']:
     dnaml_tree = env.Command([dnaml_outbase+'.p',
                               dnaml_outbase+'.tree',
                               dnaml_outbase+'.log'],
-                              [dnaml[1], phylip[1], colormap],
-                              xarg + 'python bin/phylip_parse.py ${SOURCES[0]} ${SOURCES[1]} --outbase '+dnaml_outbase+' --naive '+naiveID+' --dump_newick > ${TARGETS[2]} --colormap ${SOURCES[2]}')
+                              [dnaml[1], phylip[1], phylip[2], colormap],
+                              xarg + 'python bin/phylip_parse.py dnaml ${SOURCES[0]} ${SOURCES[1]} --outbase '+dnaml_outbase+' --naive '+naiveID+' --dump_newick --idmap ${SOURCES[2]} --colormap ${SOURCES[3]} > ${TARGETS[2]}')
     return_list.append(dnaml_tree)
 
 
@@ -113,8 +113,8 @@ if tool_dict['gctree'] or tool_dict['samm_rank'] or tool_dict['dnapars']:
         dnapars_tree = env.Command([dnapars_outbase+'.p',
                                   dnapars_outbase+'.tree',
                                   dnapars_outbase+'.log'],
-                                  [dnaml[1], phylip[1], colormap],
-                                  xarg + 'python bin/phylip_parse.py ${SOURCES[0]} ${SOURCES[1]} --outbase '+dnaml_outbase+' --naive '+naiveID+' --dump_newick > ${TARGETS[2]} --colormap ${SOURCES[2]}')
+                                  [dnapars[1], phylip[1], phylip[2], colormap],
+                                  xarg + 'python bin/phylip_parse.py dnapars ${SOURCES[0]} ${SOURCES[1]} --outbase '+dnapars_outbase+' --naive '+naiveID+' --dump_newick --idmap ${SOURCES[2]} --colormap ${SOURCES[3]} > ${TARGETS[2]}')
         return_list.append(dnapars_tree)
 
 
@@ -127,7 +127,7 @@ if tool_dict['gctree']:
     gctree_infer = CommandRunner([gctree_outbase+'.inference.parsimony_forest.p',
                                  gctree_outbase+'_inference.log'],
                                  [dnapars[1], phylip[1]],
-                                 'cd '+gctree_outdir+' && '+xarg+buffarg+'python '+repo_home+'/tools/gctree/bin/gctree.py infer '+repo_home+'/${SOURCES[0]} '+repo_home+'/${SOURCES[1]} --naive '+naiveID+' --outbase gctee'+idlabel_arg+' > ${TARGETS[1].file}')
+                                 'cd '+gctree_outdir+' && '+xarg+buffarg+'python '+repo_home+'/tools/gctree/bin/gctree.py infer '+repo_home+'/${SOURCES[0]} '+repo_home+'/${SOURCES[1]} --naive '+naiveID+' --outbase gctree'+idlabel_arg+' > ${TARGETS[1].file}')
     return_list.append(gctree_infer)
 
 
@@ -153,7 +153,7 @@ if tool_dict['samm_rank']:
 if tool_dict['iqtree']:
     # Loop through the IQ-TREE settings:
     for setting in tool_dict['iqtree']:
-        setting_id = 'iqtree'+''.join(setting.split())
+        setting_id = 'IQ-TREE'+''.join(setting.split())
 
         iqtree_outdir = outdir + '/'+setting_id
         make_dir_if_nonexisting(iqtree_outdir)
@@ -167,11 +167,12 @@ if tool_dict['iqtree']:
         env.Depends(iqtree, phylip)
 
         # Convert the ASR output to a collapsed forest with an ete3 tree and pickle it:
-        igphyml_infer = env.Command([iqtree_basename_dir+'_inferred_tree.p',
+        iqtree_infer = env.Command([iqtree_basename_dir+'_inferred_tree.p',
                                     iqtree_basename_dir+'_inferred_tree.tree',
                                     iqtree_outdir+'/iqtree_tools.log'],
-                                    [phylip[0], phylip[1], iqtree[0], iqtree[1], colormap],
-                                    xarg + 'python '+repo_home+'/tool_integration/IQ-TREE/iqtree_tools.py ASR_parser --tree ${SOURCES[2]} --colormap ${SOURCES[4]} --counts ${SOURCES[1]} --asr_seq ${SOURCES[3]} --leaf_seq ${SOURCES[0]} --outbase '+iqtree_basename_dir+'_inferred_tree --naive '+naiveID+' > ${TARGETS[2]}')
+                                    [phylip[0], phylip[1], phylip[2], iqtree[0], iqtree[1], colormap],
+                                    xarg + 'python '+repo_home+'/tool_integration/IQ-TREE/iqtree_tools.py ASR_parser --name '+setting_id+' --tree ${SOURCES[3]} --colormap ${SOURCES[5]} --idmap ${SOURCES[2]} --counts ${SOURCES[1]} --asr_seq ${SOURCES[4]} --leaf_seq ${SOURCES[0]} --outbase '+iqtree_basename_dir+'_inferred_tree --naive '+naiveID+' > ${TARGETS[2]}')
+        return_list.append(iqtree_infer)
 
 
 
@@ -191,7 +192,7 @@ if tool_dict['igphyml']:
                                            igphyml_basename_dir+'.phylip_igphyml_tree.txt_gy94.log'],
                                            [phylip[0], dedup_fasta[0]],
                                            # IgPhyML is a little silly in it's handling of outputs, therefore this copy hack:
-                                           'cp '+run_dir+'* '+igphyml_outdir+' && cd '+igphyml_outdir+' && '+buffarg+repo_home+'/tools/IgPhyML/igphyml -i ${SOURCES[0].file} -m GY -w M0 -t e --run_id gy94 > ${TARGETS[1].file}')
+                                           'cp '+run_dir+'*.phylip '+igphyml_outdir+' && cp '+run_dir+'*.fasta '+igphyml_outdir+' && cd '+igphyml_outdir+' && '+buffarg+repo_home+'/tools/IgPhyML/igphyml -i ${SOURCES[0].file} -m GY -w M0 -t e --run_id gy94 > ${TARGETS[1].file}')
 
     # Run IgPhyML with the HLP16 model using the GY94 tree topology as starting point:
     igphyml_opti = 'tlr -s'  # <--- can be changed to 'lr' or 'r'
@@ -220,8 +221,8 @@ if tool_dict['igphyml']:
     igphyml_infer = env.Command([igphyml_basename_dir+'_inferred_tree.p',
                                 igphyml_basename_dir+'_inferred_tree.tree',
                                 igphyml_outdir+'/igphyml_tools.log'],
-                                [naive_outgroup[0], phylip[1], run_ASR[0]],
-                                xarg + 'python '+repo_home+'/tool_integration/IgPhyML/igphyml_tools.py ASR_parser --tree ${SOURCES[0]} --counts ${SOURCES[1]} --asr_seq ${SOURCES[2]} --outbase '+igphyml_outbase+'_inferred_tree --naive '+naiveID+' > ${TARGETS[2]}')
+                                [naive_outgroup[0], phylip[1], run_ASR[0], colormap, phylip[2]],
+                                xarg + 'python '+repo_home+'/tool_integration/IgPhyML/igphyml_tools.py ASR_parser --name IgPhyML --tree ${SOURCES[0]} --counts ${SOURCES[1]} --asr_seq ${SOURCES[2]} --colormap ${SOURCES[3]} --idmap ${SOURCES[4]} --outbase '+igphyml_outbase+'_inferred_tree --naive '+naiveID+' > ${TARGETS[2]}')
     return_list.append(igphyml_infer)
 
 

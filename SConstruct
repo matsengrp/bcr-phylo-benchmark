@@ -180,7 +180,7 @@ if simulate:
 
     AddOption('--nsim',
               type='int',
-              default=10,
+              default=1,
               help='Number of simulations with each parameter parameter choice.')
     nsim = GetOption('nsim')
 
