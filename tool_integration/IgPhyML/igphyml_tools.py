@@ -29,7 +29,7 @@ def ASR_parser(args):
         import cPickle as pickle
     except:
         import pickle
-    from utils import CollapsedForest, CollapsedTree, hamming_distance
+    from GCutils import CollapsedForest, CollapsedTree, hamming_distance
 
     try:
         tree = Tree(args.tree)
@@ -75,11 +75,6 @@ def ASR_parser(args):
     # Dump tree as newick:
     igphyml_forest.write_random_tree(args.outbase+'.tree')
     print('number of trees with integer branch lengths:', igphyml_forest.n_trees)
-
-    # check for unifurcations at root
-    unifurcations = sum(tree.tree.frequency == 0 and len(tree.tree.children) == 1 for tree in igphyml_forest.forest)
-    if unifurcations:
-        print('WARNING: {} trees exhibit unifurcation from root, which is not possible under current model. Such nodes will be ommitted from likelihood calculation'.format(unifurcations))
 
     with open(args.outbase + '.p', 'wb') as f:
         pickle.dump(igphyml_forest, f)

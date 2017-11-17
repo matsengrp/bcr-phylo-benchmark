@@ -62,7 +62,7 @@ def infer(outdir, c):
     naiveID = 'naive'  # This is what the simulation routine names the naive
     converter = None   # No problem with weird fasta formating from the simulated data
     colormap = c['gc_sim'][4]
-    return SConscript('SConscript.inference', exports='env tool_dict quick idlabel fasta fasta2 outdir naiveID converter CommandRunner xarg buffarg colormap')
+    return SConscript('SConscript.inference', exports='env tool_dict quick idlabel fasta fasta2 outdir naiveID converter CommandRunner xarg buffarg colormap mutability substitution')
 
 @w.add_target()
 def validate(outdir, c):

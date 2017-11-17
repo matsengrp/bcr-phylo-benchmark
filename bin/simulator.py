@@ -22,7 +22,7 @@ try:
 except:
     import pickle
 
-from utils import hamming_distance, has_stop, translate, CollapsedTree
+from GCutils import hamming_distance, has_stop, translate, CollapsedTree
 import selection_utils
 
 scipy.seterr(all='raise')

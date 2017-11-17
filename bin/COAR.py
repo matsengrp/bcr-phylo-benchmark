@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import numpy as np
-from utils import hamming_distance
+from GCutils import hamming_distance
 from random import randint
 
 '''

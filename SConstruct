@@ -63,6 +63,20 @@ AddOption('--samm_rank',
            help='Use SAMM to rank dnapars trees.')
 samm_rank = GetOption('samm_rank')
 
+AddOption('--mutability',
+          type='string',
+          metavar='PATH',
+          default='S5F/Mutability.csv',
+          help='path to S5F mutability data')
+mutability = GetOption('mutability')
+
+AddOption('--substitution',
+          type='string',
+          metavar='PATH',
+          default='S5F/Substitution.csv',
+          help='path to S5F substitution data')
+substitution = GetOption('substitution')
+
 AddOption('--iqtree',
            action='store_true',
            help='Use IQ-TREE inference')
@@ -126,20 +140,6 @@ if simulate:
                       'TCTGTGACTACTGAGGACACAGCCACATATTACTGT',
               help='sequence of naive from which to simulate')
     naive = GetOption('naive')
-
-    AddOption('--mutability',
-              type='string',
-              metavar='PATH',
-              default='S5F/Mutability.csv',
-              help='path to S5F mutability data')
-    mutability = GetOption('mutability')
-
-    AddOption('--substitution',
-              type='string',
-              metavar='PATH',
-              default='S5F/Substitution.csv',
-              help='path to S5F substitution data')
-    substitution = GetOption('substitution')
 
     AddOption('--lambda',
               type='float',
@@ -241,7 +241,7 @@ elif inference:
               dest='fasta',
               type='string',
               action='append',
-              default=[],
+              default=['Victora_data/150228_Clone_3-8.fasta'],
               metavar='PATH',
               help='path to input fasta')
     fasta = GetOption('fasta')
@@ -279,5 +279,5 @@ if simulate and not GetOption('help'):
 elif inference and not GetOption('help'):
     if None in [fasta, outdir]:
         raise InputError('input fasta and outdir must be specified')
-    colormap = None  # Not available with inference 
-    SConscript('SConscript.inference', exports='env tool_dict quick idlabel fasta fasta2 outdir naiveID converter CommandRunner xarg buffarg colormap')
+    colormap = None  # Not available with inference
+    SConscript('SConscript.inference', exports='env tool_dict quick idlabel fasta fasta2 outdir naiveID converter CommandRunner xarg buffarg colormap mutability substitution')

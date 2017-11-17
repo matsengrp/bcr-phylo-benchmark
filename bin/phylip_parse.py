@@ -9,7 +9,7 @@ from ete3 import Tree
 import re, random
 from collections import defaultdict
 from Bio.Data.IUPACData import ambiguous_dna_values
-from utils import hamming_distance, CollapsedTree, CollapsedForest
+from GCutils import hamming_distance, CollapsedTree, CollapsedForest
 
 
 # iterate over recognized sections in the phylip output file.

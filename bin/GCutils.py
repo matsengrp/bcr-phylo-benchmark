@@ -1,5 +1,6 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
+from __future__ import absolute_import
 from Bio.Seq import Seq
 from Bio.Alphabet import generic_dna
 from ete3 import TreeNode, NodeStyle, TreeStyle, TextFace, CircleFace, PieChartFace, faces, SVG_COLORS
@@ -37,14 +38,18 @@ class CollapsedTree():
     Collapsed tree class from GCtree. Collapses an ete3 tree
     into a genotype collapsed tree based on hamming distance between node seqeunces.
     '''
-    def __init__(self, tree, name, params=None, collapse_syn=False, allow_repeats=False):
+    def __init__(self, tree, name, meta=None, collapse_syn=False, allow_repeats=False):
         '''
-        For intialization, either params or tree (or both) must be provided
-        params: offspring distribution parameters
+        meta: dictionary with key value pairs e.g. the likelihood of a given tree
         tree: ete tree with frequency node feature. If uncollapsed, it will be collapsed.
         '''
         self.tree = tree
         self.name = name
+        if meta is None:
+            self.meta = dict()
+        else:
+            assert(type(meta) == dict)
+            self.meta = meta
 
         # Collapse synonymous reads:
         if collapse_syn is True:
@@ -96,7 +101,7 @@ class CollapsedTree():
 
     def __str__(self):
         '''Return a string representation for printing.'''
-        return 'params = ' + str(self.params)+ '\ntree:\n' + str(self.tree)
+        return 'tree:\n' + str(self.tree)
 
     def render(self, outfile, idlabel=False, colormap=None, chain_split=None):
         '''Render to image file, filetype inferred from suffix, svg for color images'''
@@ -235,3 +240,8 @@ class CollapsedForest():
         assert outname[-5:] == '.tree'
         i = random.randint(0, self.n_trees - 1)
         self.forest[i].tree.write(outfile=outname)
+
+    def write_first_tree(self, outname):
+        '''Pick the first tree in the forest and write it in newick format.'''
+        assert outname[-5:] == '.tree'
+        self.forest[0].tree.write(outfile=outname)

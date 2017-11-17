@@ -11,7 +11,7 @@ import scipy
 from scipy.optimize import minimize, fsolve
 import matplotlib; matplotlib.use('agg')
 from matplotlib import pyplot as plt
-from utils import hamming_distance
+from GCutils import hamming_distance
 
 def calc_Kd(seqAA, targetAAseqs, hd2affy):
     '''Find the closest target sequence to and apply the "hamming distance to affinity" transformation function.'''

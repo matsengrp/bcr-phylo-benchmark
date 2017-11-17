@@ -60,7 +60,7 @@ def fasta_parse(aln_file, naive, aln_file2=None, converter=None):
     id_map = {naive.lower(): [x for x in seqs_unique_counts[naive_seq] if x != naive]}
     del seqs_unique_counts[naive_seq]  # Now delete the naive so it does not appear twice
     for i, seq in enumerate(seqs_unique_counts, 1):
-        new_id = 'seq'+str(i)
+        new_id = 'seq' + str(i)
         new_aln.append(SeqRecord(Seq(seq, generic_dna), id=new_id))
         counts[new_id] = len(seqs_unique_counts[seq])
         id_map[new_id] = seqs_unique_counts[seq]
