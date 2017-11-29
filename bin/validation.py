@@ -116,11 +116,7 @@ def main():
     parser.add_argument('true_tree', type=str, help='.p file containing true tree')
     parser.add_argument('true_tree_colormap', type=str, help='.tsv colormap file for true tree')
     parser.add_argument('forest_files', type=str, nargs='*', help='.p files containing forests from each inference method')
-    # Uncomment and insert into function calls to allow for these settings:
-    # parser.add_argument('--known_root', type=bool, default=True, help='This is root sequence known in the inferred phylogeny? If yes, the alignment is forced to end in the top left corner of the alignment grid.')
-    # parser.add_argument('--allow_double_gap', type=bool, default=False, help='Allow the Needleman-Wunsch algorithm to move freely and possibly introducing gaps in both true and inferred list under the same comparison.')
     parser.add_argument('--outbase', type=str, required=True, help='output file base name')
-    global args
     args = parser.parse_args()
 
     with open(args.true_tree, 'rb') as f:
@@ -129,10 +125,7 @@ def main():
     for forest_file in args.forest_files:
         with open(forest_file, 'rb') as f:
             forest = pickle.load(f)
-            if hasattr(forest, 'name'):
-                inferences[forest.name] = forest
-            else:
-                inferences['GCtree'] = forest
+            inferences[forest.name] = forest
     # now we rerender the inferred trees, but using colormap from true tree, makes visual comaprison easier
     true_tree_colormap = {} # map for tree sequences
     with open(args.true_tree_colormap, 'r') as f:

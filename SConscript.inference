@@ -73,7 +73,6 @@ dedup_fasta = env.Command([os.path.join(outdir, basename+'_dedup.fasta'),
 ### Run inference programs ###
 ##############################
 
-
 #############
 ### dnaml ###
 #############
@@ -140,12 +139,17 @@ if tool_dict['gctree']:
     gctree_outbase = os.path.join(gctree_outdir, 'gctree')
     idlabel_arg = ' --idlabel' if idlabel else ''
     #### --colormapfile  <-- add this option to produce nice colored trees.
-    gctree_infer = CommandRunner([gctree_outbase+'.inference.parsimony_forest.p',
-                                 gctree_outbase+'_inference.log'],
-                                 [dnapars[1], phylip[1]],
-                                 'cd '+gctree_outdir+' && '+xarg+buffarg+'python '+repo_home+'/tools/gctree/bin/gctree.py infer '+repo_home+'/${SOURCES[0]} '+repo_home+'/${SOURCES[1]} --naive '+naiveID+' --outbase gctree'+idlabel_arg+' > ${TARGETS[1].file}')
-    return_list.append(gctree_infer)
+    gctree_run = CommandRunner([gctree_outbase+'.inference.parsimony_forest.p',
+                                gctree_outbase+'_inference.log'],
+                               [dnapars[1], phylip[1]],
+                               'cd '+gctree_outdir+' && '+xarg+buffarg+'python '+repo_home+'/tools/gctree/bin/gctree.py infer '+repo_home+'/${SOURCES[0]} '+repo_home+'/${SOURCES[1]} --naive '+naiveID+' --outbase gctree'+idlabel_arg+' > ${TARGETS[1].file}')
 
+    gctree_infer = CommandRunner([gctree_outbase+'_inferred_tree.p',
+                                  gctree_outbase+'_inferred_tree.tree',
+                                  gctree_outbase+'_convertion.log'],
+                                 [gctree_run[0], phylip[2]],
+                                 xarg + 'python '+repo_home+'/tool_integration/GCtree/gctree_tools.py convert --name GCtree --forest ${SOURCES[0]} --idmap ${SOURCES[1]} '+colormap+' --outbase '+gctree_outbase+'_inferred_tree --naive '+naiveID+' > ${TARGETS[2]}')
+    return_list.append(gctree_infer)
 
 
 

@@ -239,7 +239,7 @@ class MutationModel():
                             progeny = poisson(lambda_min)
                         skip_lambda_n -= 1
                     n_children = progeny.rvs()
-                    leaves_unterminated += n_children - 1  # <-- this kills the parent if we drew a zero
+                    leaves_unterminated += n_children - 1  # <-- This kills the parent if we drew a zero
                     if not n_children:
                         leaf.terminated = True
                     for child_count in range(n_children):
@@ -390,7 +390,7 @@ def simulate(args):
             if args.selection:
                 collapsed_tree = CollapsedTree(tree=tree, name='GCsim selection', collapse_syn=False, allow_repeats=True)
             else:
-                collapsed_tree = CollapsedTree(tree=tree, name='GCsim neutral')  # <-- this will fail if backmutations
+                collapsed_tree = CollapsedTree(tree=tree, name='GCsim neutral')  # <-- This will fail if backmutations
             tree.ladderize()
             uniques = sum(node.frequency > 0 for node in collapsed_tree.tree.traverse())
             if uniques < 2:
@@ -426,7 +426,7 @@ def simulate(args):
                     f.write('>' + leaf.name + '\n')
                     f.write(leaf.sequence + '\n')
 
-    # some observable simulation stats to write
+    # Some observable simulation stats to write:
     frequency, distance_from_naive, degree = zip(*[(node.frequency,
                                                     hamming_distance(node.sequence, args.sequence),
                                                     sum(hamming_distance(node.sequence, node2.sequence) == 1 for node2 in collapsed_tree.tree.traverse() if node2.frequency and node2 is not node))
@@ -438,7 +438,7 @@ def simulate(args):
 
     print('{} simulated observed sequences'.format(sum(leaf.frequency for leaf in collapsed_tree.tree.traverse())))
 
-    # render the full lineage tree
+    # Render the full lineage tree:
     ts = TreeStyle()
     ts.rotation = 90
     ts.show_leaf_name = False
@@ -447,7 +447,7 @@ def simulate(args):
     colors = {}
     palette = SVG_COLORS
     palette -= set(['black', 'white', 'gray'])
-    palette = cycle(list(palette))  # <-- circular iterator
+    palette = cycle(list(palette))  # <-- Circular iterator
 
     # Either plot by DNA sequence or amino acid sequence:
     if args.plotAA and args.selection:

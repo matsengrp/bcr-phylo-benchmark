@@ -51,19 +51,28 @@ class CollapsedTree():
             assert(type(meta) == dict)
             self.meta = meta
 
+        self.tree = tree.copy()
+        tree.dist = 0  # no branch above root
+        # Remove unobserved internal unifurcations:
+        for node in self.tree.iter_descendants():
+            parent = node.up
+            if node.frequency == 0 and len(node.children) == 1:
+                node.delete(prevent_nondicotomic=False)
+                node.children[0].dist = hamming_distance(node.children[0].sequence, parent.sequence)
+
         # Collapse synonymous reads:
         if collapse_syn is True:
-            tree.dist = 0  # no branch above root
+            print('Collapsing synonymous reads')
+            tree.dist = 0  # No branch above root
             for node in tree.iter_descendants():
                 aa = translate(node.sequence)
                 aa_parent = translate(node.up.sequence)
                 node.dist = hamming_distance(aa, aa_parent)
 
-        self.tree = tree.copy()
         # iterate over the tree below root and collapse edges of zero length
         # if the node is a leaf and it's parent has nonzero frequency we combine taxa names to a set
         # this acommodates bootstrap samples that result in repeated genotypes
-        observed_genotypes = set((leaf.name for leaf in self.tree))
+        observed_genotypes = set((node.name for node in self.tree.traverse() if node.frequency > 0))
         observed_genotypes.add(self.tree.name)
         for node in self.tree.get_descendants(strategy='postorder'):
             if node.dist == 0:
@@ -81,7 +90,7 @@ class CollapsedTree():
                         node.up.name = node.up.name[0]
                 node.delete(prevent_nondicotomic=False)
 
-        final_observed_genotypes = set([name for node in self.tree.traverse() if node.frequency > 0 or node == self.tree for name in ((node.name,) if isinstance(node.name, str) else node.name)])
+        final_observed_genotypes = set([nam for node in self.tree.traverse() if node.frequency > 0 or node == self.tree for nam in ((node.name,) if isinstance(node.name, str) else node.name)])
         if final_observed_genotypes != observed_genotypes:
             raise RuntimeError('observed genotypes don\'t match after collapse\n\tbefore: {}\n\tafter: {}\n\tsymmetric diff: {}'.format(observed_genotypes, final_observed_genotypes, observed_genotypes ^ final_observed_genotypes))
         assert sum(node.frequency for node in tree.traverse()) == sum(node.frequency for node in self.tree.traverse())
