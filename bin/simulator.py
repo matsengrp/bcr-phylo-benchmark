@@ -119,9 +119,6 @@ class MutationModel():
         @param lambda0: a "baseline" mutation rate
         """
         sequence_length = len(sequence)
-        if has_stop(sequence):
-            raise RuntimeError('Sequence contains stop codon!')
-
         mutabilities = self.mutabilities(sequence)
         sequence_mutability = sum(mutability[0] for mutability in mutabilities)/sequence_length
         # Poisson rate for this sequence (given its relative mutability):
@@ -135,33 +132,25 @@ class MutationModel():
             if trial == trials:
                 raise RuntimeError('mutations saturating, consider reducing lambda0')
 
-        # Introduce mutations, if causing stop codon, try again, up to 10 times:
+        # Introduce mutations:
         unmutated_positions = range(sequence_length)
         for i in range(m):
-            sequence_list = list(sequence)  # make string a list so we can modify it
+            sequence_list = list(sequence)  # Make mutable
             # Determine the position to mutate from the mutability matrix:
             mutability_p = scipy.array([mutabilities[pos][0] for pos in unmutated_positions])
-            for trial in range(1, trials+1):
-                mut_pos = scipy.random.choice(unmutated_positions, p=mutability_p/mutability_p.sum())
-                # Now draw the target nucleotide using the substitution matrix
-                substitution_p = [mutabilities[mut_pos][1][n] for n in 'ACGT']
-                assert 0 <= abs(sum(substitution_p) - 1.) < 1e-10
-                chosen_target = scipy.random.choice(4, p=substitution_p)
-                original_base = sequence_list[mut_pos]
-                sequence_list[mut_pos] = 'ACGT'[chosen_target]
-                sequence = ''.join(sequence_list)  # reconstruct our sequence
-                # Break the loop if no stop codon:
-                if not has_stop(sequence):
-                    if self.mutation_order:
-                        # If mutation order matters, the mutabilities of the sequence need to be updated:
-                        mutabilities = self.mutabilities(sequence)
-                    if not self.with_replacement:
-                        # Remove this position so we don't mutate it again:
-                        unmutated_positions.remove(mut_pos)
-                    break
-                if trial == trials:
-                    raise RuntimeError('stop codon in simulated sequence on '+str(trials)+' consecutive attempts')
-                sequence_list[mut_pos] = original_base  # <-- we only get here if we are retrying
+            mut_pos = scipy.random.choice(unmutated_positions, p=mutability_p/mutability_p.sum())
+            # Now draw the target nucleotide using the substitution matrix
+            substitution_p = [mutabilities[mut_pos][1][n] for n in 'ACGT']
+            assert 0 <= abs(sum(substitution_p) - 1.) < 1e-10
+            chosen_target = scipy.random.choice(4, p=substitution_p)
+            sequence_list[mut_pos] = 'ACGT'[chosen_target]
+            sequence = ''.join(sequence_list)  # Reconstruct our string
+            if self.mutation_order:
+                # If mutation order matters, the mutabilities of the sequence need to be updated:
+                mutabilities = self.mutabilities(sequence)
+            if not self.with_replacement:
+                # Remove this position so we don't mutate it again:
+                unmutated_positions.remove(mut_pos)
         return sequence
 
     def one_mutant(self, sequence, Nmuts, lambda0=0.1):
@@ -178,7 +167,7 @@ class MutationModel():
                 mut_seq = self.mutate(mut_seq, lambda0=lambda0)
                 aa_mut = translate(mut_seq)
                 dist = hamming_distance(aa, aa_mut)
-            if dist == Nmuts:
+            if dist == Nmuts and '*' not in aa_mut:  # Stop codon cannot be part of the return
                 return aa_mut
             else:
                 trial -= 1
@@ -227,16 +216,15 @@ class MutationModel():
             tree.add_feature('Kd', selection_utils.calc_Kd(tree.AAseq, targetAAseqs, hd2affy))
             tree.add_feature('target_dist', min([hamming_distance(tree.AAseq, taa) for taa in targetAAseqs]))
 
-        t = 0  # <-- time
+        t = 0  # <-- Time at start
         leaves_unterminated = 1
         # Small lambdas are causing problems so make a minimum:
         lambda_min = 10e-10
         while leaves_unterminated > 0 and (leaves_unterminated < N if N is not None else True) and (t < max(T) if T is not None else True) and (stop_dist >= min(hd_distrib) if stop_dist is not None and t > 0 else True):
-            t += 1
             if verbose:
                 print('At time:', t)
-            skip_lambda_n = 0  # At every new round reset the all the lambdas
             t += 1
+            skip_lambda_n = 0  # At every new round reset the all the lambdas
             list_of_leaves = list(tree.iter_leaves())
             random.shuffle(list_of_leaves)
             for leaf in list_of_leaves:
@@ -287,20 +275,25 @@ class MutationModel():
                     print('Affinity of latest sampled leaf:', leaf.Kd)
                     print('Progeny distribution lambda for the latest sampled leaf:', leaf.lambda_)
 
+        if leaves_unterminated < N:
+            raise RuntimeError('Tree terminated with {} leaves, {} desired'.format(leaves_unterminated, N))
+
+        # Keep a histogram of the hamming distances at each generation:
         if selection_params is not None:
-            # Keep a histogram of the hamming distances at each generation:
             with open(outbase + '_selection_runstats.p', 'wb') as f:
                 pickle.dump(hd_generation, f)
 
-        if leaves_unterminated < N:
-            raise RuntimeError('tree terminated with {} leaves, {} desired'.format(leaves_unterminated, N))
+        # Report stop codon sequences:
+        stop_leaves = [leaf for leaf in tree.iter_descendants() if has_stop(leaf.sequence)]
+        if stop_leaves:
+            print('Tree contains {} nodes with stop codons, out of {} total'.format(len(stop_leaves), N))
 
         # Each leaf in final generation gets an observation frequency of 1, unless downsampled:
         if T is not None and len(T) > 1:
             # Iterate the intermediate time steps:
             for Ti in sorted(T)[:-1]:
                 # Only sample those that have been 'sampled' at intermediate sampling times:
-                final_leaves = [leaf for leaf in tree.iter_descendants() if leaf.time == Ti and leaf.sampled]
+                final_leaves = [leaf for leaf in tree.iter_descendants() if leaf.time == Ti and leaf.sampled and not has_stop(leaf.sequence)]
                 if len(final_leaves) < n:
                     raise RuntimeError('tree terminated with {} leaves, less than what desired after downsampling {}'.format(leaves_unterminated, n))
                 for leaf in final_leaves:  # No need to down-sample, this was already done in the simulation loop
@@ -308,7 +301,7 @@ class MutationModel():
         if selection_params and max(T) != t:
             raise RuntimeError('tree terminated with before the requested sample time.')
         # Do the normal sampling of the last time step:
-        final_leaves = [leaf for leaf in tree.iter_leaves() if leaf.time == t]
+        final_leaves = [leaf for leaf in tree.iter_leaves() if leaf.time == t and not has_stop(leaf.sequence)]
         # By default, downsample to the target simulation size:
         if n is not None and len(final_leaves) >= n:
             for leaf in random.sample(final_leaves, n):

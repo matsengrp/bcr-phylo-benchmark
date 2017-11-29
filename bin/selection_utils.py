@@ -15,7 +15,10 @@ from GCutils import hamming_distance
 
 def calc_Kd(seqAA, targetAAseqs, hd2affy):
     '''Find the closest target sequence to and apply the "hamming distance to affinity" transformation function.'''
-    hd = min([hamming_distance(seqAA, t) for t in targetAAseqs])
+    if '*' in seqAA:  # Non-sense sequences have zero affinity (zero affinty meaning infinity Kd)
+        return(float('inf'))
+    else:
+        hd = min([hamming_distance(seqAA, t) for t in targetAAseqs])
     return(hd2affy(hd))
 
 def lambda_selection(node, tree, targetAAseqs, hd2affy, A_total, B_total, Lp):

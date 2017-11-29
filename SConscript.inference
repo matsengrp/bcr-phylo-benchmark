@@ -236,8 +236,8 @@ if tool_dict['igphyml']:
                             'cd '+igphyml_outdir+' && '+buffarg+'perl '+repo_home+'/tool_integration/IgPhyML/ancReconstructHLP16.pl PLACEHOLDER_CONFIG_FILE -rooted 1 -length D -stats ${SOURCES[0].file} -tree ${SOURCES[1].file} -seqfile ${SOURCES[2].file} -outdir . -stem '+basename+' -rootid '+naiveID+' -igphyml '+igphyml_dir+'> ${TARGETS[1].file}')
 
     # Convert the ASR output to a collapsed forest with an ete3 tree and pickle it:
-    igphyml_infer = env.Command([igphyml_basename_dir+'_inferred_tree.p',
-                                igphyml_basename_dir+'_inferred_tree.tree',
+    igphyml_infer = env.Command([igphyml_outbase+'_inferred_tree.p',
+                                igphyml_outbase+'_inferred_tree.tree',
                                 igphyml_outdir+'/igphyml_tools.log'],
                                 [naive_outgroup[0], phylip[1], run_ASR[0], phylip[2]],
                                 xarg + 'python '+repo_home+'/tool_integration/IgPhyML/igphyml_tools.py ASR_parser --name IgPhyML --tree ${SOURCES[0]} --counts ${SOURCES[1]} --asr_seq ${SOURCES[2]} --idmap ${SOURCES[3]} '+colormap+' --outbase '+igphyml_outbase+'_inferred_tree --naive '+naiveID+' > ${TARGETS[2]}')

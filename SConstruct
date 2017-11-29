@@ -162,13 +162,13 @@ if simulate:
     AddOption('--n',
               type='int',
               default=None,
-              help='cells downsampled')
+              help='Cells downsampled.')
     n = GetOption('n')
 
     AddOption('--N',
               type='int',
-              default=100,
-              help='Simulation size (number of cells observerved)')
+              default=None,
+              help='Simulation size (number of cells observerved).')
     N = GetOption('N')
 
     AddOption('--T',
@@ -237,20 +237,6 @@ if simulate:
         selection_param = None
 
 elif inference:
-    AddOption('--fasta',
-              dest='fasta',
-              type='string',
-              action='append',
-              default=['Victora_data/150228_Clone_3-8.fasta'],
-              metavar='PATH',
-              help='path to input fasta')
-    fasta = GetOption('fasta')
-    if len(fasta) == 1:
-        fasta = fasta[0]
-        fasta2 = None
-    else:
-        fasta, fasta2 = fasta
-
     AddOption('--naiveID',
               type='string',
               metavar='seqID',
@@ -263,6 +249,23 @@ elif inference:
               default=None,
               help='Converter to convert input fasta format e.g. the Victora lab GC fasta format')
     converter = GetOption('converter')
+
+    AddOption('--fasta',
+              dest='fasta',
+              type='string',
+              action='append',
+              default=['Victora_data/150228_Clone_3-8.fasta'],
+              metavar='PATH',
+              help='path to input fasta')
+    fasta = GetOption('fasta')
+    if len(fasta) == 1:
+        fasta = fasta[0]
+        fasta2 = None
+        # Hard-code the Tas. data converter:
+        if fasta == 'Victora_data/150228_Clone_3-8.fasta':
+            converter = 'tas'
+    else:
+        fasta, fasta2 = fasta
 
 # Require the naive ID to be lower case because of downstream software compatability:
 if naiveIDexp != naiveIDexp.lower() or naiveID != naiveID.lower():
