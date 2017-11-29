@@ -29,16 +29,19 @@ aggdat.to_csv(args.outbase+'.tsv', sep='\t', index=False)
 
 plt.figure()
 df1 = pd.melt(aggdat.ix[:, aggdat.columns != 'N_taxa'], id_vars=['method'], var_name='metric')
-sns.factorplot(x="method", y="value", col="metric", col_wrap=2,
-                   data=df1, kind="swarm", size=3, aspect=.8, sharey=False)
+p = sns.factorplot(x="method", y="value", col="metric", col_wrap=2,
+                   data=df1, kind="swarm", size=6, aspect=.65, sharey=False)
+p.set_xticklabels(rotation=30)
 plt.savefig(args.outbase+'.pdf')
 
-sns.factorplot(x="method", y="value", col="metric", col_wrap=2,
-                   data=df1, kind="box", size=3, aspect=.8, sharey=False)
+p = sns.factorplot(x="method", y="value", col="metric", col_wrap=2,
+                   data=df1, kind="box", size=6, aspect=.65, sharey=False)
+p.set_xticklabels(rotation=30)
 plt.savefig(args.outbase+'_box.pdf')
 
-sns.factorplot(x="method", y="value", col="metric", col_wrap=2,
-                   data=df1, kind="violin", size=3, aspect=.8, sharey=False)
+p = sns.factorplot(x="method", y="value", col="metric", col_wrap=2,
+                   data=df1, kind="violin", size=6, aspect=.65, sharey=False)
+p.set_xticklabels(rotation=30)
 plt.savefig(args.outbase+'_violin.pdf')
 
 plt.figure()
