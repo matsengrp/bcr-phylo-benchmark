@@ -247,25 +247,19 @@ elif inference:
     AddOption('--converter',
               type='string',
               default=None,
-              help='Converter to convert input fasta format e.g. the Victora lab GC fasta format')
+              help='Converter to convert input fasta format e.g. the Victora lab GC fasta format.')
     converter = GetOption('converter')
 
     AddOption('--fasta',
               dest='fasta',
               type='string',
-              action='append',
-              default=['Victora_data/150228_Clone_3-8.fasta'],
+              default='Victora_data/150228_Clone_3-8.fasta',
               metavar='PATH',
-              help='path to input fasta')
+              help='Path to input fasta.')
     fasta = GetOption('fasta')
-    if len(fasta) == 1:
-        fasta = fasta[0]
-        fasta2 = None
-        # Hard-code the Tas. data converter:
-        if fasta == 'Victora_data/150228_Clone_3-8.fasta':
-            converter = 'tas'
-    else:
-        fasta, fasta2 = fasta
+    # Hard-code the Tas. data converter:
+    if fasta == 'Victora_data/150228_Clone_3-8.fasta':
+        converter = 'tas'
 
 # Require the naive ID to be lower case because of downstream software compatability:
 if naiveIDexp != naiveIDexp.lower() or naiveID != naiveID.lower():
@@ -283,4 +277,4 @@ elif inference and not GetOption('help'):
     if None in [fasta, outdir]:
         raise InputError('input fasta and outdir must be specified')
     colormap = None  # Not available with inference
-    SConscript('SConscript.inference', exports='env tool_dict quick idlabel fasta fasta2 outdir naiveID converter CommandRunner xarg buffarg colormap mutability substitution')
+    SConscript('SConscript.inference', exports='env tool_dict quick idlabel fasta outdir naiveID converter CommandRunner xarg buffarg colormap mutability substitution')

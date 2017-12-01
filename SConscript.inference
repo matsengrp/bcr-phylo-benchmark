@@ -14,7 +14,7 @@ this_sconscript_file = (lambda x:x).func_code.co_filename
 repo_home = os.path.dirname(this_sconscript_file)  # <- this is the directory where the file lives
 
 # the following must be exported by parent SConstruct/SConscript
-Import('env tool_dict quick idlabel fasta fasta2 outdir naiveID converter CommandRunner xarg buffarg colormap mutability substitution')
+Import('env tool_dict quick idlabel fasta outdir naiveID converter CommandRunner xarg buffarg colormap mutability substitution')
 
 def delete_on_failure():
     from SCons.Script import GetBuildFailures
@@ -72,6 +72,9 @@ dedup_fasta = env.Command([os.path.join(outdir, basename+'_dedup.fasta'),
 ##############################
 ### Run inference programs ###
 ##############################
+
+print tool_dict
+print fasta
 
 #############
 ### dnaml ###
@@ -248,4 +251,5 @@ if tool_dict['igphyml']:
     return_list.append(igphyml_infer)
 
 
+print return_list
 Return('return_list')
