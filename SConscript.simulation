@@ -71,7 +71,7 @@ def validate(outdir, c):
     if tool_dict['gctree']:
         outputs.append(os.path.join(outdir, 'validation_gctree.tsv')) # <-- special gctree output evaluating parsimony tree ranking
     tgt = CommandRunner(outputs,
-                   [c['gc_sim'][2:4]] + [x[0] for x in c['infer']],
+                   [c['gc_sim'][2:4]] + [x[0] for x in c['infer'][1:]],  # <--- Notice the first instance is skipped (this is the phylip run)
                     xarg + buffarg + 'python bin/validation.py $SOURCES --outbase '+os.path.join(outdir, 'validation')+' > ${TARGETS[1]}')
     c['agg'].append(tgt[0])
     return tgt

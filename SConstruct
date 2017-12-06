@@ -29,6 +29,10 @@ AddOption('--simulate',
           action='store_true',
           help='Validation subprogram, instead of inference')
 simulate = GetOption('simulate')
+AddOption('--exp_data_test',
+          action='store_true',
+          help='Validation subprogram on experimental data e.g. isotype and paired heavy/light chain sequences.')
+exp_data_test = GetOption('exp_data_test')
 AddOption('--srun',
           action='store_true',
           help='Should jobs be submitted with srun?')
@@ -119,12 +123,12 @@ buffarg = 'stdbuf -oL ' if GetOption('nobuff') else ''
 if len([True for v in tool_dict.values() if v]) == 0 and not GetOption('help'):
     raise Exception('must set at least one inference method')
 
-if not simulate and not inference and not GetOption('help'):
-    raise Exception('Please provide one of the required arguments. Either "--inference" or "--simulate".'
+if not simulate and not inference and not exp_data_test and not GetOption('help'):
+    raise Exception('Please provide one of the required arguments. Either "--inference", "--simulate" or "--exp_data_test".'
                      'Command line help can then be evoked by "-h" or "--help" and found in the bottom'
                      'of the output under "Local Options".')
 
-# Defailt naive IDs:
+# Default naive IDs:
 naiveIDexp = 'naive0'
 naiveID = 'naive'
 
@@ -236,6 +240,18 @@ if simulate:
     else:
         selection_param = None
 
+elif exp_data_test:
+    AddOption('--exp_data',
+              type='string',
+              help='Experimental data in CSV format containing isotype and/or chain pairing information.')
+    exp_data = GetOption('exp_data')
+
+    AddOption('--naiveIDexp',
+              type='string',
+              default='naive',
+              help='Id of naive seq in the experimental data CSV file. Must be lowercase. If not correct in file.')
+    naiveIDexp = GetOption('naiveIDexp')
+
 elif inference:
     AddOption('--naiveID',
               type='string',
@@ -261,8 +277,8 @@ elif inference:
     if fasta == 'Victora_data/150228_Clone_3-8.fasta':
         converter = 'tas'
 
-# Require the naive ID to be lower case because of downstream software compatability:
-if naiveIDexp != naiveIDexp.lower() or naiveID != naiveID.lower():
+# Require the naive ID to be lower case and 10 characters or less, because of downstream software compatability:
+if naiveIDexp != naiveIDexp.lower() or naiveID != naiveID.lower() or len(naiveIDexp) > 10 or len(naiveID) > 10:
     raise InputError('Naive id must be lowercase.')
 
 
@@ -273,6 +289,11 @@ if simulate and not GetOption('help'):
         raise InputError('Outdir must be specified.')
     SConscript('SConscript.simulation',
                exports='env tool_dict quick idlabel outdir naive mutability substitution lambda_list lambda0_list n N T nsim CommandRunner experimental_list naiveIDexp selection_param xarg buffarg')
+if exp_data_test and not GetOption('help'):
+    if None in [outdir, exp_data]:
+        raise InputError('Both outdir and exp_data must be specified.')
+    SConscript('SConscript.exp_data_test',
+               exports='env tool_dict quick idlabel outdir exp_data naiveIDexp mutability substitution CommandRunner xarg buffarg')
 elif inference and not GetOption('help'):
     if None in [fasta, outdir]:
         raise InputError('input fasta and outdir must be specified')

@@ -61,6 +61,7 @@ phylip = env.Command([run_dir+'.phylip',
                       run_dir+'_idmap.p'],
                       [fasta],
                       'python bin/fasta2phylip.py ${SOURCES[0]} --countfile ${TARGETS[1]} --idmapfile '+run_dir+' --naive '+naiveID+converter_arg+' > ${TARGETS[0]}')
+return_list.append(phylip)
 
 # Need the dedup phy as fa for ASR:
 dedup_fasta = env.Command([os.path.join(outdir, basename+'_dedup.fasta'),
