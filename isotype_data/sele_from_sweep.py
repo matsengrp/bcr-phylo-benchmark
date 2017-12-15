@@ -1,7 +1,10 @@
 
-sweep = 'sweep_res.txt'
+# sweep = 'sweep_res.txt'
+sweep = 'finalset.txt'
+
 CFs = 'isotype_validation.csv'
-CFs_sweep = 'isotype_validation_sweep.csv'
+# CFs_sweep = 'isotype_validation_sweep.csv'
+CFs_sweep = 'isotype_validation_finalset.csv'
 
 sweep_set = set()
 with open(sweep) as fh:
