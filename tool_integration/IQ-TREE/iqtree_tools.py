@@ -86,6 +86,7 @@ def ASR_parser(args):
 def map_asr_to_tree(asr_seq, leaf_seq, tree, naiveID, counts):
     '''Takes a IQ-TREE asr states and returns the matching ete3 tree node.'''
 
+    DNA_order = {0: 'A', 1: 'C', 2: 'G', 3: 'T'}
     # Parse input sequences:
     leafs = list(SeqIO.parse(leaf_seq, "phylip"))
     leafs = {r.id: str(r.seq).upper() for r in leafs}
@@ -102,7 +103,14 @@ def map_asr_to_tree(asr_seq, leaf_seq, tree, naiveID, counts):
                 state = l.strip().split()
                 if state[0] not in node_seqs:
                     node_seqs[state[0]] = list()
-                node_seqs[state[0]].append(state[2])
+                max_prop = max(map(float, state[3:7]))
+                MAP_base = set([DNA_order[i] for i, p in enumerate(map(float, state[3:7])) if p == max_prop])
+                if state[2] in MAP_base:
+                    node_seqs[state[0]].append(state[2])
+                elif state[2] == '-':
+                    node_seqs[state[0]].append(MAP_base.pop())
+                else:
+                    raise Exception('Sequence reconstruction by IQTREE is inconsistent: {}'.format(l))
                 assert(len(node_seqs[state[0]]) == int(state[1]))
     node_seqs = {k: ''.join(v) for k, v in node_seqs.items()}
 
