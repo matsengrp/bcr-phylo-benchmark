@@ -74,9 +74,6 @@ dedup_fasta = env.Command([os.path.join(outdir, basename+'_dedup.fasta'),
 ### Run inference programs ###
 ##############################
 
-print tool_dict
-print fasta
-
 #############
 ### dnaml ###
 #############
@@ -252,5 +249,4 @@ if tool_dict['igphyml']:
     return_list.append(igphyml_infer)
 
 
-print return_list
 Return('return_list')

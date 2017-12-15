@@ -283,11 +283,6 @@ class MutationModel():
             with open(outbase + '_selection_runstats.p', 'wb') as f:
                 pickle.dump(hd_generation, f)
 
-        # Report stop codon sequences:
-        stop_leaves = [leaf for leaf in tree.iter_descendants() if has_stop(leaf.sequence)]
-        if stop_leaves:
-            print('Tree contains {} nodes with stop codons, out of {} total'.format(len(stop_leaves), N))
-
         # Each leaf in final generation gets an observation frequency of 1, unless downsampled:
         if T is not None and len(T) > 1:
             # Iterate the intermediate time steps:
@@ -302,11 +297,18 @@ class MutationModel():
             raise RuntimeError('tree terminated with before the requested sample time.')
         # Do the normal sampling of the last time step:
         final_leaves = [leaf for leaf in tree.iter_leaves() if leaf.time == t and not has_stop(leaf.sequence)]
+        # Report stop codon sequences:
+        stop_leaves = [leaf for leaf in tree.iter_descendants() if has_stop(leaf.sequence)]
+        if stop_leaves:
+            print('Tree contains {} nodes with stop codons, out of {} total at last time point.'.format(len(stop_leaves), len(final_leaves)))
+
         # By default, downsample to the target simulation size:
         if n is not None and len(final_leaves) >= n:
             for leaf in random.sample(final_leaves, n):
                 leaf.frequency = 1
         elif n is None and N is not None:
+            if len(final_leaves) < N:  # Removed nonsense sequences might decrease the number of final leaves to less than N
+                N = len(final_leaves)
             for leaf in random.sample(final_leaves, N):
                 leaf.frequency = 1
         elif N is None and T is not None:

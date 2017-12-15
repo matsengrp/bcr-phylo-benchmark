@@ -24,6 +24,12 @@ except:
         return sum(x != y for x, y in zip(seq1, seq2))
     print('Couldn\'t find the python module "jellyfish" which is used for fast string comparison. Falling back to pure python function.')
 
+global ISO_TYPE_ORDER
+global ISO_TYPE_charORDER
+global ISO_SHORT
+ISO_TYPE_ORDER = {'IgM': 1, 'IgD': 1, 'IgG': 2, 'IgGA': 2, 'IgGb': 2, 'IgE': 3, 'IgA': 4}
+ISO_TYPE_charORDER = {'M': 1, 'D': 2, 'G': 3, 'E': 4, 'A': 5}
+ISO_SHORT = {'IgM': 'M', 'IgD': 'D', 'IgG': 'G', 'IgGA': 'G', 'IgGb': 'G', 'IgE': 'E', 'IgA': 'A'}
 
 def translate(seq):
     return str(Seq(seq[:], generic_dna).translate())
@@ -112,13 +118,17 @@ class CollapsedTree():
         '''Return a string representation for printing.'''
         return 'tree:\n' + str(self.tree)
 
-    def render(self, outfile, idlabel=False, colormap=None, chain_split=None):
+    def render(self, outfile, idlabel=False, isolabel=False, colormap=None, chain_split=None):
         '''Render to image file, filetype inferred from suffix, svg for color images'''
         def my_layout(node):
             circle_color = 'lightgray' if colormap is None or node.name not in colormap else colormap[node.name]
             text_color = 'black'
             if isinstance(circle_color, str):
-                C = CircleFace(radius=max(3, 10*scipy.sqrt(node.frequency)), color=circle_color, label={'text':str(node.frequency), 'color':text_color} if node.frequency > 0 else None)
+                if isolabel and hasattr(node, 'isotype'):
+                    nl = ''.join(sorted(set([ISO_SHORT[iss] for iss in node.isotype]), key=lambda x: ISO_TYPE_charORDER[x]))
+                else:
+                    nl = str(node.frequency)
+                C = CircleFace(radius=max(3, 10*scipy.sqrt(node.frequency)), color=circle_color, label={'text': nl, 'color': text_color} if node.frequency > 0 else None)
                 C.rotation = -90
                 C.hz_align = 1
                 faces.add_face_to_node(C, node, 0)
@@ -134,6 +144,16 @@ class CollapsedTree():
                 T.rotation = -90
                 T.hz_align = 1
                 faces.add_face_to_node(T, node, 1 if isinstance(circle_color, str) else 2, position='branch-right')
+            elif isolabel and hasattr(node, 'isotype') and False:
+                iso_name = ''.join(sorted(set([ISO_SHORT[iss] for iss in node.isotype]), key=lambda x: ISO_TYPE_charORDER[x]))
+                #T = TextFace(iso_name, tight_text=True, fsize=6)
+                #T.rotation = -90
+                #T.hz_align = 1
+                #faces.add_face_to_node(T, node, 1 if isinstance(circle_color, str) else 2, position='branch-right')
+                C = CircleFace(radius=max(3, 10*scipy.sqrt(node.frequency)), color=circle_color, label={'text':iso_name, 'color':text_color} if node.frequency > 0 else None)
+                C.rotation = -90
+                C.hz_align = 1
+                faces.add_face_to_node(C, node, 0)
         for node in self.tree.traverse():
             nstyle = NodeStyle()
             nstyle['size'] = 0

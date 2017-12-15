@@ -16,6 +16,10 @@ except:
     import pickle
 import os, sys
 
+global ISO_TYPE_ORDER
+ISO_TYPE_ORDER = [set(['IgM', 'IgD']), set(['IgG', 'IgGA', 'IgGb']), set(['IgE']), set(['IgA'])]
+global ALL_ISO_TYPE
+ALL_ISO_TYPE = set(['IgM', 'IgD', 'IgG', 'IgGA', 'IgGb', 'IgE', 'IgA'])
 
 def map_meta(args):
     # Read trees:
@@ -44,16 +48,20 @@ def map_meta(args):
                         meta = seq_info_dict[name]
                         abundance += meta['abundance']
                         iso_set |= set(meta['iso_set'])
+                        assert(iso_set & ALL_ISO_TYPE == iso_set)  # All isotypes must be in the known set
                         if chain is None:
                             chain = meta['chain']
                         else:
                             assert(meta['chain'] == chain)
-
-                    node.frequency = abundance
+                    # IgM at the root:
+                    if node.up is None:
+                        iso_set |= set(['IgM'])
+                    node.frequency += abundance - 1  # No double counting if seen just once
                     node.add_feature('isotype', iso_set)
                     node.add_feature('chain', chain)
-                    node.name = name
-        with open(fnam, 'wb') as f:
+                    node.name = name[:-6]  # trim off _heavy or _light from the name
+        forest.forest[0].render(fnam[:-2] + '_meta.svg', isolabel=True)
+        with open(fnam[:-2]+'_meta'+fnam[-2:], 'wb') as f:
             pickle.dump(forest, f)
 
 
