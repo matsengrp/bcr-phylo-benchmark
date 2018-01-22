@@ -39,7 +39,14 @@ def tree_rank(args):
 
     tree_loglik_list = list()
     for tree_obj in forest:
-        tree_loglik = likelihood_of_tree_from_shazam(tree_obj.tree, mutability_file=args.mutability_file, substitution_file=args.substitution_file)
+        # Prune tips on tree to max 5 nt. distance to its parent node:
+        pruned_tree = tree_obj.tree.copy(method='deepcopy')
+        for leaf in pruned_tree.iter_leaves():
+            if leaf.dist > 5:
+                leaf.delete(prevent_nondicotomic=False)
+        print('Before pruning:', tree_obj.tree)
+        print('After pruning:', pruned_tree)
+        tree_loglik = likelihood_of_tree_from_shazam(pruned_tree, mutability_file=args.mutability_file, substitution_file=args.substitution_file)
         # print(tree_loglik)
         tree_obj.meta['tree_loglik'] = tree_loglik
         tree_loglik_list.append((tree_loglik, tree_obj))
@@ -72,6 +79,14 @@ def tree_rank(args):
 
     # Render best tree:
     sorted_forest_obj.forest[0].render(args.outbase + '_first.svg', colormap=colormap)
+    import copy
+    sorted_forest_obj_pruned = copy.deepcopy(sorted_forest_obj)
+    # Prune tips on tree to max 5 nt. distance to its parent node:
+    for leaf in sorted_forest_obj_pruned.forest[0].tree.iter_leaves():
+        if leaf.dist > 5:
+            leaf.delete(prevent_nondicotomic=False)
+    sorted_forest_obj_pruned.forest[0].render(args.outbase + '_first_pruned.svg', colormap=colormap) 
+
     # Dump tree as newick:
     sorted_forest_obj.write_first_tree(args.outbase+'.tree')
     print('number of trees with integer branch lengths:', sorted_forest_obj.n_trees)
