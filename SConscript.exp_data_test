@@ -58,8 +58,8 @@ w = SConsWrap(nest, outdir, alias_environment=env)
 
 
 # Initialize our first nest level:
-w.add('clone', cloneID_list)
 w.add_aggregate('agg', list) # <-- for aggregating inference result from repeated simulations with the same parameters
+w.add('clone', cloneID_list)
 
 try:
     os.mkdir(outdir)
@@ -201,10 +201,6 @@ w.pop('clone')
 
 
 
-
-
-
-"""
 @w.add_target()
 def inner_aggregate(outdir, c):
     '''aggregate validation results'''
@@ -214,16 +210,5 @@ def inner_aggregate(outdir, c):
                       buffarg + 'python bin/validaggreg_compare.py $SOURCES --outbase '+os.path.join(outdir, 'validaggreg')+' > ${TARGETS[1]}')
     env.AlwaysBuild(tgt)
     return tgt
-"""
-
-
-
-
-
-
-
-
-
-
 
 
