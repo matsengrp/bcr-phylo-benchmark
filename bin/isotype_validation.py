@@ -22,10 +22,33 @@ import seaborn as sns
 sns.set(style='white', color_codes=True)
 import os, sys
 import numpy as np
+from random import shuffle
 
 global ISO_TYPE_ORDER
 #ISO_TYPE_ORDER = [set(['IgM', 'IgD']), set(['IgG', 'IgGA', 'IgGb']), set(['IgE']), set(['IgA'])]
 ISO_TYPE_ORDER = {'IgM': 1, 'IgD': 1, 'IgG': 2, 'IgGA': 2, 'IgGb': 2, 'IgE': 3, 'IgA': 4}
+
+
+
+def count_misplacements(tree):
+    misplaced = 0
+    # Iterate leaves:
+    for leaf in tree.iter_leaves():
+        iso_order_child = min([ISO_TYPE_ORDER[iso] for iso in leaf.isotype])
+        while leaf.up:
+            # Isotypes are inherited by decendents if internal node is infered:
+            if hasattr(leaf, 'isotype'):
+                iso_order_child = min([ISO_TYPE_ORDER[iso] for iso in leaf.isotype])
+            if hasattr(leaf.up, 'isotype'):
+                iso_order_parent = min([ISO_TYPE_ORDER[iso] for iso in leaf.up.isotype])
+            else:
+                iso_order_parent = iso_order_child
+            # Going down the tree isotype order must either increase or stay constant,
+            # otherwise there is a misplacement:
+            if iso_order_child < iso_order_parent:
+                misplaced += 1 / len(list(leaf.iter_leaves()))
+            leaf = leaf.up
+    return misplaced
 
 
 def validate(heavy, light, outbase):
@@ -38,36 +61,33 @@ def validate(heavy, light, outbase):
     iso_error2 = list()
     for f in heavy:
         tree = f.forest[0].tree
-        #### Introduce an IgA just above the root:
+        #### Introduce an IgA just above the root (for debugging):
         #node_over_naive = list(tree.traverse())[2]
         #node_over_naive.add_feature('isotype', set(['IgA']))
         #print(node_over_naive)
         ####
-        misplaced = 0
-        Ntips = 0
-        # Iterate leaves:
-        for leaf in tree.iter_leaves():
-            iso_order_child = min([ISO_TYPE_ORDER[iso] for iso in leaf.isotype])
-            while leaf.up:
-                # Isotypes are inherited by decendents if internal node is infered:
-                if hasattr(leaf, 'isotype'):
-                    iso_order_child = min([ISO_TYPE_ORDER[iso] for iso in leaf.isotype])
-                if hasattr(leaf.up, 'isotype'):
-                    iso_order_parent = min([ISO_TYPE_ORDER[iso] for iso in leaf.up.isotype])
-                else:
-                    iso_order_parent = iso_order_child
-                # Going down the tree isotype order must either increase or stay constant,
-                # otherwise there is a misplacement:
-                if iso_order_child < iso_order_parent:
-                    misplaced += 1
-                Ntips += 1
-                leaf = leaf.up
-        tree.add_feature('isotype_misplacement_score', misplaced)
+        misplaced = count_misplacements(tree)
+        Ntips = len(list(tree.iter_leaves()))
+        misplaced_baseline = 0
+        baseline_iterations = 10000
+        # Do 10000 iterations of label shuffling to calculate
+        # the expected number of misplacements with random label order:
+        for i in range(baseline_iterations):
+            tree_cp = tree.copy(method='deepcopy')
+            iso_list = [n.isotype for n in tree_cp.iter_descendants() if hasattr(n, 'isotype')]
+            shuffle(iso_list)
+            for n in tree_cp.iter_descendants():
+                if hasattr(n, 'isotype'):
+                    n.isotype = iso_list.pop()
+            assert(len(iso_list) == 0)
+            sc = count_misplacements(tree_cp)
+#            f.forest[0].tree = tree_cp
+#            f.forest[0].render('eaxample'+str(sc)+'.svg', isolabel=True)
+            misplaced_baseline += sc
+        misplaced_baseline /= baseline_iterations
+        tree.add_feature('isotype_misplacement_score', misplaced / misplaced_baseline)
         iso_error1.append(misplaced)
-        if Ntips > 0:
-            iso_error2.append(misplaced / Ntips)
-        else:
-            iso_error2.append(0)
+        iso_error2.append(misplaced / misplaced_baseline)
 
     pairing_error = list()
     if light:
@@ -98,9 +118,9 @@ def main():
     heavy = list()
     light = list()
     for f in args.forests:
-        if '/heavy/' in f:
+        if 'heavy/' in f:
             heavy.append(f)
-        elif '/light/' in f:
+        elif 'light/' in f:
             light.append(f)
         else:
             raise Exception('No chain tag found in path.')
