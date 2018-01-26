@@ -145,6 +145,12 @@ if simulate:
               help='sequence of naive from which to simulate')
     naive = GetOption('naive')
 
+    AddOption('--random_naive',
+              type='string',
+              default=None,
+              help='Fasta file with naive sequences from which to draw a random sequence to use as naive.')
+    random_naive = GetOption('random_naive')
+
     AddOption('--lambda',
               type='float',
               action='append',
@@ -269,12 +275,12 @@ elif inference:
     AddOption('--fasta',
               dest='fasta',
               type='string',
-              default='Victora_data/150228_Clone_3-8.fasta',
+              default='sequence_data/150228_Clone_3-8.fasta',
               metavar='PATH',
               help='Path to input fasta.')
     fasta = GetOption('fasta')
     # Hard-code the Tas. data converter:
-    if fasta == 'Victora_data/150228_Clone_3-8.fasta':
+    if fasta == 'sequence_data/150228_Clone_3-8.fasta':
         converter = 'tas'
 
 # Require the naive ID to be lower case and 10 characters or less, because of downstream software compatability:
@@ -288,7 +294,7 @@ if simulate and not GetOption('help'):
     if outdir is None:
         raise InputError('Outdir must be specified.')
     SConscript('SConscript.simulation',
-               exports='env tool_dict quick idlabel outdir naive mutability substitution lambda_list lambda0_list n N T nsim CommandRunner experimental_list naiveIDexp selection_param xarg buffarg')
+               exports='env tool_dict quick idlabel outdir naive random_naive mutability substitution lambda_list lambda0_list n N T nsim CommandRunner experimental_list naiveIDexp selection_param xarg buffarg')
 if exp_data_test and not GetOption('help'):
     if None in [outdir, exp_data]:
         raise InputError('Both outdir and exp_data must be specified.')

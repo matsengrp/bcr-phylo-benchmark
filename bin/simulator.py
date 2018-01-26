@@ -350,7 +350,13 @@ def simulate(args):
     mutation_model = MutationModel(args.mutability, args.substitution)
     if args.lambda0 is None:
         args.lambda0 = [max([1, int(.01*len(args.sequence))])]
-    args.sequence = args.sequence.upper()
+    if args.random_seq is not None:
+        from Bio import SeqIO
+        records = list(SeqIO.parse(args.random_seq, "fasta"))
+        random.shuffle(records)
+        args.sequence = str(records[0].seq).upper()
+    else:
+        args.sequence = args.sequence.upper()
     if args.sequence2 is not None:
         if len(args.lambda0) == 1:  # Use the same mutation rate on both sequences
             args.lambda0 = [args.lambda0[0], args.lambda0[0]]
@@ -516,6 +522,7 @@ def main():
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('--sequence', type=str, default='GGACCTAGCCTCGTGAAACCTTCTCAGACTCTGTCCCTCACCTGTTCTGTCACTGGCGACTCCATCACCAGTGGTTACTGGAACTGGATCCGGAAATTCCCAGGGAATAAACTTGAGTACATGGGGTACATAAGCTACAGTGGTAGCACTTACTACAATCCATCTCTCAAAAGTCGAATCTCCATCACTCGAGACACATCCAAGAACCAGTACTACCTGCAGTTGAATTCTGTGACTACTGAGGACACAGCCACATATTACTGT',
                         help='Seed naive nucleotide sequence')
+    parser.add_argument('--random_seq', type=str, default=None, help='Path to fasta file containing seed sequences. Will draw one of these at random.')
     parser.add_argument('--mutability', type=str, default=file_dir+'/../S5F/Mutability.csv', help='Path to mutability model file')
     parser.add_argument('--substitution', type=str, default=file_dir+'/../S5F/Substitution.csv', help='Path to substitution model file')
     parser.add_argument('--sequence2', type=str, default=None, help='Second seed naive nucleotide sequence. For simulating heavy/light chain co-evolution.')
