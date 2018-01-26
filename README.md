@@ -84,6 +84,41 @@ Results are saved in directory `test/`. The `--converter=tas` argument means tha
 
 `--converter=[string]` if set to "tas", parse FASTA input IDs that are integers as indicating sequence abundance. Otherwise each line in the FASTA is assumed to indicate an individual (non-deduplicated) sequence. **NOTE:** the included FASTA file `sequence_data/150228_Clone_3-8.fasta` requires this option.
 
+
+## **Sequence simulation**
+
+A couple of simulation commands with reasonable model parameters.
+
+### Neutral simulation
+
+This command will simulate a poisson branching process, with progeny distribution lambda=1.5, under a neutral mutation model i.e. no selection and therefore static progeny distribution, and terminate when 75 unterminated leaves are populating the tree.
+The number of mutations to introduce in a daugther cell is drawn from another possion distribution (lambda0=0.365) introducing mutations at a rate of approx. 1e-3, similar to real SHM rates.
+The positions and substitutions to use to introduce the mutations drawn follow an empirical substitution probability distribution derived from S5F.
+The tree is generated from a naive sequence seed, which will also be the root of the tree.
+A naive seed sequence is drawn randomly from the naive sequences provided in `sequence_data/AbPair_naive_seqs.fa`.
+
+```
+TMPDIR=/tmp xvfb-run -a python bin/simulator.py --mutability S5F/Mutability.csv --substitution S5F/Substitution.csv --outbase neutral_sim --lambda 1.5 --lambda0 0.365 --N 75 --random_seq sequence_data/AbPair_naive_seqs.fa > neut_simulator.log
+```
+
+The output consists of different informative files e.g. SVG renderings of the trees.
+The tree structure with internal nodes, leaves and associated sequences can be loaded from the pickled ETE3 tree object:
+```
+from ete3 import TreeNode, TreeStyle, NodeStyle, SVG_COLORS
+import pickle
+
+with open('neutral_sim_lineage_tree.p', 'rb') as fh:
+    tree = pickle.load(fh)
+
+# Print tree in ASCII:
+print(tree)
+# Root name and sequence:
+tree.name
+tree.sequence
+```
+
+
+
 ## **SIMULATION**
 
 `scons --simulation ...`
