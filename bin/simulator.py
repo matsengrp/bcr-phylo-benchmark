@@ -476,7 +476,10 @@ def simulate(args):
             nstyle['fgcolor'] = colors[n.sequence]
         n.set_style(nstyle)
 
+    # Render and pickle lineage tree:
     tree.render(args.outbase+'_lineage_tree.svg', tree_style=ts)
+    with open(args.outbase+'_lineage_tree.p', 'wb') as f:
+        pickle.dump(tree, f)
 
     # Render collapsed tree,
     # create an id-wise colormap
