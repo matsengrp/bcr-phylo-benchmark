@@ -63,7 +63,7 @@ All commands should be issued from within the gctree repo directory.
 
 ### **example:** to run GCtree inference on the included FASTA file on a remote machine
 ```
-scons --inference --fasta=Victora_data/150228_Clone_3-8.fasta --outdir=test --converter=tas --naiveID=GL --xvfb --jobs=10
+scons --inference --fasta=sequence_data/150228_Clone_3-8.fasta --outdir=test --converter=tas --naiveID=GL --xvfb --jobs=10
 ```
 Results are saved in directory `test/`. The `--converter=tas` argument means that integer sequence IDs in the FASTA file are interpreted as abundances. The flag `--xvfb` allows X rendering of ETE trees on remote machines. The argument `--jobs=10` indicates that 10 parallel processes should be used.
 
@@ -82,7 +82,7 @@ Results are saved in directory `test/`. The `--converter=tas` argument means tha
 
 `colorfile=[path]  ` path to a file of plotting colors for cells in the input FASTA file. Example, if the FASTA contains a sequence with ID `cell_1`, this cell could be colored red in the tree image by including the line `cell_1,red` in the color file.
 
-`--converter=[string]` if set to "tas", parse FASTA input IDs that are integers as indicating sequence abundance. Otherwise each line in the FASTA is assumed to indicate an individual (non-deduplicated) sequence. **NOTE:** the included FASTA file `Victora_data/150228_Clone_3-8.fasta` requires this option.
+`--converter=[string]` if set to "tas", parse FASTA input IDs that are integers as indicating sequence abundance. Otherwise each line in the FASTA is assumed to indicate an individual (non-deduplicated) sequence. **NOTE:** the included FASTA file `sequence_data/150228_Clone_3-8.fasta` requires this option.
 
 ## **SIMULATION**
 
