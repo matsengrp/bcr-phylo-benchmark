@@ -198,6 +198,7 @@ class MutationModel():
         tree.dist = 0
         tree.add_feature('sequence', sequence)
         tree.add_feature('terminated', False)
+        tree.add_feature('sampled', False)
         tree.add_feature('frequency', 0)
         tree.add_feature('time', 0)
 
@@ -224,44 +225,65 @@ class MutationModel():
             if verbose:
                 print('At time:', t)
             t += 1
+            # Sample intermediate time point:
+            if T is not None and len(T) > 1 and (t-1) in T:
+                live_leaves = [l for l in tree.iter_leaves() if not l.terminated]
+                random.shuffle(live_leaves)
+                if len(live_leaves) < n:
+                    raise RuntimeError('tree terminated with {} leaves, less than what desired after downsampling {}'.format(leaves_unterminated, n))
+                # Make the sample and kill the cells sampled:
+                samples_taken = 0
+                for leaf in live_leaves:
+                    if has_stop(leaf.sequence):
+                        continue
+                    leaves_unterminated -= 1
+                    leaf.sampled = True
+                    leaf.terminated = True
+                    if samples_taken == n:
+                        break
+                    else:
+                        samples_taken += 1
+                if verbose:
+                    print('Made an intermediate sample at time:', t-1)
+            live_leaves = [l for l in tree.iter_leaves() if not l.terminated]
+            random.shuffle(live_leaves)
             skip_lambda_n = 0  # At every new round reset the all the lambdas
-            list_of_leaves = list(tree.iter_leaves())
-            random.shuffle(list_of_leaves)
-            for leaf in list_of_leaves:
-                if not leaf.terminated:
+            # Draw progeny for each leaf:
+            for leaf in live_leaves:
+                if selection_params is not None:
+                    if skip_lambda_n == 0:
+                        skip_lambda_n = skip_update + 1  # Add one so skip_update=0 is no skip
+                        tree = selection_utils.lambda_selection(tree, targetAAseqs, hd2affy, A_total, B_total, Lp)
+                    if leaf.lambda_ > lambda_min:
+                        progeny = poisson(leaf.lambda_)
+                    else:
+                        progeny = poisson(lambda_min)
+                    skip_lambda_n -= 1
+                n_children = progeny.rvs()
+                leaves_unterminated += n_children - 1  # <-- Getting 1, is equal to staying alive
+                if not n_children:
+                    leaf.terminated = True
+                for child_count in range(n_children):
+                    # If sequence pair mutate them separately with their own mutation rate:
+                    if pair_bounds is not None:
+                        mutated_sequence1 = self.mutate(leaf.sequence[pair_bounds[0][0]:pair_bounds[0][1]], lambda0=lambda0[0])
+                        mutated_sequence2 = self.mutate(leaf.sequence[pair_bounds[1][0]:pair_bounds[1][1]], lambda0=lambda0[1])
+                        mutated_sequence = mutated_sequence1 + mutated_sequence2
+                    else:
+                        mutated_sequence = self.mutate(leaf.sequence, lambda0=lambda0[0])
+                    child = TreeNode()
+                    child.dist = sum(x!=y for x,y in zip(mutated_sequence, leaf.sequence))
+                    child.add_feature('sequence', mutated_sequence)
                     if selection_params is not None:
-                        if skip_lambda_n == 0:
-                            skip_lambda_n = skip_update + 1  # Add one so skip_update=0 is no skip
-                            tree = selection_utils.lambda_selection(leaf, tree, targetAAseqs, hd2affy, A_total, B_total, Lp)
-                        if leaf.lambda_ > lambda_min:
-                            progeny = poisson(leaf.lambda_)
-                        else:
-                            progeny = poisson(lambda_min)
-                        skip_lambda_n -= 1
-                    n_children = progeny.rvs()
-                    leaves_unterminated += n_children - 1  # <-- This kills the parent if we drew a zero
-                    if not n_children:
-                        leaf.terminated = True
-                    for child_count in range(n_children):
-                        # If sequence pair mutate them separately with their own mutation rate:
-                        if pair_bounds is not None:
-                            mutated_sequence1 = self.mutate(leaf.sequence[pair_bounds[0][0]:pair_bounds[0][1]], lambda0=lambda0[0])
-                            mutated_sequence2 = self.mutate(leaf.sequence[pair_bounds[1][0]:pair_bounds[1][1]], lambda0=lambda0[1])
-                            mutated_sequence = mutated_sequence1 + mutated_sequence2
-                        else:
-                            mutated_sequence = self.mutate(leaf.sequence, lambda0=lambda0[0])
-                        child = TreeNode()
-                        child.dist = sum(x!=y for x,y in zip(mutated_sequence, leaf.sequence))
-                        child.add_feature('sequence', mutated_sequence)
-                        if selection_params is not None:
-                            aa = translate(child.sequence)
-                            child.add_feature('AAseq', str(aa))
-                            child.add_feature('Kd', selection_utils.calc_Kd(child.AAseq, targetAAseqs, hd2affy))
-                            child.add_feature('target_dist', min([hamming_distance(child.AAseq, taa) for taa in targetAAseqs]))
-                        child.add_feature('frequency', 0)
-                        child.add_feature('terminated', False)
-                        child.add_feature('time', t)
-                        leaf.add_child(child)
+                        aa = translate(child.sequence)
+                        child.add_feature('AAseq', str(aa))
+                        child.add_feature('Kd', selection_utils.calc_Kd(child.AAseq, targetAAseqs, hd2affy))
+                        child.add_feature('target_dist', min([hamming_distance(child.AAseq, taa) for taa in targetAAseqs]))
+                    child.add_feature('frequency', 0)
+                    child.add_feature('terminated', False)
+                    child.add_feature('sampled', False)
+                    child.add_feature('time', t)
+                    leaf.add_child(child)
             if selection_params is not None:
                 hd_distrib = [min([hamming_distance(tn.AAseq, ta) for ta in targetAAseqs]) for tn in tree.iter_leaves() if not tn.terminated]
                 if target_dist > 0:
@@ -285,10 +307,10 @@ class MutationModel():
 
         # Each leaf in final generation gets an observation frequency of 1, unless downsampled:
         if T is not None and len(T) > 1:
-            # Iterate the intermediate time steps:
+            # Iterate the intermediate time steps (excluding the last time):
             for Ti in sorted(T)[:-1]:
                 # Only sample those that have been 'sampled' at intermediate sampling times:
-                final_leaves = [leaf for leaf in tree.iter_descendants() if leaf.time == Ti and leaf.sampled and not has_stop(leaf.sequence)]
+                final_leaves = [leaf for leaf in tree.iter_descendants() if leaf.time == Ti and leaf.sampled]
                 if len(final_leaves) < n:
                     raise RuntimeError('tree terminated with {} leaves, less than what desired after downsampling {}'.format(leaves_unterminated, n))
                 for leaf in final_leaves:  # No need to down-sample, this was already done in the simulation loop
