@@ -118,6 +118,38 @@ tree.sequence
 ```
 
 
+### Selection simulation
+
+This command will simulate a poisson branching process coupled with a selection process.
+The progeny distribution is dynamically set for each cell in the simulation an depends on its fitness defined by its similarity to a "target" sequence and the fitness of the rest of the cell population (carrying capacity of 1000 cells).
+Possion lambda=2 is the maximum progeny distribution and lambda is then adjusted smaller according to the cell fitness.
+The simulation terminates after 35 rounds of evaluating the progeny for all live cells, then 60 leaves are randomly picked from the whole cell population and the tree is pruned to remove all non-picked leaves.
+The number of mutations to introduce in a daugther cell is drawn from another possion distribution (lambda0=0.365) introducing mutations at a rate of approx. 1e-3, similar to real SHM rates.
+The positions and substitutions to use to introduce the mutations drawn follow an empirical substitution probability distribution derived from S5F.
+The tree is generated from a naive sequence seed, which will also be the root of the tree.
+A naive seed sequence is drawn randomly from the naive sequences provided in `sequence_data/AbPair_naive_seqs.fa`.
+
+```
+TMPDIR=/tmp xvfb-run -a python bin/simulator.py --mutability S5F/Mutability.csv --substitution S5F/Substitution.csv --outbase selection_sim --lambda 2.0 --lambda0 0.365 --T 35 --n 60 --selection --target_dist 5 --target_count 100 --carry_cap 1000 --skip_update 100 --verbose --random_seq sequence_data/AbPair_naive_seqs.fa > sele_simulator.log
+```
+
+The output consists of different informative files e.g. SVG renderings of the trees.
+The tree structure with internal nodes, leaves and associated sequences can be loaded from the pickled ETE3 tree object:
+```
+from ete3 import TreeNode, TreeStyle, NodeStyle, SVG_COLORS
+import pickle
+
+with open('selection_sim_lineage_tree.p', 'rb') as fh:
+    tree = pickle.load(fh)
+
+# Print tree in ASCII:
+print(tree)
+# Root name and sequence:
+tree.name
+tree.sequence
+```
+
+
 
 ## **SIMULATION**
 
