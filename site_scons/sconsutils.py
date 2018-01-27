@@ -71,7 +71,7 @@ def SRun(env, target, source, action, **kwargs):
         waitfor = [os.path.basename(w) for w in waitfor]
     if srun_exists:
 #        action = ["srun --time=3000 sh -c ' "+action + " '", Wait(waitfor)]
-        action = ["srun sh -c ' "+action + " '", Wait(waitfor)]
+        action = ["srun --exclusive=user sh -c ' "+action + " '", Wait(waitfor)]
     result = env.Command(target=target, source=source, action=action, **kwargs)
     return result
 
