@@ -60,6 +60,8 @@ with PdfPages(args.outbase+'_new.pdf') as pdf_pages:
             p.axes.set_title('Lambda = {}'.format(l), fontsize=15)
             p.set_ylabel('')
             p.set_xlabel('{} distance'.format(m))
+            plt.axvline(sort_m.values[0], color='k', linestyle='--', linewidth=1.4)
+            plt.axvline(sort_m.values[-1], color='k', linestyle='--', linewidth=1.4)
             plt.tight_layout()
             pdf_pages.savefig()
 

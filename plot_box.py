@@ -17,10 +17,9 @@ import itertools
 import seaborn as sns
 from scipy.stats.stats import pearsonr
 from matplotlib.backends.backend_pdf import PdfPages
-sns.set_style("whitegrid")
-#sns.set_style("ticks")
+#sns.set_style("whitegrid")
+sns.set_style("ticks")
 #sns.despine()
-
 
 
 parser = argparse.ArgumentParser(description='aggregate validation of repeated runs with same parameters')
@@ -50,6 +49,8 @@ with PdfPages(args.outbase+'_new.pdf') as pdf_pages:
         p.axes.set_title('Metric = {}'.format(m), fontsize=15)
         p.set_ylabel('')
         p.set_xlabel('{} distance'.format(m))
+        plt.axvline(sort_m.values[0], color='k', linestyle='--', linewidth=1.4)
+        plt.axvline(sort_m.values[-1], color='k', linestyle='--', linewidth=1.4)
         plt.tight_layout()
         pdf_pages.savefig()
 
