@@ -46,7 +46,14 @@ def count_misplacements(tree):
             # Going down the tree isotype order must either increase or stay constant,
             # otherwise there is a misplacement:
             if iso_order_child < iso_order_parent:
-                misplaced += 1 / len(list(leaf.iter_leaves()))
+                if leaf.is_leaf():
+                    misplaced += 1
+                else:
+                    clade_count = len([1 for l in leaf.iter_leaves() if min([ISO_TYPE_ORDER[iso] for iso in l.isotype]) < iso_order_parent])
+                    if clade_count > 0:
+	                misplaced += 1 / clade_count
+                    else:
+                        misplaced += 1 / len(list(leaf.iter_leaves()))
             leaf = leaf.up
     return misplaced
 
