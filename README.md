@@ -147,6 +147,11 @@ print(tree)
 # Root name and sequence:
 tree.name
 tree.sequence
+
+# Traverse through the nodes and print their affinity (Kd):
+### N.B. Smaller numberical value of affinity means higher fitness
+for node in tree.traverse():
+    print(node.Kd)
 ```
 
 
