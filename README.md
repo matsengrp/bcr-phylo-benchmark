@@ -147,7 +147,24 @@ print(tree)
 # Root name and sequence:
 tree.name
 tree.sequence
+
+# Traverse through the nodes and print their affinity (Kd):
+### N.B. Smaller numberical value of affinity means higher fitness
+for node in tree.traverse():
+    print(node.Kd)
 ```
+
+
+#### Selection simulation with intermediate sampling
+
+It is also possible to sample at intermediate timepoint during the simuluation with selection.
+This is done with providing additional timepoint with the `--T` parameter.
+Sampled cells are removed from the simulated cell population.
+
+```
+TMPDIR=/tmp xvfb-run -a python bin/simulator.py --mutability S5F/Mutability.csv --substitution S5F/Substitution.csv --outbase selection_inter_sim --lambda 2.0 --lambda0 0.365 --T 15 30 45 --n 30 --selection --target_dist 5 --target_count 100 --carry_cap 1000 --skip_update 100 --verbose --random_seq sequence_data/AbPair_naive_seqs.fa > sele_inter_simulator.log
+```
+
 
 
 
