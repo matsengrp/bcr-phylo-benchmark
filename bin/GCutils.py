@@ -5,6 +5,7 @@ from Bio.Seq import Seq
 from Bio.Alphabet import generic_dna
 from ete3 import TreeNode, NodeStyle, TreeStyle, TextFace, CircleFace, PieChartFace, faces, SVG_COLORS
 import scipy
+import numpy as np
 import random
 try:
     import cPickle as pickle
@@ -113,6 +114,39 @@ class CollapsedTree():
             node.add_feature('partition', node.frequency + sum(node2.partition for node2 in node.children))
             # sort children of this node based on partion and sequence
             node.children.sort(key=lambda node: (node.partition, node.sequence))
+
+
+        # Add some usefull annotations, including a metric for selection,
+        # inspired/adapted from the LONR score: https://academic.oup.com/nar/article/44/5/e46/2464514
+        for node in tree.iter_descendants():
+            aa = translate(node.sequence)
+            aa_parent = translate(node.up.sequence)
+            node.add_feature('NS_dist', hamming_distance(aa, aa_parent))
+            if node.is_leaf():
+                dist2tip = 0
+            else:
+                dist2tip = min([hamming_distance(node.sequence, l.sequence) for l in node.iter_descendants() if l.is_leaf()])
+            node.add_feature('dist2tip', dist2tip)
+            if hasattr(node, 'Kd'):
+                node.add_feature('delta_Kd', (node.up.Kd - node.Kd))
+
+            parent = node.up
+            N_children = len(parent.get_children())
+            node_N_leaves = sum([l.frequency for l in node.traverse()])
+            parent_N_leaves = sum([l.frequency for l in parent.iter_descendants()])
+
+            if N_children <= 1:
+                continue
+            LONR = np.log(float(node_N_leaves) / (float(parent_N_leaves - node_N_leaves) / float(N_children - 1)))
+            node.add_feature('LONR', LONR)
+
+        # Make a Z-score LONR based of the synonymous mutations:
+        LONR_syn = np.array([node.LONR for node in tree.iter_descendants() if hasattr(node, 'LONR') and node.NS_dist == 0])
+        LONR_syn_mean = np.mean(LONR_syn)
+        LONR_syn_std = np.std(LONR_syn)
+        for node in tree.iter_descendants():
+            if hasattr(node, 'LONR'):
+                node.add_feature('LONR_Zscore', (node.LONR - LONR_syn_mean) / LONR_syn_std)
 
     def __str__(self):
         '''Return a string representation for printing.'''
