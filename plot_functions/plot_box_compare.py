@@ -72,7 +72,7 @@ else:
                 df_slice = m_df[m_df['method'] == method]['value'].values
                 Nsamples = len(df_slice)
                 boots = np.array([np.mean(np.random.choice(df_slice, Nsamples, replace=True)) for i in range(args.Nboot)])
-                boot_ci = (np.percentile(boots, 5), np.percentile(boots, 50), np.percentile(boots, 95))
+                boot_ci = (np.percentile(boots, 2.5), np.percentile(boots, 50), np.percentile(boots, 97.5))
                 ci_dict[m][l_][method] = boot_ci
 
     pickle.dump(df1, open( "df1_cache.p", "wb" ))
