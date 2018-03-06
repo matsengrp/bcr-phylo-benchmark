@@ -13,6 +13,7 @@ from matplotlib import rc, ticker
 import pandas as pd
 import argparse
 import sys
+import numpy as np
 import itertools
 import seaborn as sns
 from scipy.stats.stats import pearsonr
@@ -25,6 +26,8 @@ sns.set_style("ticks")
 parser = argparse.ArgumentParser(description='aggregate validation of repeated runs with same parameters')
 parser.add_argument('input', type=str, help='validation.tsv files')
 parser.add_argument('--outbase', type=str, help='output file base name')
+parser.add_argument('--Nboot', type=int, default=10000, help='Number of bootstrap samples.')
+global args
 args = parser.parse_args()
 
 aggdat = pd.read_csv(args.input, sep='\t')
@@ -47,12 +50,27 @@ with PdfPages(args.outbase+'_new.pdf') as pdf_pages:
         m_df = df1[df1['metric'] == m]
         sort_m = m_df.groupby(['method']).mean().sort_values(by='value')
         order_m = list(sort_m.index)
-        p = sns.boxplot(y="method", x="value", data=m_df, showfliers=o, showmeans=True, orient="h", order=order_m, palette=palette_methods)
+#        p = sns.boxplot(y="method", x="value", data=m_df, showfliers=o, showmeans=True, orient="h", order=order_m, palette=palette_methods)
+        p = sns.boxplot(y="method", x="value", data=m_df, showfliers=o, orient="h", order=order_m, palette=palette_methods)
         p.axes.set_title('Metric = {}'.format(m), fontsize=12)
         p.set_ylabel('')
         p.set_xlabel('{} distance'.format(m))
         plt.axvline(sort_m.values[0], color='k', linestyle='--', linewidth=1.4)
         plt.axvline(sort_m.values[-1], color='k', linestyle='--', linewidth=1.4)
+
+        errors = [[], []]
+        x = list()
+        for method in order_m:
+            df_slice = m_df[m_df['method'] == method]['value'].values
+            Nsamples = len(df_slice)
+            boots = np.array([np.mean(np.random.choice(df_slice, Nsamples, replace=True)) for i in range(args.Nboot)])
+            errors[0].append(np.percentile(boots, 2.5))
+            errors[1].append(np.percentile(boots, 97.5))
+            x.append(np.percentile(boots, 50))
+
+        y = list(range(len(order_m)))
+        plt.errorbar(x, y, xerr=errors, fmt = '^', color = '#B22222', barsabove=True, zorder=10)  # set zorder high to overwrite boxplot whiskers
+
         plt.tight_layout()
         pdf_pages.savefig()
 
