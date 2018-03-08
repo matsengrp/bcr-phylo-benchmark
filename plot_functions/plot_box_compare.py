@@ -130,8 +130,8 @@ with PdfPages(args.outbase+'_new.pdf') as pdf_pages:
         p.set_ylabel('')
         p.set_xlabel('{} distance'.format(m))
 
-        errors = [[abs(ci_dict[m][l_][method][1] - ci_dict[m][l_][method][i]) for l_ in lambda_ for method in order_m] for i in [0, 2]]
-        x = [ci_dict[m][l_][method][1] for l_ in lambda_ for method in order_m]
+        errors = [[abs(ci_dict[m][l_][method][1] - ci_dict[m][l_][method][i]) for method in order_m for l_ in lambda_] for i in [0, 2]]
+        x = [ci_dict[m][l_][method][1] for method in order_m for l_ in lambda_]
         y = list()
         for i in range(len(order_m)):
             y.append(i - 0.267)
