@@ -138,10 +138,21 @@ with PdfPages(args.outbase+'_new.pdf') as pdf_pages:
             y.append(i)
             y.append(i + 0.267)
         plt.errorbar(x, y, xerr=errors, fmt = '^', color = '#B22222', barsabove=True, zorder=10)  # set zorder high to overwrite boxplot whiskers
+        plt.tight_layout()
 
+
+    comp_set = set([tuple(sorted((m1, m2))) for m1 in metrics for m2 in metrics if m1 != m2])
+    for comp in sorted(comp_set):
+        x_m, y_m = comp
+        x = np.array([ci_dict[x_m][l_][method][1] for method in ci_dict[x_m][l_].keys() for l_ in ci_dict[x_m].keys()])
+        y = np.array([ci_dict[y_m][l_][method][1] for method in ci_dict[y_m][l_].keys() for l_ in ci_dict[y_m].keys()])
+
+        plt.figure(figsize=(6, 6))
+        p = sns.regplot(x, y)
+        p.axes.set_title('Metric correlation ({} vs. {})'.format(x_m, y_m), fontsize=15)
+        p.set_xlabel('Metric = {}'.format(x_m))
+        p.set_ylabel('Metric = {}'.format(y_m))
         plt.tight_layout()
         pdf_pages.savefig()
-
-
 
 
