@@ -19,11 +19,20 @@ import seaborn as sns
 from scipy.stats.stats import pearsonr
 import scikits.bootstrap as sci
 import numpy as np
+from scipy.stats import pearsonr
 from matplotlib.backends.backend_pdf import PdfPages
+import math
 sns.set_style("whitegrid")
 #sns.set_style("ticks")
 #sns.despine()
+from matplotlib.ticker import FuncFormatter
 
+def MyFormatter(x, lim):
+    if x == 0:
+        return 0
+    return '{:.2E}'.format(x)
+
+majorFormatter = FuncFormatter(MyFormatter)
 
 
 parser = argparse.ArgumentParser(description='aggregate validation of repeated runs with same parameters')
@@ -110,11 +119,41 @@ with PdfPages(args.outbase+'_new.pdf') as pdf_pages:
             plt.figure(figsize=(6, 6))
             x = m_df[m_df['lambda0'] == lc[0]].groupby(['method']).mean()['value']
             y = m_df[m_df['lambda0'] == lc[1]].groupby(['method']).mean()['value']
-            color_list = [palette_methods[m_name] for m_name in list(m_df[m_df['lambda0'] == lc[1]].groupby(['method']).mean().index)]
-            p = sns.regplot(x, y, scatter_kws={'color':color_list})
+            method_list = list(m_df[m_df['lambda0'] == lc[1]].groupby(['method']).mean().index)
+            color_list = [palette_methods[m_name] for m_name in method_list]
+            p = sns.regplot(x, y, scatter_kws={'color':color_list, 'zorder':1}, ci=None)
             p.axes.set_title('Metric correlation ({})'.format(m), fontsize=15)
+            #p.axes.xaxis.set_major_formatter(majorFormatter)
+            #p.axes.yaxis.set_major_formatter(majorFormatter)
+            Nticks = len(p.get_xticklabels())
+            for ind, label in enumerate(p.get_xticklabels()):
+                if (ind - (Nticks % 2)) % 2 == 0: # every 2th label is kept
+                    label.set_visible(True)
+                else:
+                    label.set_visible(False)
+            Nticks = len(p.get_yticklabels())
+            for ind, label in enumerate(p.get_yticklabels()):
+                if (ind - ((Nticks - 1) % 2)) % 2 == 0: # every 2th label is kept
+                    label.set_visible(True)
+                else:
+                    label.set_visible(False)
+
             p.set_xlabel('Lambda = {}'.format(lcl[0]))
             p.set_ylabel('Lambda = {}'.format(lcl[1]))
+
+            # Make scatter in the background to enable matplotlib legend:
+            for t in zip(x, y, color_list, method_list):
+                x_i, y_i, c, method = t
+                plt.scatter(x=x_i, y=y_i, c=c, label=method, zorder=0)
+            p.legend(loc=2)
+
+            # Add text with pearson correlation:
+            corr = math.floor(abs(pearsonr(x, y)[0]) * 100)/100.0
+            text_pos = [(np.max(x) - np.min(x)) * 0.5 + np.min(x), (np.max(y) - np.min(y)) * 0.8 + np.min(y)]
+            y_start, y_end = p.get_ylim()
+            text_pos[1] = (y_end - y_start) * 0.9 + y_start
+            plt.text(text_pos[0], text_pos[1], 'Pearson correlation: {}'.format(corr), bbox={'facecolor':'red', 'alpha':0.5, 'pad':5}, horizontalalignment='center', verticalalignment='center', fontsize=10);
+
             plt.tight_layout()
             pdf_pages.savefig()
 
@@ -139,7 +178,7 @@ with PdfPages(args.outbase+'_new.pdf') as pdf_pages:
             y.append(i + 0.267)
         plt.errorbar(x, y, xerr=errors, fmt = '^', color = '#B22222', barsabove=True, zorder=10)  # set zorder high to overwrite boxplot whiskers
         plt.tight_layout()
-
+        pdf_pages.savefig()
 
     comp_set = set([tuple(sorted((m1, m2))) for m1 in metrics for m2 in metrics if m1 != m2])
     for comp in sorted(comp_set):
@@ -148,10 +187,31 @@ with PdfPages(args.outbase+'_new.pdf') as pdf_pages:
         y = np.array([ci_dict[y_m][l_][method][1] for method in ci_dict[y_m][l_].keys() for l_ in ci_dict[y_m].keys()])
 
         plt.figure(figsize=(6, 6))
-        p = sns.regplot(x, y)
+        p = sns.regplot(x, y, ci=None)
         p.axes.set_title('Metric correlation ({} vs. {})'.format(x_m, y_m), fontsize=15)
         p.set_xlabel('Metric = {}'.format(x_m))
         p.set_ylabel('Metric = {}'.format(y_m))
+
+        # Add text with pearson correlation:
+        corr = math.floor(abs(pearsonr(x, y)[0]) * 100)/100.0
+        text_pos = [(np.max(x) - np.min(x)) * 0.5 + np.min(x), (np.max(y) - np.min(y)) * 0.8 + np.min(y)]
+        y_start, y_end = p.get_ylim()
+        text_pos[1] = (y_end - y_start) * 0.9 + y_start
+        plt.text(text_pos[0], text_pos[1], 'Pearson correlation: {}'.format(corr), bbox={'facecolor':'red', 'alpha':0.5, 'pad':5}, horizontalalignment='center', verticalalignment='center', fontsize=10);
+
+        Nticks = len(p.get_xticklabels())
+        for ind, label in enumerate(p.get_xticklabels()):
+            if (ind - (Nticks % 2)) % 2 == 0: # every 2th label is kept
+                label.set_visible(True)
+            else:
+                label.set_visible(False)
+        Nticks = len(p.get_yticklabels())
+        for ind, label in enumerate(p.get_yticklabels()):
+            if (ind - ((Nticks - 1) % 2)) % 2 == 0: # every 2th label is kept
+                label.set_visible(True)
+            else:
+                label.set_visible(False)
+
         plt.tight_layout()
         pdf_pages.savefig()
 
