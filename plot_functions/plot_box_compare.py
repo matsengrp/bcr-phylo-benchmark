@@ -31,7 +31,6 @@ def MyFormatter(x, lim):
     if x == 0:
         return 0
     return '{:.2E}'.format(x)
-
 majorFormatter = FuncFormatter(MyFormatter)
 
 
