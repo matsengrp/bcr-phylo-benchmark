@@ -18,10 +18,9 @@ import itertools
 import seaborn as sns
 from scipy.stats.stats import pearsonr
 from matplotlib.backends.backend_pdf import PdfPages
-#sns.set_style("whitegrid")
-sns.set_style("ticks")
+sns.set_style("whitegrid")
+#sns.set_style("ticks")
 #sns.despine()
-
 
 parser = argparse.ArgumentParser(description='aggregate validation of repeated runs with same parameters')
 parser.add_argument('input', type=str, help='validation.tsv files')
@@ -43,7 +42,7 @@ metrics = ['Isotype misplacements', 'Isotype misplacements normalized']
 outliers = [False, True]
 
 plot_iter = [(m, o) for o in outliers for m in metrics]
-with PdfPages(args.outbase+'_new.pdf') as pdf_pages:
+with PdfPages(args.outbase+'.pdf') as pdf_pages:
     for t in plot_iter:
         plt.figure(figsize=(6, 3))
         m, o = t
