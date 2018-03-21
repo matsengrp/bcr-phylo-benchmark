@@ -90,7 +90,7 @@ else:
 
 
 o = False
-with PdfPages(args.outbase+'_new.pdf') as pdf_pages:
+with PdfPages(args.outbase+'.pdf') as pdf_pages:
     for m in metrics:
         for l, l_ in zip(lambda_labs, lambda_):
             plt.figure(figsize=(6, 3))
