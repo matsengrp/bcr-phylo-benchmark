@@ -93,12 +93,12 @@ A couple of simulation commands with reasonable model parameters.
 
 This command will simulate a poisson branching process, with progeny distribution lambda=1.5, under a neutral mutation model i.e. no selection and therefore static progeny distribution, and terminate when 75 unterminated leaves are populating the tree.
 The number of mutations to introduce in a daugther cell is drawn from another possion distribution (lambda0=0.365) introducing mutations at a rate of approx. 1e-3, similar to real SHM rates.
-The positions and substitutions to use to introduce the mutations drawn follow an empirical substitution probability distribution derived from S5F.
+The positions and substitutions to use to introduce the mutations drawn follow an empirical substitution probability distribution derived from motifs.
 The tree is generated from a naive sequence seed, which will also be the root of the tree.
 A naive seed sequence is drawn randomly from the naive sequences provided in `sequence_data/AbPair_naive_seqs.fa`.
 
 ```
-TMPDIR=/tmp xvfb-run -a python bin/simulator.py --mutability S5F/Mutability.csv --substitution S5F/Substitution.csv --outbase neutral_sim --lambda 1.5 --lambda0 0.365 --N 75 --random_seq sequence_data/AbPair_naive_seqs.fa > neut_simulator.log
+TMPDIR=/tmp xvfb-run -a python bin/simulator.py --mutability motifs/Mutability_S5F.csv --substitution motifs/Substitution_S5F.csv --outbase neutral_sim --lambda 1.5 --lambda0 0.365 --N 75 --random_seq sequence_data/AbPair_naive_seqs.fa > neut_simulator.log
 ```
 
 The output consists of different informative files e.g. SVG renderings of the trees.
@@ -125,12 +125,12 @@ The progeny distribution is dynamically set for each cell in the simulation an d
 Possion lambda=2 is the maximum progeny distribution and lambda is then adjusted smaller according to the cell fitness.
 The simulation terminates after 35 rounds of evaluating the progeny for all live cells, then 60 leaves are randomly picked from the whole cell population and the tree is pruned to remove all non-picked leaves.
 The number of mutations to introduce in a daugther cell is drawn from another possion distribution (lambda0=0.365) introducing mutations at a rate of approx. 1e-3, similar to real SHM rates.
-The positions and substitutions to use to introduce the mutations drawn follow an empirical substitution probability distribution derived from S5F.
+The positions and substitutions to use to introduce the mutations drawn follow an empirical substitution probability distribution derived from motifs.
 The tree is generated from a naive sequence seed, which will also be the root of the tree.
 A naive seed sequence is drawn randomly from the naive sequences provided in `sequence_data/AbPair_naive_seqs.fa`.
 
 ```
-TMPDIR=/tmp xvfb-run -a python bin/simulator.py --mutability S5F/Mutability.csv --substitution S5F/Substitution.csv --outbase selection_sim --lambda 2.0 --lambda0 0.365 --T 35 --n 60 --selection --target_dist 5 --target_count 100 --carry_cap 1000 --skip_update 100 --verbose --random_seq sequence_data/AbPair_naive_seqs.fa > sele_simulator.log
+TMPDIR=/tmp xvfb-run -a python bin/simulator.py --mutability motifs/Mutability_S5F.csv --substitution motifs/Substitution_S5F.csv --outbase selection_sim --lambda 2.0 --lambda0 0.365 --T 35 --n 60 --selection --target_dist 5 --target_count 100 --carry_cap 1000 --skip_update 100 --verbose --random_seq sequence_data/AbPair_naive_seqs.fa > sele_simulator.log
 ```
 
 The output consists of different informative files e.g. SVG renderings of the trees.
@@ -162,7 +162,7 @@ This is done with providing additional timepoint with the `--T` parameter.
 Sampled cells are removed from the simulated cell population.
 
 ```
-TMPDIR=/tmp xvfb-run -a python bin/simulator.py --mutability S5F/Mutability.csv --substitution S5F/Substitution.csv --outbase selection_inter_sim --lambda 2.0 --lambda0 0.365 --T 15 30 45 --n 30 --selection --target_dist 5 --target_count 100 --carry_cap 1000 --skip_update 100 --verbose --random_seq sequence_data/AbPair_naive_seqs.fa > sele_inter_simulator.log
+TMPDIR=/tmp xvfb-run -a python bin/simulator.py --mutability motifs/Mutability_S5F.csv --substitution motifs/Substitution_S5F.csv --outbase selection_inter_sim --lambda 2.0 --lambda0 0.365 --T 15 30 45 --n 30 --selection --target_dist 5 --target_count 100 --carry_cap 1000 --skip_update 100 --verbose --random_seq sequence_data/AbPair_naive_seqs.fa > sele_inter_simulator.log
 ```
 
 
@@ -181,9 +181,9 @@ TMPDIR=/tmp xvfb-run -a python bin/simulator.py --mutability S5F/Mutability.csv 
 
 `--naive=[string]             ` DNA sequence of naive sequence from which to begin simulating, a default is used if omitted
 
-`--mutability=[path]          ` path to S5F mutability file, default 'S5F/mutability'
+`--mutability=[path]          ` path to motifs mutability file, default 'motifs/Mutability_S5F.csv'
 
-`--substitution=[path]        ` path to S5F substitution file, default 'S5F/substitution'
+`--substitution=[path]        ` path to motifs substitution file, default 'motifs/Substitution_S5F.csv'
 
 `--lambda=[float, float, ...] ` values for Poisson branching parameter for simulation, default 2.0
 
