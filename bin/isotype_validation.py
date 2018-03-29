@@ -46,16 +46,11 @@ def count_misplacements(tree):
             # Going down the tree isotype order must either increase or stay constant,
             # otherwise there is a misplacement:
             if iso_order_child < iso_order_parent:
-                if leaf.is_leaf():
-                    misplaced += 1
-                else:
-                    clade_count = len([1 for l in leaf.iter_leaves() if min([ISO_TYPE_ORDER[iso] for iso in l.isotype]) < iso_order_parent])
-                    if clade_count > 0:
-	                misplaced += 1 / clade_count
-                    else:
-                        misplaced += 1 / len(list(leaf.iter_leaves()))
+                leaf.up.add_features(misplacement=True)
+            else:
+                leaf.up.add_features(misplacement=False)
             leaf = leaf.up
-    return misplaced
+    return sum([1 for n in tree.traverse() if hasattr(n, 'misplacement') and n.misplacement is True])
 
 
 def validate(heavy, light, outbase):
@@ -74,6 +69,7 @@ def validate(heavy, light, outbase):
         #print(node_over_naive)
         ####
         misplaced = count_misplacements(tree)
+        print(misplaced)
         Ntips = len(list(tree.iter_leaves()))
         misplaced_baseline = 0
         baseline_iterations = 10000
