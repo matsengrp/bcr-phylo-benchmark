@@ -1,0 +1,6 @@
+
+This folder contain two motif models:
+1) The standard S5F fitted on human synonymous mutations (Yaari et al. 2013: Models of somatic hypermutation targeting and substitution based on synonymous mutations from high-throughput immunoglobulin sequencing data)
+2) A SAMM mutation model fitted on the isotype data and outputted as 5mers in S5F format (Feng et al. 2017: Survival analysis of DNA mutation motifs with penalized proportional hazards)
+
+

@@ -70,15 +70,15 @@ samm_rank = GetOption('samm_rank')
 AddOption('--mutability',
           type='string',
           metavar='PATH',
-          default='S5F/Mutability.csv',
-          help='path to S5F mutability data')
+          default='motifs/Mutability_S5F.csv',
+          help='path to motifs mutability data')
 mutability = GetOption('mutability')
 
 AddOption('--substitution',
           type='string',
           metavar='PATH',
-          default='S5F/Substitution.csv',
-          help='path to S5F substitution data')
+          default='motifs/Substitution_S5F.csv',
+          help='path to motifs substitution data')
 substitution = GetOption('substitution')
 
 AddOption('--iqtree',

@@ -53,6 +53,7 @@ def count_misplacements(tree):
     return sum([1 for n in tree.traverse() if hasattr(n, 'misplacement') and n.misplacement is True])
 
 
+
 def validate(heavy, light, outbase):
     '''
     Validate the inferred trees' consistency with experimental results
@@ -62,35 +63,48 @@ def validate(heavy, light, outbase):
     iso_error1 = list()
     iso_error2 = list()
     for f in heavy:
-        tree = f.forest[0].tree
-        #### Introduce an IgA just above the root (for debugging):
-        #node_over_naive = list(tree.traverse())[2]
-        #node_over_naive.add_feature('isotype', set(['IgA']))
-        #print(node_over_naive)
-        ####
-        misplaced = count_misplacements(tree)
-        print(misplaced)
-        Ntips = len(list(tree.iter_leaves()))
-        misplaced_baseline = 0
-        baseline_iterations = 10000
-        # Do 10000 iterations of label shuffling to calculate
-        # the expected number of misplacements with random label order:
-        for i in range(baseline_iterations):
-            tree_cp = tree.copy(method='deepcopy')
-            iso_list = [n.isotype for n in tree_cp.iter_descendants() if hasattr(n, 'isotype')]
-            shuffle(iso_list)
-            for n in tree_cp.iter_descendants():
-                if hasattr(n, 'isotype'):
-                    n.isotype = iso_list.pop()
-            assert(len(iso_list) == 0)
-            sc = count_misplacements(tree_cp)
-#            f.forest[0].tree = tree_cp
-#            f.forest[0].render('eaxample'+str(sc)+'.svg', isolabel=True)
-            misplaced_baseline += sc
-        misplaced_baseline /= baseline_iterations
-        tree.add_feature('isotype_misplacement_score', misplaced / misplaced_baseline)
-        iso_error1.append(misplaced)
-        iso_error2.append(misplaced / misplaced_baseline)
+        ie1 = 9999999999999
+        ie2 = 9999999999999
+        for ftree in f.forest:
+            tree = ftree.tree
+
+
+            #### Introduce an IgA just above the root (for debugging):
+            #node_over_naive = list(tree.traverse())[2]
+            #node_over_naive.add_feature('isotype', set(['IgA']))
+            #print(node_over_naive)
+            ####
+            misplaced = count_misplacements(tree)
+            Ntips = len(list(tree.iter_leaves()))
+            misplaced_baseline = 0
+            baseline_iterations = 10000
+            # Do 10000 iterations of label shuffling to calculate
+            # the expected number of misplacements with random label order:
+            for i in range(baseline_iterations):
+                tree_cp = tree.copy(method='deepcopy')
+                iso_list = [n.isotype for n in tree_cp.iter_descendants() if hasattr(n, 'isotype')]
+                shuffle(iso_list)
+                for n in tree_cp.iter_descendants():
+                    if hasattr(n, 'isotype'):
+                        n.isotype = iso_list.pop()
+                assert(len(iso_list) == 0)
+                sc = count_misplacements(tree_cp)
+                misplaced_baseline += sc
+            misplaced_baseline /= baseline_iterations
+            tree.add_feature('isotype_misplacement_score', misplaced / misplaced_baseline)
+
+            if f.name != 'dnapars':
+                ie1 = misplaced
+                ie2 = misplaced / misplaced_baseline
+                break
+            elif (misplaced / misplaced_baseline) < ie2:
+                #print('Before: {} and {}'.format(ie1, ie2))
+                ie1 = misplaced
+                ie2 = misplaced / misplaced_baseline
+                #print('After: {} and {}'.format(ie1, ie2))
+
+        iso_error1.append(ie1)
+        iso_error2.append(ie2)
 
     pairing_error = list()
     if light:
