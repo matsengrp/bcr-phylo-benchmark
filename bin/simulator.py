@@ -7,15 +7,11 @@ in which the tree is collapsed to nodes that count the number of clonal leaves o
 '''
 
 from __future__ import division, print_function
-import scipy, random, pandas as pd, os
+import scipy, random, pandas as pd, os, time
 from itertools import cycle
 from scipy.stats import poisson
+import numpy
 from ete3 import TreeNode, TreeStyle, NodeStyle, SVG_COLORS
-from Bio.Seq import Seq
-from Bio.Alphabet import generic_dna
-from Bio import AlignIO
-from Bio.Phylo.TreeConstruction import MultipleSeqAlignment
-from Bio.SeqRecord import SeqRecord
 import matplotlib; matplotlib.use('agg')
 try:
     import cPickle as pickle
@@ -221,6 +217,7 @@ class MutationModel():
         leaves_unterminated = 1
         # Small lambdas are causing problems so make a minimum:
         lambda_min = 10e-10
+        hd_distrib = []
         while leaves_unterminated > 0 and (leaves_unterminated < N if N is not None else True) and (t < max(T) if T is not None else True) and (stop_dist >= min(hd_distrib) if stop_dist is not None and t > 0 else True):
             if verbose:
                 print('At time:', t)
@@ -369,6 +366,9 @@ def simulate(args):
     is dynamically adjusted accordring to the hamming distance to a list of target sequences. The closer a sequence gets to one of the targets
     the higher fitness and the closer lambda will approach 2, vice versa when the sequence is far away lambda approaches 0.
     '''
+    random_seed = args.random_seed or int(time.time())
+    numpy.random.seed(random_seed)
+    random.seed(random_seed)
     mutation_model = MutationModel(args.mutability, args.substitution)
     if args.lambda0 is None:
         args.lambda0 = [max([1, int(.01*len(args.sequence))])]
@@ -581,6 +581,7 @@ def main():
     parser.add_argument('--verbose', action='store_true', default=False, help='Print progress during simulation. Mostly useful for simulation with selection since this can take a while.')
     parser.add_argument('--outbase', type=str, default='GCsimulator_out', help='Output file base name')
     parser.add_argument('--idlabel', action='store_true', help='Flag for labeling the sequence ids of the nodes in the output tree images, also write associated fasta alignment if True')
+    parser.add_argument('--random_seed', type=int, help='for randm number generator')
 
     args = parser.parse_args()
     if args.mutability.lower() == 'false' or args.mutability.lower() == 'none' or args.mutability.lower() == 'uniform':
