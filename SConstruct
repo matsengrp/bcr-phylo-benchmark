@@ -69,17 +69,22 @@ samm_rank = GetOption('samm_rank')
 
 AddOption('--mutability',
           type='string',
-          metavar='PATH',
           default='motifs/Mutability_S5F.csv',
+          metavar='PATH',
           help='path to motifs mutability data')
 mutability = GetOption('mutability')
 
 AddOption('--substitution',
           type='string',
-          metavar='PATH',
           default='motifs/Substitution_S5F.csv',
+          metavar='PATH',
           help='path to motifs substitution data')
 substitution = GetOption('substitution')
+
+AddOption('--uniform_mut',
+          action='store_true',
+          help='Mutation and substitution drawn from uniform distribution.')
+uniform_mut = GetOption('uniform_mut')
 
 AddOption('--iqtree',
            action='store_true',
@@ -294,7 +299,7 @@ if simulate and not GetOption('help'):
     if outdir is None:
         raise InputError('Outdir must be specified.')
     SConscript('SConscript.simulation',
-               exports='env tool_dict quick idlabel outdir naive random_naive mutability substitution lambda_list lambda0_list n N T nsim CommandRunner experimental_list naiveIDexp selection_param xarg buffarg')
+               exports='env tool_dict quick idlabel outdir naive random_naive mutability substitution lambda_list lambda0_list n N T nsim CommandRunner experimental_list naiveIDexp selection_param xarg buffarg uniform_mut')
 if exp_data_test and not GetOption('help'):
     if None in [outdir, exp_data]:
         raise InputError('Both outdir and exp_data must be specified.')

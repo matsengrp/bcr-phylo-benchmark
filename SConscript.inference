@@ -166,8 +166,8 @@ if tool_dict['samm_rank']:
     samm_rank_infer = CommandRunner([samm_rank_outbase+'_inferred_tree.p',
                                      samm_rank_outbase+'_inferred_tree.tree',
                                      samm_rank_outbase+'.log'],
-                                    [dnapars_tree[0], phylip[2], mutability, substitution],
-                                    xarg + 'python '+repo_home+'/tool_integration/samm/samm_tools.py tree_rank --name samm_rank --forest ${SOURCES[0]} --idmap ${SOURCES[1]} '+colormap+' --mutability_file ${SOURCES[2]} --substitution_file ${SOURCES[3]} --outbase '+samm_rank_outbase+'_inferred_tree --naive '+naiveID+' > ${TARGETS[2]}')
+                                    [dnapars_tree[0], phylip[2]],
+                                    xarg + 'python '+repo_home+'/tool_integration/samm/samm_tools.py tree_rank --name samm_rank --forest ${SOURCES[0]} --idmap ${SOURCES[1]} '+colormap+' --mutability_file '+mutability+' --substitution_file '+substitution+' --outbase '+samm_rank_outbase+'_inferred_tree --naive '+naiveID+' > ${TARGETS[2]}')
     return_list.append(samm_rank_infer)
 
 
