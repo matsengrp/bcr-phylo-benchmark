@@ -583,6 +583,10 @@ def main():
     parser.add_argument('--idlabel', action='store_true', help='Flag for labeling the sequence ids of the nodes in the output tree images, also write associated fasta alignment if True')
 
     args = parser.parse_args()
+    if args.mutability.lower() == 'false' or args.mutability.lower() == 'none' or args.mutability.lower() == 'uniform':
+        args.mutability = None
+    if args.substitution.lower() == 'false' or args.substitution.lower() == 'none' or args.substitution.lower() == 'uniform':
+        args.substitution = None
     simulate(args)
 
 if __name__ == '__main__':
