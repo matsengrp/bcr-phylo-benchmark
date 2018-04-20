@@ -7,152 +7,21 @@ in which the tree is collapsed to nodes that count the number of clonal leaves o
 '''
 
 from __future__ import division, print_function
-import scipy, random, pandas as pd, os
+import scipy, random, pandas as pd, os, time
 from itertools import cycle
 from scipy.stats import poisson
-from ete3 import TreeNode, NodeStyle, TreeStyle, TextFace, CircleFace, PieChartFace, faces, SVG_COLORS
-from Bio.Seq import Seq
-from Bio.Alphabet import generic_dna
-from Bio import AlignIO
-from Bio.Phylo.TreeConstruction import MultipleSeqAlignment
-from Bio.SeqRecord import SeqRecord
+import numpy
+from ete3 import TreeNode, TreeStyle, NodeStyle, SVG_COLORS
 import matplotlib; matplotlib.use('agg')
 try:
     import cPickle as pickle
 except:
     import pickle
 
-from utils import hamming_distance, has_stop, translate
+from GCutils import hamming_distance, has_stop, translate, CollapsedTree
 import selection_utils
 
 scipy.seterr(all='raise')
-
-
-class CollapsedTree():
-    '''
-    Collapsed tree class from GCtree. Collapses an ete3 tree
-    into a genotype collapsed tree based on hamming distance between node seqeunces.
-    '''
-    def __init__(self, params=None, tree=None, collapse_syn=False, allow_repeats=False):
-        '''
-        For intialization, either params or tree (or both) must be provided
-        params: offspring distribution parameters
-        tree: ete tree with frequency node feature. If uncollapsed, it will be collapsed.
-        '''
-        # Collapse synonymous reads:
-        if collapse_syn is True:
-            tree.dist = 0  # no branch above root
-            for node in tree.iter_descendants():
-                aa = translate(node.sequence)
-                aa_parent = translate(node.up.sequence)
-                node.dist = hamming_distance(aa, aa_parent)
-
-        if tree is not None:
-            self.tree = tree.copy()
-            # iterate over the tree below root and collapse edges of zero length
-            # if the node is a leaf and it's parent has nonzero frequency we combine taxa names to a set
-            # this acommodates bootstrap samples that result in repeated genotypes
-            observed_genotypes = set((leaf.name for leaf in self.tree))
-            observed_genotypes.add(self.tree.name)
-            for node in self.tree.get_descendants(strategy='postorder'):
-                if node.dist == 0:
-                    node.up.frequency += node.frequency
-                    node_set = set([node.name]) if isinstance(node.name, str) else set(node.name)
-                    node_up_set = set([node.up.name]) if isinstance(node.up.name, str) else set(node.up.name)
-                    if node_up_set < observed_genotypes:
-                        if node_set < observed_genotypes:
-                            node.up.name = tuple(node_set | node_up_set)
-                            if len(node.up.name) == 1:
-                                node.up.name = node.up.name[0]
-                    elif node_set < observed_genotypes:
-                        node.up.name = tuple(node_set)
-                        if len(node.up.name) == 1:
-                            node.up.name = node.up.name[0]
-                    node.delete(prevent_nondicotomic=False)
-
-            final_observed_genotypes = set([name for node in self.tree.traverse() if node.frequency > 0 or node == self.tree for name in ((node.name,) if isinstance(node.name, str) else node.name)])
-            if final_observed_genotypes != observed_genotypes:
-                raise RuntimeError('observed genotypes don\'t match after collapse\n\tbefore: {}\n\tafter: {}\n\tsymmetric diff: {}'.format(observed_genotypes, final_observed_genotypes, observed_genotypes ^ final_observed_genotypes))
-            assert sum(node.frequency for node in tree.traverse()) == sum(node.frequency for node in self.tree.traverse())
-
-            rep_seq = sum(node.frequency > 0 for node in self.tree.traverse()) - len(set([node.sequence for node in self.tree.traverse() if node.frequency > 0]))
-            if not allow_repeats and rep_seq:
-                raise RuntimeError('Repeated observed sequences in collapsed tree. {} sequences were found repeated.'.format(rep_seq))
-            elif allow_repeats and rep_seq:
-                rep_seq = sum(node.frequency > 0 for node in self.tree.traverse()) - len(set([node.sequence for node in self.tree.traverse() if node.frequency > 0]))
-                print('Repeated observed sequences in collapsed tree. {} sequences were found repeated.'.format(rep_seq))
-            # a custom ladderize accounting for abundance and sequence to break ties in abundance
-            for node in self.tree.traverse(strategy='postorder'):
-                # add a partition feature and compute it recursively up the tree
-                node.add_feature('partition', node.frequency + sum(node2.partition for node2 in node.children))
-                # sort children of this node based on partion and sequence
-                node.children.sort(key=lambda node: (node.partition, node.sequence))
-        else:
-            self.tree = tree
-
-    def __str__(self):
-        '''Return a string representation for printing.'''
-        return 'params = ' + str(self.params)+ '\ntree:\n' + str(self.tree)
-
-    def render(self, outfile, idlabel=False, colormap=None, show_support=False, chain_split=None):
-        '''Render to image file, filetype inferred from suffix, svg for color images'''
-        def my_layout(node):
-            circle_color = 'lightgray' if colormap is None or node.name not in colormap else colormap[node.name]
-            text_color = 'black'
-            if isinstance(circle_color, str):
-                C = CircleFace(radius=max(3, 10*scipy.sqrt(node.frequency)), color=circle_color, label={'text':str(node.frequency), 'color':text_color} if node.frequency > 0 else None)
-                C.rotation = -90
-                C.hz_align = 1
-                faces.add_face_to_node(C, node, 0)
-            else:
-                P = PieChartFace([100*x/node.frequency for x in circle_color.values()], 2*10*scipy.sqrt(node.frequency), 2*10*scipy.sqrt(node.frequency), colors=[(color if color != 'None' else 'lightgray') for color in list(circle_color.keys())], line_color=None)
-                T = TextFace(' '.join([str(x) for x in list(circle_color.values())]), tight_text=True)
-                T.hz_align = 1
-                T.rotation = -90
-                faces.add_face_to_node(P, node, 0, position='branch-right')
-                faces.add_face_to_node(T, node, 1, position='branch-right')
-            if idlabel:
-                T = TextFace(node.name, tight_text=True, fsize=6)
-                T.rotation = -90
-                T.hz_align = 1
-                faces.add_face_to_node(T, node, 1 if isinstance(circle_color, str) else 2, position='branch-right')
-        for node in self.tree.traverse():
-            nstyle = NodeStyle()
-            nstyle['size'] = 0
-            if node.up is not None:
-                if set(node.sequence.upper()) == set('ACGT'):  # Don't know what this do, try and delete
-                    aa = translate(node.sequence)
-                    aa_parent = translate(node.up.sequence)
-                    nonsyn = hamming_distance(aa, aa_parent)
-                    if '*' in aa:
-                        nstyle['bgcolor'] = 'red'
-                    if nonsyn > 0:
-                        nstyle['hz_line_color'] = 'black'
-                        nstyle['hz_line_width'] = nonsyn
-                    else:
-                        nstyle['hz_line_type'] = 1
-            node.set_style(nstyle)
-
-        ts = TreeStyle()
-        ts.show_leaf_name = False
-        ts.rotation = 90
-        ts.draw_aligned_faces_as_table = False
-        ts.allow_face_overlap = True
-        ts.layout_fn = my_layout
-        ts.show_scale = False
-        ts.show_branch_support = show_support
-        self.tree.render(outfile, tree_style=ts)
-        # If we labelled seqs, let's also write the alignment out so we have the sequences (including of internal nodes):
-        if idlabel:
-            aln = MultipleSeqAlignment([])
-            for node in self.tree.traverse():
-                aln.append(SeqRecord(Seq(str(node.sequence), generic_dna), id=node.name, description='abundance={}'.format(node.frequency)))
-            AlignIO.write(aln, open(os.path.splitext(outfile)[0] + '.fasta', 'w'), 'fasta')
-
-    def write(self, file_name):
-        '''serialize tree to file'''
-        with open(file_name, 'wb') as f:
-            pickle.dump(self, f)
 
 
 class MutationModel():
@@ -246,9 +115,6 @@ class MutationModel():
         @param lambda0: a "baseline" mutation rate
         """
         sequence_length = len(sequence)
-        if has_stop(sequence):
-            raise RuntimeError('Sequence contains stop codon!')
-
         mutabilities = self.mutabilities(sequence)
         sequence_mutability = sum(mutability[0] for mutability in mutabilities)/sequence_length
         # Poisson rate for this sequence (given its relative mutability):
@@ -262,33 +128,25 @@ class MutationModel():
             if trial == trials:
                 raise RuntimeError('mutations saturating, consider reducing lambda0')
 
-        # Introduce mutations, if causing stop codon, try again, up to 10 times:
+        # Introduce mutations:
         unmutated_positions = range(sequence_length)
         for i in range(m):
-            sequence_list = list(sequence)  # make string a list so we can modify it
+            sequence_list = list(sequence)  # Make mutable
             # Determine the position to mutate from the mutability matrix:
             mutability_p = scipy.array([mutabilities[pos][0] for pos in unmutated_positions])
-            for trial in range(1, trials+1):
-                mut_pos = scipy.random.choice(unmutated_positions, p=mutability_p/mutability_p.sum())
-                # Now draw the target nucleotide using the substitution matrix
-                substitution_p = [mutabilities[mut_pos][1][n] for n in 'ACGT']
-                assert 0 <= abs(sum(substitution_p) - 1.) < 1e-10
-                chosen_target = scipy.random.choice(4, p=substitution_p)
-                original_base = sequence_list[mut_pos]
-                sequence_list[mut_pos] = 'ACGT'[chosen_target]
-                sequence = ''.join(sequence_list)  # reconstruct our sequence
-                # Break the loop if no stop codon:
-                if not has_stop(sequence):
-                    if self.mutation_order:
-                        # If mutation order matters, the mutabilities of the sequence need to be updated:
-                        mutabilities = self.mutabilities(sequence)
-                    if not self.with_replacement:
-                        # Remove this position so we don't mutate it again:
-                        unmutated_positions.remove(mut_pos)
-                    break
-                if trial == trials:
-                    raise RuntimeError('stop codon in simulated sequence on '+str(trials)+' consecutive attempts')
-                sequence_list[mut_pos] = original_base  # <-- we only get here if we are retrying
+            mut_pos = scipy.random.choice(unmutated_positions, p=mutability_p/mutability_p.sum())
+            # Now draw the target nucleotide using the substitution matrix
+            substitution_p = [mutabilities[mut_pos][1][n] for n in 'ACGT']
+            assert 0 <= abs(sum(substitution_p) - 1.) < 1e-10
+            chosen_target = scipy.random.choice(4, p=substitution_p)
+            sequence_list[mut_pos] = 'ACGT'[chosen_target]
+            sequence = ''.join(sequence_list)  # Reconstruct our string
+            if self.mutation_order:
+                # If mutation order matters, the mutabilities of the sequence need to be updated:
+                mutabilities = self.mutabilities(sequence)
+            if not self.with_replacement:
+                # Remove this position so we don't mutate it again:
+                unmutated_positions.remove(mut_pos)
         return sequence
 
     def one_mutant(self, sequence, Nmuts, lambda0=0.1):
@@ -305,7 +163,7 @@ class MutationModel():
                 mut_seq = self.mutate(mut_seq, lambda0=lambda0)
                 aa_mut = translate(mut_seq)
                 dist = hamming_distance(aa, aa_mut)
-            if dist == Nmuts:
+            if dist == Nmuts and '*' not in aa_mut:  # Stop codon cannot be part of the return
                 return aa_mut
             else:
                 trial -= 1
@@ -336,6 +194,7 @@ class MutationModel():
         tree.dist = 0
         tree.add_feature('sequence', sequence)
         tree.add_feature('terminated', False)
+        tree.add_feature('sampled', False)
         tree.add_feature('frequency', 0)
         tree.add_feature('time', 0)
 
@@ -347,62 +206,81 @@ class MutationModel():
             assert(sum([1 for t in targetAAseqs if len(t) != len(aa)]) == 0)  # All targets are same length
             assert(sum([1 for t in targetAAseqs if hamming_distance(aa, t) == target_dist]))  # All target are "target_dist" away from the naive sequence
             # Affinity is an exponential function of hamming distance:
-            if target_dist > 0:
-                def hd2affy(hd): return(mature_affy + hd**k * (naive_affy - mature_affy) / target_dist**k)
-            else:
-                def hd2affy(hd): return(mature_affy)
+            assert(target_dist > 0)
+            def hd2affy(hd): return(mature_affy + hd**k * (naive_affy - mature_affy) / target_dist**k)
             # We store both the amino acid sequence and the affinity as tree features:
             tree.add_feature('AAseq', str(aa))
             tree.add_feature('Kd', selection_utils.calc_Kd(tree.AAseq, targetAAseqs, hd2affy))
             tree.add_feature('target_dist', min([hamming_distance(tree.AAseq, taa) for taa in targetAAseqs]))
 
-        t = 0  # <-- time
+        t = 0  # <-- Time at start
         leaves_unterminated = 1
         # Small lambdas are causing problems so make a minimum:
         lambda_min = 10e-10
+        hd_distrib = []
         while leaves_unterminated > 0 and (leaves_unterminated < N if N is not None else True) and (t < max(T) if T is not None else True) and (stop_dist >= min(hd_distrib) if stop_dist is not None and t > 0 else True):
-            t += 1
             if verbose:
                 print('At time:', t)
-            skip_lambda_n = 0  # At every new round reset the all the lambdas
             t += 1
-            list_of_leaves = list(tree.iter_leaves())
-            random.shuffle(list_of_leaves)
-            for leaf in list_of_leaves:
-                if not leaf.terminated:
+            # Sample intermediate time point:
+            if T is not None and len(T) > 1 and (t-1) in T:
+                live_leaves = [l for l in tree.iter_leaves() if not l.terminated]
+                random.shuffle(live_leaves)
+                if len(live_leaves) < n:
+                    raise RuntimeError('tree terminated with {} leaves, less than what desired after downsampling {}'.format(leaves_unterminated, n))
+                # Make the sample and kill the cells sampled:
+                samples_taken = 0
+                for leaf in live_leaves:
+                    if has_stop(leaf.sequence):
+                        continue
+                    leaves_unterminated -= 1
+                    leaf.sampled = True
+                    leaf.terminated = True
+                    if samples_taken == n:
+                        break
+                    else:
+                        samples_taken += 1
+                if verbose:
+                    print('Made an intermediate sample at time:', t-1)
+            live_leaves = [l for l in tree.iter_leaves() if not l.terminated]
+            random.shuffle(live_leaves)
+            skip_lambda_n = 0  # At every new round reset the all the lambdas
+            # Draw progeny for each leaf:
+            for leaf in live_leaves:
+                if selection_params is not None:
+                    if skip_lambda_n == 0:
+                        skip_lambda_n = skip_update + 1  # Add one so skip_update=0 is no skip
+                        tree = selection_utils.lambda_selection(tree, targetAAseqs, hd2affy, A_total, B_total, Lp)
+                    if leaf.lambda_ > lambda_min:
+                        progeny = poisson(leaf.lambda_)
+                    else:
+                        progeny = poisson(lambda_min)
+                    skip_lambda_n -= 1
+                n_children = progeny.rvs()
+                leaves_unterminated += n_children - 1  # <-- Getting 1, is equal to staying alive
+                if not n_children:
+                    leaf.terminated = True
+                for child_count in range(n_children):
+                    # If sequence pair mutate them separately with their own mutation rate:
+                    if pair_bounds is not None:
+                        mutated_sequence1 = self.mutate(leaf.sequence[pair_bounds[0][0]:pair_bounds[0][1]], lambda0=lambda0[0])
+                        mutated_sequence2 = self.mutate(leaf.sequence[pair_bounds[1][0]:pair_bounds[1][1]], lambda0=lambda0[1])
+                        mutated_sequence = mutated_sequence1 + mutated_sequence2
+                    else:
+                        mutated_sequence = self.mutate(leaf.sequence, lambda0=lambda0[0])
+                    child = TreeNode()
+                    child.dist = sum(x!=y for x,y in zip(mutated_sequence, leaf.sequence))
+                    child.add_feature('sequence', mutated_sequence)
                     if selection_params is not None:
-                        if skip_lambda_n == 0:
-                            skip_lambda_n = skip_update + 1  # Add one so skip_update=0 is no skip
-                            tree = selection_utils.lambda_selection(leaf, tree, targetAAseqs, hd2affy, A_total, B_total, Lp)
-                        if leaf.lambda_ > lambda_min:
-                            progeny = poisson(leaf.lambda_)
-                        else:
-                            progeny = poisson(lambda_min)
-                        skip_lambda_n -= 1
-                    n_children = progeny.rvs()
-                    leaves_unterminated += n_children - 1  # <-- this kills the parent if we drew a zero
-                    if not n_children:
-                        leaf.terminated = True
-                    for child_count in range(n_children):
-                        # If sequence pair mutate them separately with their own mutation rate:
-                        if pair_bounds is not None:
-                            mutated_sequence1 = self.mutate(leaf.sequence[pair_bounds[0][0]:pair_bounds[0][1]], lambda0=lambda0[0])
-                            mutated_sequence2 = self.mutate(leaf.sequence[pair_bounds[1][0]:pair_bounds[1][1]], lambda0=lambda0[1])
-                            mutated_sequence = mutated_sequence1 + mutated_sequence2
-                        else:
-                            mutated_sequence = self.mutate(leaf.sequence, lambda0=lambda0[0])
-                        child = TreeNode()
-                        child.dist = sum(x!=y for x,y in zip(mutated_sequence, leaf.sequence))
-                        child.add_feature('sequence', mutated_sequence)
-                        if selection_params is not None:
-                            aa = translate(child.sequence)
-                            child.add_feature('AAseq', str(aa))
-                            child.add_feature('Kd', selection_utils.calc_Kd(child.AAseq, targetAAseqs, hd2affy))
-                            child.add_feature('target_dist', min([hamming_distance(child.AAseq, taa) for taa in targetAAseqs]))
-                        child.add_feature('frequency', 0)
-                        child.add_feature('terminated', False)
-                        child.add_feature('time', t)
-                        leaf.add_child(child)
+                        aa = translate(child.sequence)
+                        child.add_feature('AAseq', str(aa))
+                        child.add_feature('Kd', selection_utils.calc_Kd(child.AAseq, targetAAseqs, hd2affy))
+                        child.add_feature('target_dist', min([hamming_distance(child.AAseq, taa) for taa in targetAAseqs]))
+                    child.add_feature('frequency', 0)
+                    child.add_feature('terminated', False)
+                    child.add_feature('sampled', False)
+                    child.add_feature('time', t)
+                    leaf.add_child(child)
             if selection_params is not None:
                 hd_distrib = [min([hamming_distance(tn.AAseq, ta) for ta in targetAAseqs]) for tn in tree.iter_leaves() if not tn.terminated]
                 if target_dist > 0:
@@ -416,17 +294,17 @@ class MutationModel():
                     print('Affinity of latest sampled leaf:', leaf.Kd)
                     print('Progeny distribution lambda for the latest sampled leaf:', leaf.lambda_)
 
-        if selection_params is not None:
-            # Keep a histogram of the hamming distances at each generation:
-            with open(outbase + 'selection_sim.runstats.p', 'wb') as f:
-                pickle.dump(hd_generation, f)
-
         if leaves_unterminated < N:
-            raise RuntimeError('tree terminated with {} leaves, {} desired'.format(leaves_unterminated, N))
+            raise RuntimeError('Tree terminated with {} leaves, {} desired'.format(leaves_unterminated, N))
+
+        # Keep a histogram of the hamming distances at each generation:
+        if selection_params is not None:
+            with open(outbase + '_selection_runstats.p', 'wb') as f:
+                pickle.dump(hd_generation, f)
 
         # Each leaf in final generation gets an observation frequency of 1, unless downsampled:
         if T is not None and len(T) > 1:
-            # Iterate the intermediate time steps:
+            # Iterate the intermediate time steps (excluding the last time):
             for Ti in sorted(T)[:-1]:
                 # Only sample those that have been 'sampled' at intermediate sampling times:
                 final_leaves = [leaf for leaf in tree.iter_descendants() if leaf.time == Ti and leaf.sampled]
@@ -437,12 +315,19 @@ class MutationModel():
         if selection_params and max(T) != t:
             raise RuntimeError('tree terminated with before the requested sample time.')
         # Do the normal sampling of the last time step:
-        final_leaves = [leaf for leaf in tree.iter_leaves() if leaf.time == t]
+        final_leaves = [leaf for leaf in tree.iter_leaves() if leaf.time == t and not has_stop(leaf.sequence)]
+        # Report stop codon sequences:
+        stop_leaves = [leaf for leaf in tree.iter_descendants() if has_stop(leaf.sequence)]
+        if stop_leaves:
+            print('Tree contains {} nodes with stop codons, out of {} total at last time point.'.format(len(stop_leaves), len(final_leaves)))
+
         # By default, downsample to the target simulation size:
         if n is not None and len(final_leaves) >= n:
             for leaf in random.sample(final_leaves, n):
                 leaf.frequency = 1
         elif n is None and N is not None:
+            if len(final_leaves) < N:  # Removed nonsense sequences might decrease the number of final leaves to less than N
+                N = len(final_leaves)
             for leaf in random.sample(final_leaves, N):
                 leaf.frequency = 1
         elif N is None and T is not None:
@@ -481,10 +366,19 @@ def simulate(args):
     is dynamically adjusted accordring to the hamming distance to a list of target sequences. The closer a sequence gets to one of the targets
     the higher fitness and the closer lambda will approach 2, vice versa when the sequence is far away lambda approaches 0.
     '''
+    if args.random_seed is not None:
+        numpy.random.seed(args.random_seed)
+        random.seed(args.random_seed)
     mutation_model = MutationModel(args.mutability, args.substitution)
     if args.lambda0 is None:
         args.lambda0 = [max([1, int(.01*len(args.sequence))])]
-    args.sequence = args.sequence.upper()
+    if args.random_seq is not None:
+        from Bio import SeqIO
+        records = list(SeqIO.parse(args.random_seq, "fasta"))
+        random.shuffle(records)
+        args.sequence = str(records[0].seq).upper()
+    else:
+        args.sequence = args.sequence.upper()
     if args.sequence2 is not None:
         if len(args.lambda0) == 1:  # Use the same mutation rate on both sequences
             args.lambda0 = [args.lambda0[0], args.lambda0[0]]
@@ -524,9 +418,9 @@ def simulate(args):
                                            verbose=args.verbose,
                                            selection_params=selection_params)
             if args.selection:
-                collapsed_tree = CollapsedTree(tree=tree, collapse_syn=False, allow_repeats=True)
+                collapsed_tree = CollapsedTree(tree=tree, name='GCsim selection', collapse_syn=False, allow_repeats=True)
             else:
-                collapsed_tree = CollapsedTree(tree=tree)  # <-- this will fail if backmutations
+                collapsed_tree = CollapsedTree(tree=tree, name='GCsim neutral')  # <-- This will fail if backmutations
             tree.ladderize()
             uniques = sum(node.frequency > 0 for node in collapsed_tree.tree.traverse())
             if uniques < 2:
@@ -541,8 +435,8 @@ def simulate(args):
 
     # In the case of a sequence pair print them to separate files:
     if args.sequence2 is not None:
-        fh1 = open(args.outbase+'_sim_seq1.fasta', 'w')
-        fh2 = open(args.outbase+'_sim_seq2.fasta', 'w')
+        fh1 = open(args.outbase+'_seq1.fasta', 'w')
+        fh2 = open(args.outbase+'_seq2.fasta', 'w')
         fh1.write('>naive\n')
         fh1.write(args.sequence[pair_bounds[0][0]:pair_bounds[0][1]]+'\n')
         fh2.write('>naive\n')
@@ -554,7 +448,7 @@ def simulate(args):
                 fh2.write('>' + leaf.name + '\n')
                 fh2.write(leaf.sequence[pair_bounds[1][0]:pair_bounds[1][1]]+'\n')
     else:
-        with open(args.outbase+'_sim.fasta', 'w') as f:
+        with open(args.outbase+'.fasta', 'w') as f:
             f.write('>naive\n')
             f.write(args.sequence+'\n')
             for leaf in tree.iter_leaves():
@@ -562,7 +456,7 @@ def simulate(args):
                     f.write('>' + leaf.name + '\n')
                     f.write(leaf.sequence + '\n')
 
-    # some observable simulation stats to write
+    # Some observable simulation stats to write:
     frequency, distance_from_naive, degree = zip(*[(node.frequency,
                                                     hamming_distance(node.sequence, args.sequence),
                                                     sum(hamming_distance(node.sequence, node2.sequence) == 1 for node2 in collapsed_tree.tree.traverse() if node2.frequency and node2 is not node))
@@ -570,11 +464,11 @@ def simulate(args):
     stats = pd.DataFrame({'genotype abundance':frequency,
                           'Hamming distance to root genotype':distance_from_naive,
                           'Hamming neighbor genotypes':degree})
-    stats.to_csv(args.outbase+'_sim_stats.tsv', sep='\t', index=False)
+    stats.to_csv(args.outbase+'_stats.tsv', sep='\t', index=False)
 
     print('{} simulated observed sequences'.format(sum(leaf.frequency for leaf in collapsed_tree.tree.traverse())))
 
-    # render the full lineage tree
+    # Render the full lineage tree:
     ts = TreeStyle()
     ts.rotation = 90
     ts.show_leaf_name = False
@@ -583,7 +477,7 @@ def simulate(args):
     colors = {}
     palette = SVG_COLORS
     palette -= set(['black', 'white', 'gray'])
-    palette = cycle(list(palette))  # <-- circular iterator
+    palette = cycle(list(palette))  # <-- Circular iterator
 
     # Either plot by DNA sequence or amino acid sequence:
     if args.plotAA and args.selection:
@@ -604,24 +498,28 @@ def simulate(args):
             nstyle['fgcolor'] = colors[n.sequence]
         n.set_style(nstyle)
 
-    tree.render(args.outbase+'_sim_lineage_tree.svg', tree_style=ts)
+    # Render and pickle lineage tree:
+    tree.render(args.outbase+'_lineage_tree.svg', tree_style=ts)
+    with open(args.outbase+'_lineage_tree.p', 'wb') as f:
+        pickle.dump(tree, f)
 
-    # render collapsed tree
+    # Render collapsed tree,
     # create an id-wise colormap
     # NOTE: node.name can be a set
     if args.plotAA and args.selection:
         colormap = {node.name:colors[node.AAseq] for node in collapsed_tree.tree.traverse()}
     else:
         colormap = {node.name:colors[node.sequence] for node in collapsed_tree.tree.traverse()}
-    collapsed_tree.write(args.outbase+'_sim_collapsed_tree.p')
-    collapsed_tree.render(args.outbase+'_sim_collapsed_tree.svg',
+    collapsed_tree.write(args.outbase+'_collapsed_tree.p')
+    collapsed_tree.render(args.outbase+'_collapsed_tree.svg',
                           idlabel=args.idlabel,
                           colormap=colormap)
-    # print colormap to file
-    with open(args.outbase+'_sim_collapsed_tree.colormap.tsv', 'w') as f:
+    # Print colormap to file:
+    with open(args.outbase+'_collapsed_tree_colormap.tsv', 'w') as f:
         for name, color in colormap.items():
             f.write((name if isinstance(name, str) else ','.join(name)) + '\t' + color + '\n')
-
+    with open(args.outbase+'_collapsed_tree_colormap.p', 'wb') as f:
+        pickle.dump(colormap, f)
 
     if args.selection:
         # Define a list a suitable colors that are easy to distinguish:
@@ -630,12 +528,12 @@ def simulate(args):
         colors = {i: next(palette) for i in range(int(len(args.sequence) // 3))}
         # The minimum distance to the target is colored:
         colormap = {node.name:colors[node.target_dist] for node in collapsed_tree.tree.traverse()}
-        collapsed_tree.write( args.outbase+'_sim_collapsed_runstat_color_tree.p')
-        collapsed_tree.render(args.outbase+'_sim_collapsed_runstat_color_tree.svg',
+        collapsed_tree.write( args.outbase+'_collapsed_runstat_color_tree.p')
+        collapsed_tree.render(args.outbase+'_collapsed_runstat_color_tree.svg',
                               idlabel=args.idlabel,
                               colormap=colormap)
         # Write a file with the selection run stats. These are also plotted:
-        with open(args.outbase + 'selection_sim_runstats.p', 'rb') as fh:
+        with open(args.outbase + '_selection_runstats.p', 'rb') as fh:
             runstats = pickle.load(fh)
             selection_utils.plot_runstats(runstats, args.outbase, colors)
 
@@ -649,11 +547,12 @@ def main():
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('--sequence', type=str, default='GGACCTAGCCTCGTGAAACCTTCTCAGACTCTGTCCCTCACCTGTTCTGTCACTGGCGACTCCATCACCAGTGGTTACTGGAACTGGATCCGGAAATTCCCAGGGAATAAACTTGAGTACATGGGGTACATAAGCTACAGTGGTAGCACTTACTACAATCCATCTCTCAAAAGTCGAATCTCCATCACTCGAGACACATCCAAGAACCAGTACTACCTGCAGTTGAATTCTGTGACTACTGAGGACACAGCCACATATTACTGT',
                         help='Seed naive nucleotide sequence')
-    parser.add_argument('--mutability', type=str, default=file_dir+'../S5F/Mutability.csv', help='Path to mutability model file')
-    parser.add_argument('--substitution', type=str, default=file_dir+'../S5F/Substitution.csv', help='Path to substitution model file')
+    parser.add_argument('--random_seq', type=str, default=None, help='Path to fasta file containing seed sequences. Will draw one of these at random.')
+    parser.add_argument('--mutability', type=str, default=file_dir+'/../motifs/Mutability_S5F.csv', help='Path to mutability model file')
+    parser.add_argument('--substitution', type=str, default=file_dir+'/../motifs/Substitution_S5F.csv', help='Path to substitution model file')
     parser.add_argument('--sequence2', type=str, default=None, help='Second seed naive nucleotide sequence. For simulating heavy/light chain co-evolution.')
     parser.add_argument('--lambda', dest='lambda_', type=float, default=.9, help='Poisson branching parameter')
-    parser.add_argument('--lambda0', type=float, default=None, nargs='*', help='List of one or two elements with the baseline mutation rates. Space separated input values.'
+    parser.add_argument('--lambda0', type=float, default=None, nargs='*', help='List of one or two elements with the baseline mutation rates. Space separated input values. '
                         'First element belonging to seed sequence one and optionally the next to sequence 2. If only one rate is provided for two sequences,'
                         'this rate will be used on both.')
     parser.add_argument('--n', type=int, default=None, help='Cells downsampled')
@@ -661,29 +560,34 @@ def main():
     parser.add_argument('--T', type=int, nargs='+', default=None, help='Observation time, if None we run until termination and take all leaves')
     parser.add_argument('--selection', action='store_true', default=False, help='Simulation with selection? true/false. When doing simulation with selection an observation time cut must be set.')
     parser.add_argument('--stop_dist', type=int, default=None, help='Stop when this distance has been reached in the selection model.')
-    parser.add_argument('--carry_cap', type=int, default=1000, help='The carrying capacity of the simulation with selection. This number affects the fixation time of a new mutation.'
+    parser.add_argument('--carry_cap', type=int, default=1000, help='The carrying capacity of the simulation with selection. This number affects the fixation time of a new mutation. '
                         'Fixation time is approx. log2(carry_cap), e.g. log2(1000) ~= 10.')
     parser.add_argument('--target_count', type=int, default=10, help='The number of targets to generate.')
     parser.add_argument('--target_dist', type=int, default=10, help='The number of non-synonymous mutations the target should be away from the naive.')
     parser.add_argument('--naive_affy', type=float, default=100, help='Affinity of the naive sequence in nano molar.')
     parser.add_argument('--mature_affy', type=float, default=1, help='Affinity of the mature sequences in nano molar.')
-    parser.add_argument('--skip_update', type=int, default=100, help='When iterating through the leafs the B:A fraction is recalculated every time.'
-                        'It is possible though to update less often and get the same approximate results. This parameter sets the number of iterations to skip,'
+    parser.add_argument('--skip_update', type=int, default=100, help='When iterating through the leafs the B:A fraction is recalculated every time. '
+                        'It is possible though to update less often and get the same approximate results. This parameter sets the number of iterations to skip, '
                         'before updating the B:A results. skip_update < carry_cap/10 recommended.')
-    parser.add_argument('--B_total', type=float, default=1, help='Total number of BCRs per B cell normalized to 10e4. So 1 equals 10e4, 100 equals 10e6 etc.'
+    parser.add_argument('--B_total', type=float, default=1, help='Total number of BCRs per B cell normalized to 10e4. So 1 equals 10e4, 100 equals 10e6 etc. '
                         'It is recommended to keep this as the default.')
-    parser.add_argument('--U', type=float, default=5, help='Controls the fraction of BCRs binding antigen necessary to only sustain the life of the B cell'
+    parser.add_argument('--U', type=float, default=5, help='Controls the fraction of BCRs binding antigen necessary to only sustain the life of the B cell '
                         'It is recommended to keep this as the default.')
     parser.add_argument('--f_full', type=float, default=1, help='The fraction of antigen bound BCRs on a B cell that is needed to elicit close to maximum reponse.'
                         'Cannot be smaller than B_total. It is recommended to keep this as the default.')
-    parser.add_argument('--k', type=float, default=2, help='The exponent in the function to map hamming distance to affinity.'
+    parser.add_argument('--k', type=float, default=2, help='The exponent in the function to map hamming distance to affinity. '
                         'It is recommended to keep this as the default.')
     parser.add_argument('--plotAA', action='store_true', default=False, help='Plot trees with collapsing and coloring on amino acid level.')
     parser.add_argument('--verbose', action='store_true', default=False, help='Print progress during simulation. Mostly useful for simulation with selection since this can take a while.')
     parser.add_argument('--outbase', type=str, default='GCsimulator_out', help='Output file base name')
     parser.add_argument('--idlabel', action='store_true', help='Flag for labeling the sequence ids of the nodes in the output tree images, also write associated fasta alignment if True')
+    parser.add_argument('--random_seed', type=int, help='for random number generator')
 
     args = parser.parse_args()
+    if True:#args.mutability.lower() == 'false' or args.mutability.lower() == 'none' or args.mutability.lower() == 'uniform':
+        args.mutability = None
+    if True:#args.substitution.lower() == 'false' or args.substitution.lower() == 'none' or args.substitution.lower() == 'uniform':
+        args.substitution = None
     simulate(args)
 
 if __name__ == '__main__':

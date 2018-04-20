@@ -8,14 +8,13 @@ import atexit
 import shutil
 import re
 
-def which(executable):
-    for path in os.environ["PATH"].split(os.pathsep):
-        if os.path.exists(os.path.join(path, executable)):
-            return os.path.realpath(os.path.join(path, executable))
-    return None
+
+# Typical scons hack (https://stackoverflow.com/a/10797838/6111587):
+this_sconscript_file = (lambda x:x).func_code.co_filename
+repo_home = os.path.dirname(this_sconscript_file)  # <- this is the directory where the file lives
 
 # the following must be exported by parent SConstruct/SConscript
-Import('env gctree igphyml dnaml quick idlabel frame fasta fasta2 outdir naiveID converter CommandRunner bootstrap xarg buffarg colorfile')
+Import('env tool_dict quick idlabel fasta outdir naiveID converter CommandRunner xarg buffarg colormap mutability substitution')
 
 def delete_on_failure():
     from SCons.Script import GetBuildFailures
@@ -31,164 +30,223 @@ def delete_on_failure():
             pass  # Allow this
 # atexit.register(delete_on_failure)
 
+
+def make_dir_if_nonexisting(path):
+    try:
+        os.makedirs(path)
+    except OSError:
+        if not os.path.isdir(path):
+            raise
+
 return_list = []
 
 
-if gctree or igphyml or dnaml:
-    # fasta_str = str(fasta)
-    if fasta2 is not None: #isinstance(fasta, list):
-	basename = 'combined'
-    elif isinstance(fasta, str):
-        basename = '.'.join(os.path.basename(fasta).split('.')[:-1])
-    else:
-        basename = 'gctree.simulation'
-    # parse fasta file to phylip, interpreting integer names as frequencies
-    frame_arg = ' --frame {} '.format(frame) if frame is not None else ''
-    converter_arg = ' --converter {} '.format(converter) if converter is not None else ''
-    phylip = env.Command([os.path.join(outdir, os.path.splitext(os.path.basename(fasta))[0] + '.phylip') if fasta2 is None and isinstance(fasta, str) else os.path.join(outdir, 'gctree.combined.phylip') if fasta2 is not None else os.path.join(outdir, 'gctree.simulation.phylip'),
-                          os.path.join(outdir, basename)+'.counts',
-                          os.path.join(outdir, basename)+'.idmap'] +
-                          ([os.path.join(outdir, basename)+'.colormap'] if colorfile is not None else []),
-                          fasta if colorfile is None else [fasta, colorfile],
-                          buffarg + 'python bin/fasta2phylip.py ${SOURCES[0]} ' +
-                          (' --colorfile ${SOURCES[1]} ' if colorfile is not None else '') +
-                          (' --colormap ${TARGETS[3]} ' if colorfile is not None else '') +
-                          ' --countfile ${TARGETS[1]} --idmapfile ${TARGETS[2]} '+
-                          frame_arg+converter_arg +
-                          '--naive '+naiveID+' > ${TARGETS[0]}')
+# Assign a base filename:
+if isinstance(fasta, str):
+    basename = '.'.join(os.path.basename(fasta).split('.')[:-1])
+else:
+    basename = 'GCsim'
+run_dir = os.path.join(outdir, basename)
 
-    if bootstrap:
+# Assign colormap:
+if colormap is None:
+    colormap = ''
+else:
+    colormap = ' --colormap {} '.format(colormap)
 
-        if igphyml or dnaml:
-            raise NotImplementedError('bootstrap not implemented for dnaml or igphyml')
+# Parse fasta file to phylip, interpreting integer names as frequencies:
+converter_arg = ' --converter {} '.format(converter) if converter is not None else ''
+phylip = env.Command([run_dir+'.phylip',
+                      run_dir+'.counts',
+                      run_dir+'_idmap.p'],
+                      [fasta],
+                      'python bin/fasta2phylip.py ${SOURCES[0]} --countfile ${TARGETS[1]} --idmapfile '+run_dir+' --naive '+naiveID+converter_arg+' > ${TARGETS[0]}')
+return_list.append(phylip)
 
-        bootstrap_arg = ' --bootstrap {} '.format(bootstrap)
-        seqboot_config = env.Command(os.path.join(outdir, 'seqboot/config.cfg'),
-                                     phylip[0],
-                                     buffarg + 'python bin/mkconfig.py ${SOURCE} seqboot '+bootstrap_arg+' > $TARGET'.format(bootstrap))
+# Need the dedup phy as fa for ASR:
+dedup_fasta = env.Command([os.path.join(outdir, basename+'_dedup.fasta'),
+                           os.path.join(outdir, basename+'_dedup.log')],
+                           phylip[0],
+                           'seqmagick convert $SOURCE ${TARGETS[0]} > ${TARGETS[1]}')
 
-        seqboot = CommandRunner(map(lambda x: os.path.join(outdir, x), ['seqboot/outfile', 'seqboot/log.log']),
-                           seqboot_config,
-                           'cd ' + outdir + '/seqboot && rm -f outfile && seqboot < ${SOURCE.file} > ${TARGETS[1].file}')
-        # Manually depend on phylip so that we rerun seqboot if the input sequences change (without this, dnaml will
-        # only get rerun if one of the targets are removed or if the input dnaml_config file is changed).
-        env.Depends(seqboot, phylip)
 
-# Update the naive ID:
-naiveID = naiveID.lower()
+##############################
+### Run inference programs ###
+##############################
 
-if dnaml:
-    dnaml_config = env.Command(os.path.join(outdir, 'dnaml/config.cfg'),
-                                 phylip[0],
-                                 buffarg + 'python bin/mkconfig.py ${SOURCE} dnaml > $TARGET')
+#############
+### dnaml ###
+#############
+if tool_dict['dnaml']:
+    dnaml_outdir = outdir + '/dnaml'
+    make_dir_if_nonexisting(dnaml_outdir)
+    dnaml_config = env.Command(os.path.join(dnaml_outdir, 'config.cfg'),
+                               phylip[0],
+                               'python bin/phylip_config.py ${SOURCE} dnaml > $TARGET')
 
-    # run dnaml (from phylip package) to generate maximum likelihood tree
-    dnaml = CommandRunner(map(lambda x: os.path.join(outdir, x), ['dnaml/outtree', 'dnaml/outfile', 'dnaml/log.log']),
+    # Run dnaml (from phylip package) to generate maximum likelihood tree:
+    dnaml = CommandRunner(map(lambda x: os.path.join(dnaml_outdir, x), ['outtree', 'outfile', 'dnaml.log']),
                        dnaml_config,
-                       'cd ' + outdir + '/dnaml && rm -f outfile outtree && dnaml < ${SOURCE.file} > ${TARGETS[2].file}')
+                       'cd '+dnaml_outdir+' && rm -f outfile outtree && '+buffarg+repo_home+'/tools/dnaml/dnaml < ${SOURCE.file} > ${TARGETS[2].file}')
     # Manually depend on phylip so that we rerun dnaml if the input sequences change (without this, dnaml will
     # only get rerun if one of the targets are removed or if the input dnaml_config file is changed).
     env.Depends(dnaml, phylip)
 
-    dnaml_tree = env.Command([os.path.join(outdir, 'dnaml.inferred_tree.p'),
-                                 os.path.join(outdir, 'dnaml.inferred_tree.log')],
-                                [dnaml[1], phylip[1]],
-                                xarg + 'python bin/phylip_parse.py ${SOURCES} --outputfile ${TARGETS[0]} --naive '+naiveID+' > ${TARGETS[1]}')
+    dnaml_outbase = os.path.join(dnaml_outdir, 'dnaml_inferred_tree')
+    dnaml_tree = env.Command([dnaml_outbase+'.p',
+                              dnaml_outbase+'.tree',
+                              dnaml_outbase+'.log'],
+                              [dnaml[1], phylip[1], phylip[2]],
+                              xarg + 'python bin/phylip_parse.py dnaml ${SOURCES[0]} ${SOURCES[1]} --outbase '+dnaml_outbase+' --naive '+naiveID+' --dump_newick --idmap ${SOURCES[2]} '+colormap+' > ${TARGETS[2]}')
     return_list.append(dnaml_tree)
 
 
-if gctree:
+###############
+### dnapars ###
+###############
+if tool_dict['gctree'] or tool_dict['samm_rank'] or tool_dict['dnapars']:
+    dnapars_outdir = outdir + '/dnapars'
+    make_dir_if_nonexisting(dnapars_outdir)
     # make config file for dnapars
     quick_arg = ' --quick ' if quick else ''
-    dnapars_config = env.Command(os.path.join(outdir, 'dnapars/config.cfg'),
+    dnapars_config = env.Command(os.path.join(dnapars_outdir, 'config.cfg'),
                                  phylip[0],
-                                 buffarg + 'python bin/mkconfig.py ${SOURCE} dnapars ' + quick_arg + ' > $TARGET')
+                                 'python bin/phylip_config.py ${SOURCE} dnapars ' + quick_arg + ' > $TARGET')
 
-    # run dnapars (from phylip package) to generate parsimony trees
-    dnapars = CommandRunner(map(lambda x: os.path.join(outdir, x), ['dnapars/outtree', 'dnapars/outfile', 'dnapars/log.log']),
-                       dnapars_config,
-                       'cd ' + outdir + '/dnapars && rm -f outfile outtree && dnapars < ${SOURCE.file} > ${TARGETS[2].file}')
+    # Run dnapars (from phylip package) to generate parsimony trees:
+    dnapars = CommandRunner(map(lambda x: os.path.join(dnapars_outdir, x), ['outtree', 'outfile', 'dnapars.log']),
+                            dnapars_config,
+                            'cd ' + dnapars_outdir + ' && rm -f outfile outtree && '+buffarg+repo_home+'/tools/dnapars/dnapars < ${SOURCE.file} > ${TARGETS[2].file}')
     # Manually depend on phylip so that we rerun dnapars if the input sequences change (without this, dnapars will
     # only get rerun if one of the targets are removed or if the input dnapars_config file is changed).
     env.Depends(dnapars, phylip)
 
-    # ML tree from parsimony trees
-    # NOTE: xvfb-run is needed because of issue https://github.com/etetoolkit/ete/issues/101
-    # NOTE: TMPDIR is needed due for xvfb
+    if tool_dict['dnapars']:
+        dnapars_outbase = os.path.join(dnapars_outdir, 'dnapars_inferred_tree')
+        dnapars_tree = env.Command([dnapars_outbase+'.p',
+                                   dnapars_outbase+'.tree',
+                                   dnapars_outbase+'.log'],
+                                  [dnapars[1], phylip[1], phylip[2]],
+                                  xarg + 'python bin/phylip_parse.py dnapars ${SOURCES[0]} ${SOURCES[1]} --outbase '+dnapars_outbase+' --naive '+naiveID+' --dump_newick --idmap ${SOURCES[2]} '+colormap+' > ${TARGETS[2]}')
+        return_list.append(dnapars_tree)
 
-    if bootstrap:
-        dnapars_config_bootstrap = env.Command(os.path.join(outdir, 'dnapars_bootstrap/config.cfg'),
-                                     seqboot[0],
-                                     buffarg + 'python bin/mkconfig.py ${SOURCE} dnapars ' + quick_arg + bootstrap_arg + ' > $TARGET')
-        dnapars_bootstrap = CommandRunner(map(lambda x: os.path.join(outdir, x), ['dnapars_bootstrap/outtree', 'dnapars_bootstrap/outfile', 'dnapars_bootstrap/log.log']),
-                           dnapars_config,
-                           'cd ' + outdir + '/dnapars_bootstrap && rm -f outfile outtree && dnapars < ${SOURCE.file} > ${TARGETS[2].file}')
-        env.Depends(dnapars_bootstrap, seqboot)
 
-    gctree_outbase = os.path.join(outdir, 'gctree')
-    frame_arg = ' --frame {} '.format(frame) if frame is not None else ''
+##############
+### GCtree ###
+##############
+if tool_dict['gctree']:
+    gctree_outdir = outdir + '/gctree'
+    make_dir_if_nonexisting(gctree_outdir)
+    gctree_outbase = os.path.join(gctree_outdir, 'gctree')
     idlabel_arg = ' --idlabel' if idlabel else ''
-    gctree_infer = CommandRunner([gctree_outbase+'.inference.parsimony_forest.p',
-                                gctree_outbase+'.inference.log'],
-                                [dnapars[1], phylip[1]] +
-                                ([dnapars_bootstrap[1]] if bootstrap else []) +
-                                ([phylip[3]] if colorfile is not None else []),
-                                xarg + buffarg + 'python bin/gctree.py infer ${SOURCES[0]} ${SOURCES[1]} --naive ' + naiveID +
-                                ' --outbase ' + gctree_outbase +
-                                frame_arg +
-                                idlabel_arg +
-                                (' --colormap ${SOURCES[-1]} ' if colorfile is not None else '') +
-                                (' --bootstrap_phylipfile ${SOURCES[2]}' if bootstrap else '') +
-                                ' > ${TARGETS[1]}')
+    #### --colormapfile  <-- add this option to produce nice colored trees.
+    gctree_run = CommandRunner([gctree_outbase+'.inference.parsimony_forest.p',
+                                gctree_outbase+'_inference.log'],
+                               [dnapars[1], phylip[1]],
+                               'cd '+gctree_outdir+' && '+xarg+buffarg+'python '+repo_home+'/tools/gctree/bin/gctree.py infer '+repo_home+'/${SOURCES[0]} '+repo_home+'/${SOURCES[1]} --naive '+naiveID+' --outbase gctree'+idlabel_arg+' > ${TARGETS[1].file}')
+
+    gctree_infer = CommandRunner([gctree_outbase+'_inferred_tree.p',
+                                  gctree_outbase+'_inferred_tree.tree',
+                                  gctree_outbase+'_convertion.log'],
+                                 [gctree_run[0], phylip[2]],
+                                 xarg + 'python '+repo_home+'/tool_integration/GCtree/gctree_tools.py convert --name GCtree --forest ${SOURCES[0]} --idmap ${SOURCES[1]} '+colormap+' --outbase '+gctree_outbase+'_inferred_tree --naive '+naiveID+' > ${TARGETS[2]}')
     return_list.append(gctree_infer)
 
 
 
 
-if igphyml:
-    # basename = 'igphyml'
-    # Need the dedup phy as fa for ASR:
-    dedup_fasta = env.Command([os.path.join(outdir, basename+'.dedup.fasta'),
-                               os.path.join(outdir, basename+'.dedup.log')],
-                              phylip[0],
-                              'seqmagick convert $SOURCE ${TARGETS[0]} > ${TARGETS[1]}')
+##################
+### Add SAMM based ranking here
+##################
+if tool_dict['samm_rank']:
+    samm_rank_outdir = outdir + '/samm_rank'
+    make_dir_if_nonexisting(samm_rank_outdir)
+    samm_rank_outbase = samm_rank_outdir + '/samm_rank'
+    ### First output must be a forest file:
+    samm_rank_infer = CommandRunner([samm_rank_outbase+'_inferred_tree.p',
+                                     samm_rank_outbase+'_inferred_tree.tree',
+                                     samm_rank_outbase+'.log'],
+                                    [dnapars_tree[0], phylip[2]],
+                                    xarg + 'python '+repo_home+'/tool_integration/samm/samm_tools.py tree_rank --name samm_rank --forest ${SOURCES[0]} --idmap ${SOURCES[1]} '+colormap+' --mutability_file '+mutability+' --substitution_file '+substitution+' --outbase '+samm_rank_outbase+'_inferred_tree --naive '+naiveID+' > ${TARGETS[2]}')
+    return_list.append(samm_rank_infer)
+
+
+
+
+###############
+### IQ-TREE ###
+###############
+if tool_dict['iqtree']:
+    # Loop through the IQ-TREE settings:
+    for setting in tool_dict['iqtree']:
+        setting_id = 'IQ-TREE'+''.join(setting.split())
+
+        iqtree_outdir = outdir + '/'+setting_id
+        make_dir_if_nonexisting(iqtree_outdir)
+        iqtree_basename_dir = iqtree_outdir+'/'+basename
+        # Run IQ-TREE:
+        iqtree = CommandRunner([iqtree_basename_dir+'.phylip.treefile',
+                                iqtree_basename_dir+'.phylip.state',
+                                iqtree_basename_dir+'_iqtree.log'],
+                               [phylip[0]],
+                               'cp '+run_dir+'*.phylip '+iqtree_outdir+' && cd '+iqtree_outdir+' && '+buffarg+repo_home+'/tools/IQ-TREE/iqtree -redo -nt AUTO -asr -s ${SOURCES[0].file} '+setting+' > ${TARGETS[2].file}')
+        env.Depends(iqtree, phylip)
+
+        # Convert the ASR output to a collapsed forest with an ete3 tree and pickle it:
+        iqtree_infer = env.Command([iqtree_basename_dir+'_inferred_tree.p',
+                                    iqtree_basename_dir+'_inferred_tree.tree',
+                                    iqtree_outdir+'/iqtree_tools.log'],
+                                    [phylip[0], phylip[1], phylip[2], iqtree[0], iqtree[1]],
+                                    xarg + 'python '+repo_home+'/tool_integration/IQ-TREE/iqtree_tools.py ASR_parser --name '+setting_id+' --tree ${SOURCES[3]} '+colormap+' --idmap ${SOURCES[2]} --counts ${SOURCES[1]} --asr_seq ${SOURCES[4]} --leaf_seq ${SOURCES[0]} --outbase '+iqtree_basename_dir+'_inferred_tree --naive '+naiveID+' > ${TARGETS[2]}')
+        return_list.append(iqtree_infer)
+
+
+###############
+### IgPhyML ###
+###############
+if tool_dict['igphyml']:
+    igphyml_outdir = outdir + '/igphyml'
+    make_dir_if_nonexisting(igphyml_outdir)
+    igphyml_outbase = os.path.join(igphyml_outdir, 'igphyml')
+    igphyml_basename_dir = os.path.join(outdir, 'igphyml/'+basename)
 
     # Run IgPhyML with the GY94 model to get the initial topology:
-    igphyml_gy94_topology = CommandRunner([os.path.join(outdir, basename+'.phylip_igphyml_tree.txt_gy94'),
-                                           os.path.join(outdir, basename+'.phylip_igphyml_tree.txt_gy94.log')],
-                                           phylip[0],
-                                           'igphyml -i $SOURCE -m GY -w M0 -t e --run_id gy94 > ${TARGETS[1]}')
+    igphyml_gy94_topology = CommandRunner([igphyml_basename_dir+'.phylip_igphyml_tree.txt_gy94',
+                                           igphyml_basename_dir+'.phylip_igphyml_tree.txt_gy94.log'],
+                                           [phylip[0], dedup_fasta[0]],
+                                           # IgPhyML is a little silly in it's handling of outputs, therefore this copy hack:
+                                           'cp '+run_dir+'*.phylip '+igphyml_outdir+' && cp '+run_dir+'*.fasta '+igphyml_outdir+' && cd '+igphyml_outdir+' && '+buffarg+repo_home+'/tools/IgPhyML/igphyml -i ${SOURCES[0].file} -m GY -w M0 -t e --run_id gy94 > ${TARGETS[1].file}')
 
     # Run IgPhyML with the HLP16 model using the GY94 tree topology as starting point:
     igphyml_opti = 'tlr -s'  # <--- can be changed to 'lr' or 'r'
     ### Full motif model: --motifs WRC_2:0,GYW_0:1,WA_1:2,TW_0:3,SYC_2:4,GRS_0:5 --hotness e,e,e,e,e,e
     ### Less parameter rich motif model: --motifs WRC_2:0,GYW_0:0,WA_1:1,TW_0:2,SYC_2:3,GRS_0:3 --hotness e,e,e,e
-    igphyml_hlp16 = CommandRunner([os.path.join(outdir, basename+'.phylip_igphyml_tree.txt'),
-                              os.path.join(outdir, basename+'.phylip_igphyml_stats.txt'),
-                              os.path.join(outdir, basename+'.phylip_igphyml_tree.txt.log')],
-                             [phylip[0], igphyml_gy94_topology[0]],
-                             'igphyml --motifs WRC_2:0,GYW_0:1,WA_1:2,TW_0:3,SYC_2:4,GRS_0:5 --hotness e,e,e,e,e,e -i ${SOURCES[0]} -u ${SOURCES[1]} -m HLP17 --root '+naiveID+' -o '+igphyml_opti+' --run_id hlp16 > ${TARGETS[2]}')
+    igphyml_hlp16 = CommandRunner([igphyml_basename_dir+'.phylip_igphyml_tree.txt',
+                                  igphyml_basename_dir+'.phylip_igphyml_stats.txt',
+                                  igphyml_basename_dir+'.phylip_igphyml_tree.txt.log'],
+                                  [phylip[0], igphyml_gy94_topology[0]],
+                                  'cd '+igphyml_outdir+' && '+buffarg+repo_home+'/tools/IgPhyML/igphyml --motifs WRC_2:0,GYW_0:1,WA_1:2,TW_0:3,SYC_2:4,GRS_0:5 --hotness e,e,e,e,e,e -i ${SOURCES[0].file} -u ${SOURCES[1].file} -m HLP17 --root '+naiveID+' -o '+igphyml_opti+' --run_id hlp16 > ${TARGETS[2].file}')
 
     # On the HLP16 output tree make the naive sequence an outgroup:
-    naive_outgroup = env.Command([os.path.join(outdir, basename+'.phylip_igphyml_tree.txt.outgroup'),
-                                  os.path.join(outdir, basename+'.phylip_igphyml_tree.txt.outgroup.log')],
+    naive_outgroup = env.Command([igphyml_basename_dir+'.phylip_igphyml_tree.txt.outgroup',
+                                 igphyml_basename_dir+'.phylip_igphyml_tree.txt.outgroup.log'],
                                  igphyml_hlp16[0],
-                                 'python igphyml_files/igphyml_tools.py reroot --tree $SOURCE --reroot_tree ${TARGETS[0]} --pattern '+naiveID+' --outgroup 1 > ${TARGETS[1]}')
+                                 'python '+repo_home+'/tool_integration/IgPhyML/igphyml_tools.py reroot --tree ${SOURCE} --reroot_tree ${TARGETS[0]} --pattern '+naiveID+' --outgroup > ${TARGETS[1]}')
 
-    igphyml_dir = which('igphyml')
-    assert(igphyml_dir is not None)
-    igphyml_dir = re.sub(r'/src/\w+$', '', igphyml_dir)
+    igphyml_dir = repo_home+'/tools/IgPhyML'
     # Run IgPhyML ASR script:
-    run_ASR = CommandRunner([os.path.join(outdir, basename+'.MLcodons.fa'),
-                        os.path.join(outdir, basename+'.igphyml_hlp16.MLcodons.log')],
-                       [igphyml_hlp16[1], naive_outgroup[0], dedup_fasta[0]],
-                       buffarg + 'perl igphyml_files/ancReconstructHLP16.pl PLACEHOLDER_CONFIG_FILE -rooted 1 -length D -stats ${SOURCES[0]} -tree ${SOURCES[1]} -seqfile ${SOURCES[2]} -outdir '+outdir+' -stem '+basename+' -rootid '+naiveID+' -igphyml '+igphyml_dir+'> ${TARGETS[1]}')
+    run_ASR = CommandRunner([igphyml_basename_dir+'.MLcodons.fa',
+                            igphyml_basename_dir+'.igphyml_hlp16.MLcodons.log'],
+                            [igphyml_hlp16[1], naive_outgroup[0], dedup_fasta[0]],
+                            'cd '+igphyml_outdir+' && '+buffarg+'perl '+repo_home+'/tool_integration/IgPhyML/ancReconstructHLP16.pl PLACEHOLDER_CONFIG_FILE -rooted 1 -length D -stats ${SOURCES[0].file} -tree ${SOURCES[1].file} -seqfile ${SOURCES[2].file} -outdir . -stem '+basename+' -rootid '+naiveID+' -igphyml '+igphyml_dir+'> ${TARGETS[1].file}')
 
-    # Convert the ASR output to an collapsed forest with an ete3 tree and pickle it:
-    igphyml_infer = env.Command([os.path.join(outdir, 'igphyml.inferred_tree.p'),
-                                 os.path.join(outdir, 'igphyml.inferred_tree.log')],
-                                [naive_outgroup[0], phylip[1], run_ASR],
-                                xarg + 'python igphyml_files/igphyml_tools.py ASR_parser --tree ${SOURCES[0]} --counts ${SOURCES[1]} --asr_seq ${SOURCES[2]} --outbase '+os.path.join(outdir, 'igphyml.inferred_tree')+ ' --naive '+naiveID+' > ${TARGETS[1]}')
+    # Convert the ASR output to a collapsed forest with an ete3 tree and pickle it:
+    igphyml_infer = env.Command([igphyml_outbase+'_inferred_tree.p',
+                                igphyml_outbase+'_inferred_tree.tree',
+                                igphyml_outdir+'/igphyml_tools.log'],
+                                [naive_outgroup[0], phylip[1], run_ASR[0], phylip[2]],
+                                xarg + 'python '+repo_home+'/tool_integration/IgPhyML/igphyml_tools.py ASR_parser --name IgPhyML --tree ${SOURCES[0]} --counts ${SOURCES[1]} --asr_seq ${SOURCES[2]} --idmap ${SOURCES[3]} '+colormap+' --outbase '+igphyml_outbase+'_inferred_tree --naive '+naiveID+' > ${TARGETS[2]}')
     return_list.append(igphyml_infer)
+
 
 Return('return_list')

@@ -5,3 +5,6 @@
 .ipynb_checkpoints
 *.pyc
 ._*
+*.tar.gz
+
+

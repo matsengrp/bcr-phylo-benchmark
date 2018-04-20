@@ -29,36 +29,40 @@ aggdat.to_csv(args.outbase+'.tsv', sep='\t', index=False)
 
 plt.figure()
 df1 = pd.melt(aggdat.ix[:, aggdat.columns != 'N_taxa'], id_vars=['method'], var_name='metric')
-sns.factorplot(x="method", y="value", col="metric", col_wrap=2,
-                   data=df1, kind="swarm", size=3, aspect=.8, sharey=False)
+p = sns.factorplot(x="method", y="value", col="metric", col_wrap=2,
+                   data=df1, kind="swarm", size=6, aspect=.65, sharey=False)
+p.set_xticklabels(rotation=30)
 plt.savefig(args.outbase+'.pdf')
 
-sns.factorplot(x="method", y="value", col="metric", col_wrap=2,
-                   data=df1, kind="box", size=3, aspect=.8, sharey=False)
+p = sns.factorplot(x="method", y="value", col="metric", col_wrap=2,
+                   data=df1, kind="box", size=6, aspect=.65, sharey=False)
+p.set_xticklabels(rotation=30)
 plt.savefig(args.outbase+'_box.pdf')
 
-sns.factorplot(x="method", y="value", col="metric", col_wrap=2,
-                   data=df1, kind="violin", size=3, aspect=.8, sharey=False)
+p = sns.factorplot(x="method", y="value", col="metric", col_wrap=2,
+                   data=df1, kind="violin", size=6, aspect=.65, sharey=False)
+p.set_xticklabels(rotation=30)
 plt.savefig(args.outbase+'_violin.pdf')
 
-plt.figure()
-RF_cat = list(set(aggdat['RF']))
-RFs = list()
-correlations = list()
-for i in RF_cat:
-    sl = aggdat[aggdat['RF'] == i]
-    if len(aggdat[aggdat['RF'] == i]) < 10:
-        continue
-    corr_tup = pearsonr(sl['MRCA'], sl['COAR'])
-    if corr_tup[0]:
-        correlations.append(corr_tup[0])
-        RFs.append(str(i))
+if 'RF' in aggdat:
+    plt.figure()
+    RF_cat = list(set(aggdat['RF']))
+    RFs = list()
+    correlations = list()
+    for i in RF_cat:
+        sl = aggdat[aggdat['RF'] == i]
+        if len(aggdat[aggdat['RF'] == i]) < 10:
+            continue
+        corr_tup = pearsonr(sl['MRCA'], sl['COAR'])
+        if corr_tup[0]:
+            correlations.append(corr_tup[0])
+            RFs.append(str(i))
 
-if len(correlations) > 0:
-    df = pd.DataFrame({'correlation':correlations, 'RF':RFs})
-    sns.barplot(x="RF", y="correlation", data=df)
-    plt.savefig(args.outbase+'_MRSAvsCOAR.pdf')
+    if len(correlations) > 0:
+        df = pd.DataFrame({'correlation':correlations, 'RF':RFs})
+        sns.barplot(x="RF", y="correlation", data=df)
+        plt.savefig(args.outbase+'_MRSAvsCOAR.pdf')
 
 
-sns.pairplot(aggdat, kind="reg")
-plt.savefig(args.outbase+'_pairplot.pdf')
+    sns.pairplot(aggdat, kind="reg")
+    plt.savefig(args.outbase+'_pairplot.pdf')

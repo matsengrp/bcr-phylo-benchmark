@@ -47,9 +47,9 @@ sims = set(aggdat['simulation'])
 nsims = len(sims)
 
 if args.experimental is not None:
-    new_aln, counts = fasta_parse(args.experimental, naive='GL', converter='tas')[:2]
+    new_aln, counts = fasta_parse(args.experimental, naive='naive', converter='tas')[:2]
     exp_dict = {seq.id:str(seq.seq) for seq in new_aln}
-    naive_id = [seq for seq in exp_dict if 'gl' in seq][0]
+    naive_id = [seq for seq in exp_dict if 'naive' in seq][0]
     frequency, distance_from_naive, degree = zip(*[(counts[seq],
                                                     hamming_distance(exp_dict[seq], exp_dict[naive_id]),
                                                     sum(hamming_distance(exp_dict[seq], exp_dict[seq2]) == 1 for seq2 in exp_dict if seq2 is not seq and counts[seq2] != 0))

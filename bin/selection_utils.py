@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 '''
-utility functions for selection simulation
+Utility functions for selection simulation.
 '''
 
 from __future__ import division, print_function
@@ -11,14 +11,17 @@ import scipy
 from scipy.optimize import minimize, fsolve
 import matplotlib; matplotlib.use('agg')
 from matplotlib import pyplot as plt
-from utils import hamming_distance
+from GCutils import hamming_distance
 
 def calc_Kd(seqAA, targetAAseqs, hd2affy):
     '''Find the closest target sequence to and apply the "hamming distance to affinity" transformation function.'''
-    hd = min([hamming_distance(seqAA, t) for t in targetAAseqs])
+    if '*' in seqAA:  # Non-sense sequences have zero affinity (zero affinty meaning infinity Kd)
+        return(float('inf'))
+    else:
+        hd = min([hamming_distance(seqAA, t) for t in targetAAseqs])
     return(hd2affy(hd))
 
-def lambda_selection(node, tree, targetAAseqs, hd2affy, A_total, B_total, Lp):
+def lambda_selection(tree, targetAAseqs, hd2affy, A_total, B_total, Lp):
     '''
     Given a node and its tree and a "hamming distance to affinity" transformation function
     reutrn the poisson lambda parameter for the progeny distribution.
@@ -58,16 +61,16 @@ def lambda_selection(node, tree, targetAAseqs, hd2affy, A_total, B_total, Lp):
         lambda_ = alpha + (2 - alpha) / (1 + Q*scipy.exp(-beta*BA))
         return(lambda_)
 
-    # Update the list of affinities for all the live nodes:
-    Kd_n = scipy.array([n.Kd for n in tree.iter_leaves() if not n.terminated])
+    # Update the list of affinities for all the live leaves:
+    live_leaves = [l for l in tree.iter_leaves() if not l.terminated]
+    Kd_n = scipy.array([n.Kd for n in live_leaves])
     BnA = calc_binding_time(Kd_n, A_total, B_total)
     lambdas = trans_BA(BnA, Lp)
-    i = 0
-    for n in tree.iter_leaves():
+    assert(len(lambdas) == len(live_leaves))
+    for lambda_, n in zip(lambdas, live_leaves):
         if n.terminated:
             continue
-        n.add_feature('lambda_', lambdas[i])
-        i += 1
+        n.add_feature('lambda_', lambda_)
     return(tree)
 
 def find_A_total(carry_cap, B_total, f_full, mature_affy, U):

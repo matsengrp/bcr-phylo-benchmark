@@ -1,0 +1,214 @@
+#! /usr/bin/env python
+# -*- coding: utf-8 -*-
+'''Simulate tree'''
+import os
+try:
+    import cPickle as pickle
+except:
+    import pickle
+from nestly import Nest
+from nestly.scons import SConsWrap
+# the following must be exported by parent SConstruct/SConscript
+Import('env tool_dict quick idlabel outdir exp_data naiveIDexp mutability substitution CommandRunner xarg buffarg')
+
+
+clone_dict = dict()
+with open(exp_data) as fh:
+    header = fh.next()
+    # print('Header:', header)
+    hc = 0
+    lc = 0
+    for l in fh:
+        cloneID, seqID, abundance, iso_set, chain, seq = l.strip().split(',')
+        if len(cloneID) > 9:
+            raise Exception('The cloneID cannot exceed 9 characters.')
+        # Convertions:
+        seqID = seqID + '_' + chain
+        abundance = int(abundance)
+        iso_set = set(iso_set.split(':'))
+        if not cloneID in clone_dict:
+            clone_dict[cloneID] = dict()
+        if not seqID in clone_dict[cloneID]:
+            clone_dict[cloneID][seqID] = {'abundance':abundance, 'iso_set':iso_set, 'chain':chain, 'seq':seq}
+            if chain == 'heavy':
+                hc += 1
+            elif chain == 'light':
+                lc += 1
+            else:
+                raise Exception('Chain not recognozied.')
+        else:
+            raise Exception('Found sequenceID and cloneID twice: {}-{}'.format(cloneID, seqID))
+
+
+assert(hc > 0)
+if lc > 0:
+    assert(hc == lc)
+# Check that all naive sequences are there:
+naiveID_heavy = naiveIDexp + '_heavy'
+naiveID_light = naiveIDexp + '_light'
+for clone in clone_dict.values():
+    assert(naiveID_heavy in clone or naiveID_light in clone)
+
+# Number of clones to Nest:
+Nclones = len(clone_dict)
+cloneID_list = [cloneID for cloneID in clone_dict.keys()]
+
+nest = Nest()
+w = SConsWrap(nest, outdir, alias_environment=env)
+
+
+# Initialize our first nest level:
+w.add_aggregate('agg', list) # <-- for aggregating inference result from repeated simulations with the same parameters
+w.add('clone', cloneID_list)
+
+try:
+    os.mkdir(outdir)
+except:
+    pass
+
+
+@w.add_target()
+def write_clone(outdir, c):
+    '''
+    Write clone fasta and seq_info dict.
+    '''
+    outdir = outdir.rstrip('/')
+    try:
+        os.mkdir(outdir)
+    except:
+        pass
+
+    cloneID = c['clone']
+    clone = clone_dict[cloneID]
+    seq_info_dict = dict()
+    # Get the find all the chains defined for this clone:
+    chain_list = [seq_info['chain'] for seq_info in clone.values()]
+    chains = set(chain_list)
+    # Assert that the pairing is fully resolved for a clone:
+    if len(chains) == 2:
+        assert(chain_list.count('heavy') == chain_list.count('light'))
+        chains = ['heavy', 'light']
+    else:
+        assert(chain_list.count('heavy') > 0)
+        chains = ['heavy']
+
+    # Open files to write the clone sequences:
+    fasta = list()
+    naiveID = list()
+
+    try:
+        os.mkdir(outdir+'/heavy')
+    except:
+        pass
+    fnam = '{}/heavy/cloneID_{}_heavy.fa'.format(outdir, cloneID)
+    fho_H = open(fnam, 'w')
+    fasta.append(fnam)
+    naiveID.append(cloneID + 'h')
+    if 'light' in chains:
+        try:
+            os.mkdir(outdir+'/light')
+        except:
+            pass
+        fnam = '{}/light/cloneID_{}_light.fa'.format(outdir, cloneID)
+        fho_L = open(fnam, 'w')
+        fasta.append(fnam)
+        naiveID.append(cloneID + 'l')
+
+    for seqID, seq_info in clone.items():
+        # The unique ID of the sequence:
+        if naiveIDexp in seqID:
+            # This is necessary to keep the name string length down:
+            uid = cloneID + seq_info['chain'][0]
+        else:
+            uid = cloneID + '_' + seqID
+        # Store all meta-information about the sequence:
+        seq_info_dict[uid] = seq_info
+
+        # Write sequences to fasta file:
+        if seq_info['chain'] == 'heavy':
+            fho_H.write('>{}\n{}\n'.format(uid, seq_info['seq']))
+        if seq_info['chain'] == 'light':
+            fho_L.write('>{}\n{}\n'.format(uid, seq_info['seq']))
+
+    # Dump info dict:
+    seq_info_fnam = '{}/cloneID_{}_info_dict.p'.format(outdir, cloneID)
+    with open(seq_info_fnam, 'wb') as fh_info_dict:
+        pickle.dump(seq_info_dict, fh_info_dict)
+
+    # Close file handles:
+    fho_H.close()
+    try:
+        fho_L.close()
+    except:
+        pass
+
+    return (chains, fasta, naiveID, seq_info_fnam)
+
+@w.add_target()
+def infer(outdir, c):
+    '''Now do inference on the simulation results.'''
+    fasta_l = c['write_clone'][1]
+    naiveID_l = c['write_clone'][2]
+    colormap = None
+    converter = None
+    res = list()
+    for idx, z in enumerate(zip(fasta_l, naiveID_l, c['write_clone'][0])):
+        fasta, naiveID, chain = z
+        old_outdir = outdir
+        outdir = outdir + '/' + chain
+        res.append((chain, SConscript('SConscript.inference', exports='env tool_dict quick idlabel fasta outdir naiveID converter CommandRunner xarg buffarg colormap mutability substitution')))
+        outdir = old_outdir
+
+    return res
+
+
+# This is mapping is using a dirty trick and overwrites the input pickled forest objects
+# with new annotated forest objects and will fail if tried restarted on the same forest object twice.
+@w.add_target()
+def map_meta_information(outdir, c):
+    '''Map meta information from the seq_info_dict, back to the collapsed forests.'''
+    res = list()
+    for tup in c['infer']:
+        chain, infer_chain = tup
+        log_name = 'map_meta_information_{}.log'.format(chain)
+        outputs = [os.path.join(outdir, log_name)]
+        outputs.extend([str(x[0])[:-2]+'_meta'+str(x[0])[-2:] for x in infer_chain[1:]])
+        tgt = CommandRunner(outputs,
+                            [infer_chain[0][2], c['write_clone'][3], [x[0] for x in infer_chain[1:]]],  # <--- Notice the first instance is skipped (this is the phylip run)
+                            xarg + buffarg + 'python bin/map_meta_onto_tree.py --idmap ${SOURCES[0]} --meta ${SOURCES[1]} --forest_files ${SOURCES[2:]} > ${TARGETS[0]}')
+        res.append((chain, tgt))
+
+    return res
+
+
+@w.add_target()
+def validate(outdir, c):
+    '''Do validation.'''
+    outputs = [os.path.join(outdir, 'isotype_validation.tsv'),  # <-- this one compares different methods
+               os.path.join(outdir, 'isotype_validation.log')]
+    if len(c['map_meta_information']) == 2:
+        tgt = CommandRunner(outputs,
+                            [c['map_meta_information'][0][1][1:], c['map_meta_information'][1][1][1:]],
+                            xarg + buffarg + 'python bin/isotype_validation.py $SOURCES --outbase '+os.path.join(outdir, 'isotype_validation')+' > ${TARGETS[1]}')
+    else:
+        tgt = CommandRunner(outputs,
+                            [c['map_meta_information'][0][1][1:]],
+                            xarg + buffarg + 'python bin/isotype_validation.py $SOURCES --outbase '+os.path.join(outdir, 'isotype_validation')+' > ${TARGETS[1]}')
+    c['agg'].append(tgt[0])
+    return tgt
+
+w.pop('clone')
+
+
+
+@w.add_target()
+def inner_aggregate(outdir, c):
+    '''aggregate validation results'''
+    tgt = env.Command([os.path.join(outdir, 'validaggreg.tsv'),
+                       os.path.join(outdir, 'validaggreg.log')],
+                      c['agg'],
+                      buffarg + 'python bin/validaggreg_compare.py $SOURCES --outbase '+os.path.join(outdir, 'validaggreg')+' > ${TARGETS[1]}')
+    env.AlwaysBuild(tgt)
+    return tgt
+
+

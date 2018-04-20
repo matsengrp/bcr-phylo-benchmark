@@ -1,5 +1,14 @@
 # Benchmarking phylogenetic inference for B cell receptors
 
+Clone repo with submodules:
+```
+git clone --recursive https://github.com/matsengrp/bcr-phylo-benchmark.git
+```
+
+IgPhyML is provided but needs to be recompiled due to its use of hard-coded full path. Recompile by navigating to `tools/IgPhyML` and execute the OMP install:
+```
+./make_phyml_omp
+```
 
 ## DEPENDENCIES
 * scons
@@ -11,11 +20,16 @@
   * biopython
   * [ete3](http://etetoolkit.org/download/)
   * [nestly](https://pypi.python.org/pypi/nestly/0.6)
-* [PHYLIP](http://evolution.genetics.washington.edu/phylip/getme-new.html)
-  * PHYLIP's `dnapars` program is used for generating parsimony trees, so the command-line program `dnapars` should be on your path
 * X11 or xvfb-run (for rendering phylogenetic trees using ete3)
-* IgPhyML (https://github.com/kbhoehn/IgPhyML)
-  * Needs to be in $PATH
+* [seqmagick](https://github.com/fhcrc/seqmagick)
+* [GCtree](github.com/matsengrp/gctree) the Git repo should be kept under `./tools/gctree/`
+  * Provided as a Git submodule
+* [PHYLIP](http://evolution.genetics.washington.edu/phylip/getme-new.html) `dnaml` and `dnapars` stored under `./tools/dnaml/dnaml` and `./tools/dnapars/dnapars` respectively
+  * Precompile Linux binaries provided for both programs
+* [IQ-TREE](http://www.iqtree.org/) stored under `./tools/IQ-TREE/iqtree`
+  * Precompile Linux binaries provided
+* [IgPhyML](https://github.com/kbhoehn/IgPhyML) stored under `./tools/IgPhyML/igphyml`
+  * Precompile Linux binaries provided
 * perl5, with modules:
   * PDL
   * PDL::LinearAlgebra::Trans
@@ -49,7 +63,7 @@ All commands should be issued from within the gctree repo directory.
 
 ### **example:** to run GCtree inference on the included FASTA file on a remote machine
 ```
-scons --inference --fasta=Victora_data/150228_Clone_3-8.fasta --outdir=test --converter=tas --naiveID=GL --xvfb --jobs=10
+scons --inference --fasta=sequence_data/150228_Clone_3-8.fasta --outdir=test --converter=tas --naiveID=GL --xvfb --jobs=10
 ```
 Results are saved in directory `test/`. The `--converter=tas` argument means that integer sequence IDs in the FASTA file are interpreted as abundances. The flag `--xvfb` allows X rendering of ETE trees on remote machines. The argument `--jobs=10` indicates that 10 parallel processes should be used.
 
@@ -68,9 +82,91 @@ Results are saved in directory `test/`. The `--converter=tas` argument means tha
 
 `colorfile=[path]  ` path to a file of plotting colors for cells in the input FASTA file. Example, if the FASTA contains a sequence with ID `cell_1`, this cell could be colored red in the tree image by including the line `cell_1,red` in the color file.
 
-`--bootstrap=[int] ` boostrap resampling, and inference on each, default no bootstrap
+`--converter=[string]` if set to "tas", parse FASTA input IDs that are integers as indicating sequence abundance. Otherwise each line in the FASTA is assumed to indicate an individual (non-deduplicated) sequence. **NOTE:** the included FASTA file `sequence_data/150228_Clone_3-8.fasta` requires this option.
 
-`--converter=[string]` if set to "tas", parse FASTA input IDs that are integers as indicating sequence abundance. Otherwise each line in the FASTA is assumed to indicate an individual (non-deduplicated) sequence. **NOTE:** the included FASTA file `Victora_data/150228_Clone_3-8.fasta` requires this option.
+
+## **Sequence simulation**
+
+A couple of simulation commands with reasonable model parameters.
+
+### Neutral simulation
+
+This command will simulate a poisson branching process, with progeny distribution lambda=1.5, under a neutral mutation model i.e. no selection and therefore static progeny distribution, and terminate when 75 unterminated leaves are populating the tree.
+The number of mutations to introduce in a daugther cell is drawn from another possion distribution (lambda0=0.365) introducing mutations at a rate of approx. 1e-3, similar to real SHM rates.
+The positions and substitutions to use to introduce the mutations drawn follow an empirical substitution probability distribution derived from motifs.
+The tree is generated from a naive sequence seed, which will also be the root of the tree.
+A naive seed sequence is drawn randomly from the naive sequences provided in `sequence_data/AbPair_naive_seqs.fa`.
+
+```
+TMPDIR=/tmp xvfb-run -a python bin/simulator.py --mutability motifs/Mutability_S5F.csv --substitution motifs/Substitution_S5F.csv --outbase neutral_sim --lambda 1.5 --lambda0 0.365 --N 75 --random_seq sequence_data/AbPair_naive_seqs.fa > neut_simulator.log
+```
+
+The output consists of different informative files e.g. SVG renderings of the trees.
+The tree structure with internal nodes, leaves and associated sequences can be loaded from the pickled ETE3 tree object:
+```
+from ete3 import TreeNode, TreeStyle, NodeStyle, SVG_COLORS
+import pickle
+
+with open('neutral_sim_lineage_tree.p', 'rb') as fh:
+    tree = pickle.load(fh)
+
+# Print tree in ASCII:
+print(tree)
+# Root name and sequence:
+tree.name
+tree.sequence
+```
+
+
+### Selection simulation
+
+This command will simulate a poisson branching process coupled with a selection process.
+The progeny distribution is dynamically set for each cell in the simulation an depends on its fitness defined by its similarity to a "target" sequence and the fitness of the rest of the cell population (carrying capacity of 1000 cells).
+Possion lambda=2 is the maximum progeny distribution and lambda is then adjusted smaller according to the cell fitness.
+The simulation terminates after 35 rounds of evaluating the progeny for all live cells, then 60 leaves are randomly picked from the whole cell population and the tree is pruned to remove all non-picked leaves.
+The number of mutations to introduce in a daugther cell is drawn from another possion distribution (lambda0=0.365) introducing mutations at a rate of approx. 1e-3, similar to real SHM rates.
+The positions and substitutions to use to introduce the mutations drawn follow an empirical substitution probability distribution derived from motifs.
+The tree is generated from a naive sequence seed, which will also be the root of the tree.
+A naive seed sequence is drawn randomly from the naive sequences provided in `sequence_data/AbPair_naive_seqs.fa`.
+
+```
+TMPDIR=/tmp xvfb-run -a python bin/simulator.py --mutability motifs/Mutability_S5F.csv --substitution motifs/Substitution_S5F.csv --outbase selection_sim --lambda 2.0 --lambda0 0.365 --T 35 --n 60 --selection --target_dist 5 --target_count 100 --carry_cap 1000 --skip_update 100 --verbose --random_seq sequence_data/AbPair_naive_seqs.fa > sele_simulator.log
+```
+
+The output consists of different informative files e.g. SVG renderings of the trees.
+The tree structure with internal nodes, leaves and associated sequences can be loaded from the pickled ETE3 tree object:
+```
+from ete3 import TreeNode, TreeStyle, NodeStyle, SVG_COLORS
+import pickle
+
+with open('selection_sim_lineage_tree.p', 'rb') as fh:
+    tree = pickle.load(fh)
+
+# Print tree in ASCII:
+print(tree)
+# Root name and sequence:
+tree.name
+tree.sequence
+
+# Traverse through the nodes and print their affinity (Kd):
+### N.B. Smaller numberical value of affinity means higher fitness
+for node in tree.traverse():
+    print(node.Kd)
+```
+
+
+#### Selection simulation with intermediate sampling
+
+It is also possible to sample at intermediate timepoint during the simuluation with selection.
+This is done with providing additional timepoint with the `--T` parameter.
+Sampled cells are removed from the simulated cell population.
+
+```
+TMPDIR=/tmp xvfb-run -a python bin/simulator.py --mutability motifs/Mutability_S5F.csv --substitution motifs/Substitution_S5F.csv --outbase selection_inter_sim --lambda 2.0 --lambda0 0.365 --T 15 30 45 --n 30 --selection --target_dist 5 --target_count 100 --carry_cap 1000 --skip_update 100 --verbose --random_seq sequence_data/AbPair_naive_seqs.fa > sele_inter_simulator.log
+```
+
+
+
 
 ## **SIMULATION**
 
@@ -85,9 +181,9 @@ Results are saved in directory `test/`. The `--converter=tas` argument means tha
 
 `--naive=[string]             ` DNA sequence of naive sequence from which to begin simulating, a default is used if omitted
 
-`--mutability=[path]          ` path to S5F mutability file, default 'S5F/mutability'
+`--mutability=[path]          ` path to motifs mutability file, default 'motifs/Mutability_S5F.csv'
 
-`--substitution=[path]        ` path to S5F substitution file, default 'S5F/substitution'
+`--substitution=[path]        ` path to motifs substitution file, default 'motifs/Substitution_S5F.csv'
 
 `--lambda=[float, float, ...] ` values for Poisson branching parameter for simulation, default 2.0
 
