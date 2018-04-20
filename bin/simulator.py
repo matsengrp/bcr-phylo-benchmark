@@ -366,8 +366,9 @@ def simulate(args):
     is dynamically adjusted accordring to the hamming distance to a list of target sequences. The closer a sequence gets to one of the targets
     the higher fitness and the closer lambda will approach 2, vice versa when the sequence is far away lambda approaches 0.
     '''
-    numpy.random.seed(args.random_seed)
-    random.seed(args.random_seed)
+    if args.random_seed is not None:
+        numpy.random.seed(args.random_seed)
+        random.seed(args.random_seed)
     mutation_model = MutationModel(args.mutability, args.substitution)
     if args.lambda0 is None:
         args.lambda0 = [max([1, int(.01*len(args.sequence))])]
@@ -580,7 +581,7 @@ def main():
     parser.add_argument('--verbose', action='store_true', default=False, help='Print progress during simulation. Mostly useful for simulation with selection since this can take a while.')
     parser.add_argument('--outbase', type=str, default='GCsimulator_out', help='Output file base name')
     parser.add_argument('--idlabel', action='store_true', help='Flag for labeling the sequence ids of the nodes in the output tree images, also write associated fasta alignment if True')
-    parser.add_argument('--random_seed', type=int, default=0, help='for random number generator')
+    parser.add_argument('--random_seed', type=int, help='for random number generator')
 
     args = parser.parse_args()
     if True:#args.mutability.lower() == 'false' or args.mutability.lower() == 'none' or args.mutability.lower() == 'uniform':
