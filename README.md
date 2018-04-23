@@ -243,11 +243,7 @@ scons --simulate --igphyml --gctree --samm_rank --dnapars --dnaml --iqtree --iqt
 
 `--random_naive=[path]        ` path to file with naive DNA sequences. Will be randomly picked for simulation
 
-`--mutability=[path]          ` path to motifs mutability file, default 'motifs/Mutability_S5F.csv'
-
-`--substitution=[path]        ` path to motifs substitution file, default 'motifs/Substitution_S5F.csv'
-
-`--lambda=[float, float, ...] ` values for Poisson branching parameter for simulation, default 2.0
+`--lambda=[float, float, ...] ` values for Poisson branching parameter for simulation, default 2.0. Is overwritten under affinity simulation
 
 `--lambda0=[float, float, ...]` values for baseline mutation rate, default 0.25
 
@@ -257,37 +253,63 @@ scons --simulate --igphyml --gctree --samm_rank --dnapars --dnaml --iqtree --iqt
 
 `--n=[int]                    ` number of cells to sample from final population, default all
 
+`--idlabel                    ` label sequence IDs on tree, and write FASTA alignment of distinct sequences. The mapping of the unique names in this FASTA file to the cell names in the original input FASTA file can be found in the output file with suffix `.idmap`
+
+`--selection                  ` simulation with affinity selection
+
+`--target_dist                ` distance to selection target
+
+`--target_count               ` number of targets
+
+`--verbose                    ` verbose printing
+
+`--carry_cap                  ` carrying capacity of germinal center
+
+`--skip_update                ` skip update step
 
 
-### Optional arguments for both inference and simulation programs
 
-`--jobs=[int]  ` number of parallel processes to use
 
-`--srun        ` should cluster jobs be submitted with Slurm's srun?
 
-`--quick       ` less thorough parsimony tree search (faster, but smaller parsimony forest)
+### Isotype validation
 
-`--idlabel     ` label sequence IDs on tree, and write FASTA alignment of distinct sequences. The mapping of the unique names in this FASTA file to the cell names in the original input FASTA file can be found in the output file with suffix `.idmap`
+`scons --exp_data_test ...`
 
-`--xvfb        ` needed for X rendering in on remote machines
+Example:
+```
+scons --exp_data_test --gctree --dnapars --dnaml --igphyml --samm_rank --iqtree --iqtree_option_str="-m 000000" --iqtree_option_str="-m 010010" --iqtree_option_str="-m 123450" --outdir=isotype_validation --xvfb --jobs=10000 --srun --exp_data=isotype_validation_finalset.csv --naiveIDexp=naive
+```
+
+
+
+#### Required arguments
+
+`--exp_data=[path]                                        ` dataset with isotype information
+
+`--outdir=[path]                                          ` directory for output (created if does not exist)
+
+`--igphyml --gctree --samm_rank --dnapars --dnaml --iqtree` one or several inference tools
+
+* For `--iqtree` the model needs to be defined using `--iqtree_option_str` e.g. `--iqtree_option_str="-m 000000"` for JC. For other models replace the six figure [model code](http://www.iqtree.org/doc/Substitution-Models#dna-models).
+
+
+
+
+
+### Optional arguments for both simulation and isotype validation
+
+`--mutability=[path]          ` path to motifs mutability file, default 'motifs/Mutability_S5F.csv'
+
+`--substitution=[path]        ` path to motifs substitution file, default 'motifs/Substitution_S5F.csv'
+
+`--jobs=[int]                 ` number of parallel processes to use
+
+`--srun                       ` should cluster jobs be submitted with Slurm's srun?
+
+`--quick                      ` less thorough parsimony tree search (faster, but smaller parsimony forest)
+
+`--xvfb                       ` needed for X rendering in on remote machines
 
    * Try setting the above option if you get the error:`ETE: cannot connect to X server`
-
-
-
-
-### arguments for non-neutral simulation
-
-`--selection`    simulation with affinity selection
-
-`--target_dist`  distance to selection target
-
-`--target_count` number of targets
-
-`--verbose`      verbose printing
-
-`--carry_cap`    carrying capacity of germinal center
-
-`--skip_update`  skip update step
 
 
