@@ -9,5 +9,5 @@
 tools/IgPhyML/src/.deps/*.Po
 tools/IgPhyML/config.log
 tools/IgPhyML/src/*.o
-
+tools/IgPhyML/src/igphyml
 
