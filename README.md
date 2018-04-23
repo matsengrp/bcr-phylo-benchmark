@@ -100,9 +100,10 @@ Detach using `ctrl-p ctrl-q`.
 
 
 
-### DEPENDENCIES
+### Dependencies
+
 * Python 2 with conda
-  * Python dependencies kept in `environment_bpb.yml`
+  * Python dependencies kept in `environment_bpb.yml`
 * [GCtree](github.com/matsengrp/gctree) the GitHub repo should be kept under `./tools/gctree/`
   * Provided as a submodule
 * [PHYLIP](http://evolution.genetics.washington.edu/phylip/getme-new.html) `dnaml` and `dnapars` stored under `./tools/dnaml/dnaml` and `./tools/dnapars/dnapars` respectively
@@ -111,7 +112,7 @@ Detach using `ctrl-p ctrl-q`.
   * Precompile Linux binaries provided
 * [IgPhyML](https://github.com/kbhoehn/IgPhyML) stored under `./tools/IgPhyML/src/igphyml`
   * Provided as a submodule
-*[SAMM](github.com/matsengrp/samm) the GitHub repo should be kept under `./tools/samm/`
+* [SAMM](github.com/matsengrp/samm) the GitHub repo should be kept under `./tools/samm/`
   * Provided as a submodule
 * perl5, with modules:
   * PDL
@@ -119,46 +120,10 @@ Detach using `ctrl-p ctrl-q`.
 
 
 
-## SCONS PIPELINES
 
-Two programs are implemented:
-- an inference program for experimental data
-- a simulation/inference/validation program
+## Sequence simulation
 
-All commands should be issued from within the gctree repo directory.
-
-## QUICK START
-
-* **inference:**  `scons --inference --outdir=<output directory path> --fasta=<input fasta file>`
-* **simulation:** `scons --simulate  --outdir=<output directory path> --N=<integer population size to simulate>`
-
-### **example:** to run GCtree inference on the included FASTA file on a remote machine
-```
-scons --inference --fasta=sequence_data/150228_Clone_3-8.fasta --outdir=test --converter=tas --naiveID=GL --xvfb --jobs=10
-```
-Results are saved in directory `test/`. The `--converter=tas` argument means that integer sequence IDs in the FASTA file are interpreted as abundances. The flag `--xvfb` allows X rendering of ETE trees on remote machines. The argument `--jobs=10` indicates that 10 parallel processes should be used.
-
-## **INFERENCE**
-
-`scons --inference ...`
-
-### required arguments
-
-`--fasta=[path]` path to FASTA input alignment
-`--outdir=[path]` directory for output (created if does not exist)
-
-### optional arguments
-
-`--naiveID=[string]` ID of naive sequence in FASTA file used for outgroup rooting, default 'naive'
-
-`colorfile=[path]  ` path to a file of plotting colors for cells in the input FASTA file. Example, if the FASTA contains a sequence with ID `cell_1`, this cell could be colored red in the tree image by including the line `cell_1,red` in the color file.
-
-`--converter=[string]` if set to "tas", parse FASTA input IDs that are integers as indicating sequence abundance. Otherwise each line in the FASTA is assumed to indicate an individual (non-deduplicated) sequence. **NOTE:** the included FASTA file `sequence_data/150228_Clone_3-8.fasta` requires this option.
-
-
-## **Sequence simulation**
-
-A couple of simulation commands with reasonable model parameters.
+Simulation commands with reasonable model parameters.
 
 ### Neutral simulation
 
@@ -236,6 +201,53 @@ Sampled cells are removed from the simulated cell population.
 TMPDIR=/tmp xvfb-run -a python bin/simulator.py --mutability motifs/Mutability_S5F.csv --substitution motifs/Substitution_S5F.csv --outbase selection_inter_sim --lambda 2.0 --lambda0 0.365 --T 15 30 45 --n 30 --selection --target_dist 5 --target_count 100 --carry_cap 1000 --skip_update 100 --verbose --random_seq sequence_data/AbPair_naive_seqs.fa > sele_inter_simulator.log
 ```
 
+
+
+
+
+
+
+
+
+
+
+
+
+## SCONS PIPELINES
+
+Two programs are implemented:
+- an inference program for experimental data
+- a simulation/inference/validation program
+
+All commands should be issued from within the gctree repo directory.
+
+## QUICK START
+
+* **inference:**  `scons --inference --outdir=<output directory path> --fasta=<input fasta file>`
+* **simulation:** `scons --simulate  --outdir=<output directory path> --N=<integer population size to simulate>`
+
+### **example:** to run GCtree inference on the included FASTA file on a remote machine
+```
+scons --inference --fasta=sequence_data/150228_Clone_3-8.fasta --outdir=test --converter=tas --naiveID=GL --xvfb --jobs=10
+```
+Results are saved in directory `test/`. The `--converter=tas` argument means that integer sequence IDs in the FASTA file are interpreted as abundances. The flag `--xvfb` allows X rendering of ETE trees on remote machines. The argument `--jobs=10` indicates that 10 parallel processes should be used.
+
+## **INFERENCE**
+
+`scons --inference ...`
+
+### required arguments
+
+`--fasta=[path]` path to FASTA input alignment
+`--outdir=[path]` directory for output (created if does not exist)
+
+### optional arguments
+
+`--naiveID=[string]` ID of naive sequence in FASTA file used for outgroup rooting, default 'naive'
+
+`colorfile=[path]  ` path to a file of plotting colors for cells in the input FASTA file. Example, if the FASTA contains a sequence with ID `cell_1`, this cell could be colored red in the tree image by including the line `cell_1,red` in the color file.
+
+`--converter=[string]` if set to "tas", parse FASTA input IDs that are integers as indicating sequence abundance. Otherwise each line in the FASTA is assumed to indicate an individual (non-deduplicated) sequence. **NOTE:** the included FASTA file `sequence_data/150228_Clone_3-8.fasta` requires this option.
 
 
 
