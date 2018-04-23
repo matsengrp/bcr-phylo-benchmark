@@ -6,7 +6,8 @@
 *.pyc
 ._*
 *.tar.gz
-tools/IgPhyML/src/*.o
-tools/IgPhyML/src/*.Po
+tools/IgPhyML/src/.deps/*.Po
 tools/IgPhyML/config.log
+tools/IgPhyML/src/*.o
+
 
