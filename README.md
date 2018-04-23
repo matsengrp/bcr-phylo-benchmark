@@ -227,19 +227,21 @@ scons --simulate --igphyml --gctree --samm_rank --dnapars --dnaml --iqtree --iqt
 
 #### Required arguments
 
-`--N=[int]` populaton size to simulate
+`--N=[int]                                                ` populaton size to simulate
 
-`--outdir=[path]` directory for output (created if does not exist)
+`--outdir=[path]                                          ` directory for output (created if does not exist)
 
 `--igphyml --gctree --samm_rank --dnapars --dnaml --iqtree` one or several inference tools
 
-* for `--iqtree` the model needs to be defined using `--iqtree_option_str` e.g. `--iqtree_option_str="-m 000000"` for JC. For other models replace the six figure [model code](http://www.iqtree.org/doc/Substitution-Models#dna-models).
+* For `--iqtree` the model needs to be defined using `--iqtree_option_str` e.g. `--iqtree_option_str="-m 000000"` for JC. For other models replace the six figure [model code](http://www.iqtree.org/doc/Substitution-Models#dna-models).
 
 
 
 #### Optional arguments
 
 `--naive=[string]             ` DNA sequence of naive sequence from which to begin simulating, a default is used if omitted
+
+`--random_naive=[path]        ` path to file with naive DNA sequences. Will be randomly picked for simulation
 
 `--mutability=[path]          ` path to motifs mutability file, default 'motifs/Mutability_S5F.csv'
 
@@ -256,13 +258,12 @@ scons --simulate --igphyml --gctree --samm_rank --dnapars --dnaml --iqtree --iqt
 `--n=[int]                    ` number of cells to sample from final population, default all
 
 
+
 ### Optional arguments for both inference and simulation programs
 
 `--jobs=[int]  ` number of parallel processes to use
 
 `--srun        ` should cluster jobs be submitted with Slurm's srun?
-
-`--frame=[int] ` codon reading frame, default `None`
 
 `--quick       ` less thorough parsimony tree search (faster, but smaller parsimony forest)
 
@@ -273,11 +274,6 @@ scons --simulate --igphyml --gctree --samm_rank --dnapars --dnaml --iqtree --iqt
    * Try setting the above option if you get the error:`ETE: cannot connect to X server`
 
 
-`--igphyml`  include results for tree inference with the IgPhyML package
-
-`--dnaml`    include results for maximum likelihood tree inference using `dnaml` from the PHYLIP package
-
-`--nogctree` do not perform gctree inference
 
 
 ### arguments for non-neutral simulation
