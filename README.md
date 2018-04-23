@@ -4,9 +4,13 @@
 </p>
 
 
+
 # Benchmarking phylogenetic inference for B cell receptors
 
-This code repository contains...
+This code repository contains an `scons` pipeline to run a number of phylogenetic inference tools for simulated B cell receptor sequences.
+The standard workflow involves 1) simulate sequences, 2) run X phylogenetic tools, and 3) compare true with inferred and report differences.
+The same workflow is also used to run comparisons based on isotype misplacement scores.
+Pre-run simulation results and their corresponding scons commands can be found on [our Zenodo bucket](https://doi.org/10.5281/zenodo.1218140).
 
 
 
@@ -18,6 +22,68 @@ git clone --recursive https://github.com/matsengrp/bcr-phylo-benchmark.git
 cd SPURF
 git pull --recurse-submodules https://github.com/matsengrp/bcr-phylo-benchmark.git
 ```
+
+
+
+## Installation
+
+There are two supported ways of installing this pipeline: 1) using Conda on Linux and 2) using Docker and the provided Dockerfile or image.
+The Conda installation has only been tested on Ubuntu.
+For testing we highly recommend using Docker which is supported by most platforms.
+
+
+
+### Using Conda
+
+First, [install Conda](https://conda.io/docs/user-guide/install/linux.html) for Python 2.
+Miniconda is sufficient and much faster at installing.
+Remember to `source ~/.bashrc` if continuing installing in the same terminal window.
+
+Install dependencies with `apt-get`:
+```
+sudo apt-get update
+sudo apt-get upgrade -y
+sudo apt-get install -y libz-dev cmake scons libgsl0-dev libncurses5-dev libxml2-dev libxslt1-dev mafft hmmer
+```
+
+Use the INSTALL executable to install the required python environment and partis (via `./INSTALL`).
+After installation, the Conda environment needs to be loaded every time before use, like this:
+```
+source activate SPURF
+```
+
+
+### Using Docker
+
+First [install Docker](https://docs.docker.com/engine/installation/).
+
+We have a Docker [image on Docker Hub](https://hub.docker.com/r/krdav/spurf/) that is automatically kept up to date with the master branch of this repository.
+It can be pulled and used directly:
+```
+sudo docker pull krdav/spurf
+```
+
+Alternatively you can build the container yourself from inside the main repository directory:
+```
+sudo docker build -t spurf .
+```
+
+To run this container, use a command such as (see modifications below)
+
+```
+sudo docker run -it -v host-dir:/host krdav/spurf /bin/bash
+```
+
+* replace `host-dir` with the local directory to which you would like access inside your container 
+* replace `/host` with the place you would like this directory to be mounted
+* if you built your own container, use `spurf` in place of `krdav/spurf`
+
+Detach using `ctrl-p ctrl-q`.
+
+
+
+
+
 
 
 
