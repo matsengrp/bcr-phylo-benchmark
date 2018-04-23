@@ -44,9 +44,9 @@ RUN cpan install PDL::LinearAlgebra::Trans
 
 
 # Use the environment.yml to create the conda environment.
-#ADD environment.yml /tmp/environment.yml
-#WORKDIR /tmp
-#RUN ["conda", "env", "create"]
+ADD environment.yml /tmp/environment.yml
+WORKDIR /tmp
+RUN ["conda", "env", "create"]
 
 WORKDIR /bcr-phylo-benchmark
 COPY . /bcr-phylo-benchmark
