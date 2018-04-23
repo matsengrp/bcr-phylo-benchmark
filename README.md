@@ -6,10 +6,27 @@
 
 # Benchmarking phylogenetic inference for B cell receptors
 
-Clone repo with submodules:
+This code repository contains...
+
+
+
+## Cloning this repo
+
+Clone this GitHub repo recursively to get the necessary submodules:
 ```
 git clone --recursive https://github.com/matsengrp/bcr-phylo-benchmark.git
+cd SPURF
+git pull --recurse-submodules https://github.com/matsengrp/bcr-phylo-benchmark.git
 ```
+
+
+
+
+
+
+
+
+
 
 IgPhyML is provided but needs to be recompiled due to its use of hard-coded full path. Recompile by navigating to `tools/IgPhyML` and execute the OMP install:
 ```
@@ -40,15 +57,16 @@ IgPhyML is provided but needs to be recompiled due to its use of hard-coded full
   * PDL
   * PDL::LinearAlgebra::Trans
 ```
+sudo apt-get update && apt-get install -y libblas-dev liblapack-dev gfortran
+
 cpan
 > install PDL
 > install PDL::LinearAlgebra::Trans
 ```
 
 **NOTE:** for installing scons, ete, and other python dependencies, [conda](https://conda.io/docs/) is recommended:
-```bash
-conda install -c etetoolkit ete3 ete3_external_apps
-conda install biopython matplotlib nestly pandas scipy scons seaborn
+```
+conda env create -f environment_bpb.yml
 ```
 Alternatively, an example linux environment spec file is included (`spec-file.txt`), which may be used to create a conda environment.
 For example, to create an environment called `gctree`, execute `conda create --name gctree --file spec-file.txt`, then activate the environment with `source activate gctree`.
