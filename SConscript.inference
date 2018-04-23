@@ -215,7 +215,7 @@ if tool_dict['igphyml']:
                                            igphyml_basename_dir+'.phylip_igphyml_tree.txt_gy94.log'],
                                            [phylip[0], dedup_fasta[0]],
                                            # IgPhyML is a little silly in it's handling of outputs, therefore this copy hack:
-                                           'cp '+run_dir+'*.phylip '+igphyml_outdir+' && cp '+run_dir+'*.fasta '+igphyml_outdir+' && cd '+igphyml_outdir+' && '+buffarg+repo_home+'/tools/IgPhyML/igphyml -i ${SOURCES[0].file} -m GY -w M0 -t e --run_id gy94 > ${TARGETS[1].file}')
+                                           'cp '+run_dir+'*.phylip '+igphyml_outdir+' && cp '+run_dir+'*.fasta '+igphyml_outdir+' && cd '+igphyml_outdir+' && '+buffarg+repo_home+'/tools/IgPhyML/src/igphyml -i ${SOURCES[0].file} -m GY -w M0 -t e --run_id gy94 > ${TARGETS[1].file}')
 
     # Run IgPhyML with the HLP16 model using the GY94 tree topology as starting point:
     igphyml_opti = 'tlr -s'  # <--- can be changed to 'lr' or 'r'
@@ -225,7 +225,7 @@ if tool_dict['igphyml']:
                                   igphyml_basename_dir+'.phylip_igphyml_stats.txt',
                                   igphyml_basename_dir+'.phylip_igphyml_tree.txt.log'],
                                   [phylip[0], igphyml_gy94_topology[0]],
-                                  'cd '+igphyml_outdir+' && '+buffarg+repo_home+'/tools/IgPhyML/igphyml --motifs WRC_2:0,GYW_0:1,WA_1:2,TW_0:3,SYC_2:4,GRS_0:5 --hotness e,e,e,e,e,e -i ${SOURCES[0].file} -u ${SOURCES[1].file} -m HLP17 --root '+naiveID+' -o '+igphyml_opti+' --run_id hlp16 > ${TARGETS[2].file}')
+                                  'cd '+igphyml_outdir+' && '+buffarg+repo_home+'/tools/IgPhyML/src/igphyml --motifs WRC_2:0,GYW_0:1,WA_1:2,TW_0:3,SYC_2:4,GRS_0:5 --hotness e,e,e,e,e,e -i ${SOURCES[0].file} -u ${SOURCES[1].file} -m HLP17 --root '+naiveID+' -o '+igphyml_opti+' --run_id hlp16 > ${TARGETS[2].file}')
 
     # On the HLP16 output tree make the naive sequence an outgroup:
     naive_outgroup = env.Command([igphyml_basename_dir+'.phylip_igphyml_tree.txt.outgroup',
