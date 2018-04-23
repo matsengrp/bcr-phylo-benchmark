@@ -1,6 +1,0 @@
-[submodule "tools/gctree"]
-	path = tools/gctree
-	url = https://github.com/matsengrp/gctree.git
-[submodule "tools/samm"]
-	path = tools/samm
-	url = https://github.com/matsengrp/samm.git
