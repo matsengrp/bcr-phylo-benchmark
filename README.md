@@ -1,3 +1,9 @@
+<p align="left">
+  <img src="https://img.shields.io/docker/automated/krdav/bcr-phylo-benchmark.svg" />
+  <img src="https://img.shields.io/docker/build/krdav/bcr-phylo-benchmark.svg" />
+</p>
+
+
 # Benchmarking phylogenetic inference for B cell receptors
 
 Clone repo with submodules:
