@@ -213,35 +213,26 @@ TMPDIR=/tmp xvfb-run -a python bin/simulator.py --mutability motifs/Mutability_S
 
 
 
-## SCONS PIPELINES
+## scons pipeline
 
-Two programs are implemented:
+Three programs are implemented:
 - an inference program for experimental data
 - a simulation/inference/validation program
+- a inference/validation program for isotype data
 
-All commands should be issued from within the gctree repo directory.
+All commands should be issued from within the bcr-phylo-benchmark repo directory.
 
-## QUICK START
 
-* **inference:**  `scons --inference --outdir=<output directory path> --fasta=<input fasta file>`
-* **simulation:** `scons --simulate  --outdir=<output directory path> --N=<integer population size to simulate>`
-
-### **example:** to run GCtree inference on the included FASTA file on a remote machine
-```
-scons --inference --fasta=sequence_data/150228_Clone_3-8.fasta --outdir=test --converter=tas --naiveID=GL --xvfb --jobs=10
-```
-Results are saved in directory `test/`. The `--converter=tas` argument means that integer sequence IDs in the FASTA file are interpreted as abundances. The flag `--xvfb` allows X rendering of ETE trees on remote machines. The argument `--jobs=10` indicates that 10 parallel processes should be used.
-
-## **INFERENCE**
+### Inference
 
 `scons --inference ...`
 
-### required arguments
+#### Required arguments
 
 `--fasta=[path]` path to FASTA input alignment
 `--outdir=[path]` directory for output (created if does not exist)
 
-### optional arguments
+#### Optional arguments
 
 `--naiveID=[string]` ID of naive sequence in FASTA file used for outgroup rooting, default 'naive'
 
@@ -251,16 +242,17 @@ Results are saved in directory `test/`. The `--converter=tas` argument means tha
 
 
 
-## **SIMULATION**
+
+### Simulation
 
 `scons --simulation ...`
 
-### required arguments
+#### Required arguments
 
 `--N=[int]` populaton size to simulate
 `--outdir=[path]` directory for output (created if does not exist)
 
-### optional arguments
+#### Optional arguments
 
 `--naive=[string]             ` DNA sequence of naive sequence from which to begin simulating, a default is used if omitted
 
@@ -278,7 +270,8 @@ Results are saved in directory `test/`. The `--converter=tas` argument means tha
 
 `--n=[int]                    ` number of cells to sample from final population, default all
 
-## OPTIONAL ARGUMENTS FOR BOTH INFERENCE AND SIMULATION PROGRAMS
+
+### Optional arguments for both inference and simulation programs
 
 `--jobs=[int]  ` number of parallel processes to use
 
@@ -294,23 +287,13 @@ Results are saved in directory `test/`. The `--converter=tas` argument means tha
 
    * Try setting the above option if you get the error:`ETE: cannot connect to X server`
 
-## `gctree.py`
-Underlying both pipelines is the `gctree.py` Python library (located in the `bin/` subdirectory) for simulating and compute likelihoods for collapsed trees generated from a binary branching process with mutation and infinite types, as well as forests of such trees. General usage info `gctree.py --help`. There are three subprograms, each of which has usage info:
-* `gctree.py infer --help`: takes an `outfile` file made by phylip's `dnapars` as a command line argument, converts each tree therein to a collapsed tree, and ranks by GCtree likelihood.
-* `gctree.py simulate --help`: simulate data
-* `gctree.py test --help`: performs tests of the likelihood and outputs validation plots.
-
-The under-the-hood functionality of the `gctree.py` library might be useful for some users trying to go beyond the scons pipelines. For example mapping colors to tree image nodes can be achieved with the `--colormap` argument. Colors can be useful for visualizing other cell/genotype properties on the tree.
-
-## FUNCTIONALITY UNDER DEVELOPMENT
-
-### arguments for both inference and simulation programs
 
 `--igphyml`  include results for tree inference with the IgPhyML package
 
 `--dnaml`    include results for maximum likelihood tree inference using `dnaml` from the PHYLIP package
 
 `--nogctree` do not perform gctree inference
+
 
 ### arguments for non-neutral simulation
 
