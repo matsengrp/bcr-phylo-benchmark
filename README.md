@@ -43,99 +43,80 @@ Install dependencies with `apt-get`:
 ```
 sudo apt-get update
 sudo apt-get upgrade -y
-sudo apt-get install -y libz-dev cmake scons libgsl0-dev libncurses5-dev libxml2-dev libxslt1-dev mafft hmmer
+sudo apt-get install -y libpq-dev build-essential xvfb libblas-dev liblapack-dev gfortran autotools-dev automake
 ```
 
-Use the INSTALL executable to install the required python environment and partis (via `./INSTALL`).
+Install perl modules:
+```
+cpan PDL
+cpan install PDL::LinearAlgebra::Trans
+```
+
+IgPhyML is provided but needs to be recompiled due to its use of hard-coded full path:
+```
+cd tools/IgPhyML
+./make_phyml_omp
+cd ../..
+```
+
+Use the conda environment yaml file to create the "bpb" conda environment:
+```
+conda env create -f environment_bpb.yml
+```
+
 After installation, the Conda environment needs to be loaded every time before use, like this:
 ```
-source activate SPURF
+source activate bpb
 ```
+
 
 
 ### Using Docker
 
 First [install Docker](https://docs.docker.com/engine/installation/).
 
-We have a Docker [image on Docker Hub](https://hub.docker.com/r/krdav/spurf/) that is automatically kept up to date with the master branch of this repository.
+We have a Docker [image on Docker Hub](https://hub.docker.com/r/krdav/bcr-phylo-benchmark) that is automatically kept up to date with the master branch of this repository.
 It can be pulled and used directly:
 ```
-sudo docker pull krdav/spurf
+sudo docker pull krdav/bcr-phylo-benchmark
 ```
 
 Alternatively you can build the container yourself from inside the main repository directory:
 ```
-sudo docker build -t spurf .
+sudo docker build -t bpb .
 ```
 
 To run this container, use a command such as (see modifications below)
 
 ```
-sudo docker run -it -v host-dir:/host krdav/spurf /bin/bash
+sudo docker run -it -v host-dir:/host krdav/bpb /bin/bash
 ```
 
 * replace `host-dir` with the local directory to which you would like access inside your container 
 * replace `/host` with the place you would like this directory to be mounted
-* if you built your own container, use `spurf` in place of `krdav/spurf`
+* if you built your own container, use `bpb` in place of `krdav/bpb`
 
 Detach using `ctrl-p ctrl-q`.
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-IgPhyML is provided but needs to be recompiled due to its use of hard-coded full path. Recompile by navigating to `tools/IgPhyML` and execute the OMP install:
-```
-./make_phyml_omp
-```
-
-## DEPENDENCIES
-* scons
-* Python 2, with modules:
-  * scipy
-  * matplotlib
-  * seaborn
-  * pandas
-  * biopython
-  * [ete3](http://etetoolkit.org/download/)
-  * [nestly](https://pypi.python.org/pypi/nestly/0.6)
-* X11 or xvfb-run (for rendering phylogenetic trees using ete3)
-* [seqmagick](https://github.com/fhcrc/seqmagick)
-* [GCtree](github.com/matsengrp/gctree) the Git repo should be kept under `./tools/gctree/`
-  * Provided as a Git submodule
+### DEPENDENCIES
+* Python 2 with conda
+  * Python dependencies kept in `environment_bpb.yml`
+* [GCtree](github.com/matsengrp/gctree) the GitHub repo should be kept under `./tools/gctree/`
+  * Provided as a submodule
 * [PHYLIP](http://evolution.genetics.washington.edu/phylip/getme-new.html) `dnaml` and `dnapars` stored under `./tools/dnaml/dnaml` and `./tools/dnapars/dnapars` respectively
   * Precompile Linux binaries provided for both programs
 * [IQ-TREE](http://www.iqtree.org/) stored under `./tools/IQ-TREE/iqtree`
   * Precompile Linux binaries provided
-* [IgPhyML](https://github.com/kbhoehn/IgPhyML) stored under `./tools/IgPhyML/igphyml`
-  * Precompile Linux binaries provided
+* [IgPhyML](https://github.com/kbhoehn/IgPhyML) stored under `./tools/IgPhyML/src/igphyml`
+  * Provided as a submodule
+*[SAMM](github.com/matsengrp/samm) the GitHub repo should be kept under `./tools/samm/`
+  * Provided as a submodule
 * perl5, with modules:
   * PDL
   * PDL::LinearAlgebra::Trans
-```
-sudo apt-get update && apt-get install -y libblas-dev liblapack-dev gfortran
 
-cpan
-> install PDL
-> install PDL::LinearAlgebra::Trans
-```
-
-**NOTE:** for installing scons, ete, and other python dependencies, [conda](https://conda.io/docs/) is recommended:
-```
-conda env create -f environment_bpb.yml
-```
-Alternatively, an example linux environment spec file is included (`spec-file.txt`), which may be used to create a conda environment.
-For example, to create an environment called `gctree`, execute `conda create --name gctree --file spec-file.txt`, then activate the environment with `source activate gctree`.
 
 
 ## SCONS PIPELINES
