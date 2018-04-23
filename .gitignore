@@ -8,4 +8,5 @@
 *.tar.gz
 tools/IgPhyML/src/*.o
 tools/IgPhyML/src/*.Po
+tools/IgPhyML/config.log
 
