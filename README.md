@@ -209,7 +209,7 @@ TMPDIR=/tmp xvfb-run -a python bin/simulator.py --mutability motifs/Mutability_S
 
 Two programs are implemented:
 - a simulation/inference/validation program
-- a inference/validation program for isotype data
+- an inference/validation program for isotype data
 
 All commands should be issued from within the bcr-phylo-benchmark repo directory.
 
