@@ -30,7 +30,7 @@ RUN cpan PDL
 RUN cpan install PDL::LinearAlgebra::Trans
 
 
-# Use the conda environment yaml fileto create the "bpb" conda environment:
+# Use the conda environment yaml file to create the "bpb" conda environment:
 ADD environment_bpb.yml /tmp/environment_bpb.yml
 WORKDIR /tmp
 RUN ["conda", "env", "create", "-f", "environment_bpb.yml"]
