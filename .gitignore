@@ -6,5 +6,6 @@
 *.pyc
 ._*
 *.tar.gz
-
+tools/IgPhyML/src/*.o
+tools/IgPhyML/src/*.Po
 
