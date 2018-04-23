@@ -137,19 +137,22 @@ class CollapsedTree():
 
             if N_children <= 1:
                 continue
-            LONR = np.log(float(node_N_leaves) / (float(parent_N_leaves - node_N_leaves) / float(N_children - 1)))
-            node.add_feature('LONR', LONR)
+            try:
+                LONR = np.log(float(node_N_leaves) / (float(parent_N_leaves - node_N_leaves) / float(N_children - 1)))
+                node.add_feature('LONR', LONR)
+            except:
+                pass
 
         # Make a Z-score LONR based of the synonymous mutations:
-        LONR_syn = np.array([node.LONR for node in tree.iter_descendants() if hasattr(node, 'LONR') and node.NS_dist == 0])
-        LONR_syn_mean = np.mean(LONR_syn)
-        LONR_syn_std = np.std(LONR_syn)
-        for node in tree.iter_descendants():
-            if hasattr(node, 'LONR'):
-                try:
+        try:
+            LONR_syn = np.array([node.LONR for node in tree.iter_descendants() if hasattr(node, 'LONR') and node.NS_dist == 0])
+            LONR_syn_mean = np.mean(LONR_syn)
+            LONR_syn_std = np.std(LONR_syn)
+            for node in tree.iter_descendants():
+                if hasattr(node, 'LONR'):
                     node.add_feature('LONR_Zscore', (node.LONR - LONR_syn_mean) / LONR_syn_std)
-                except:
-                    node.add_feature('LONR_Zscore', None)
+        except:
+            pass
 
     def __str__(self):
         '''Return a string representation for printing.'''
