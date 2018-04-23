@@ -146,7 +146,10 @@ class CollapsedTree():
         LONR_syn_std = np.std(LONR_syn)
         for node in tree.iter_descendants():
             if hasattr(node, 'LONR'):
-                node.add_feature('LONR_Zscore', (node.LONR - LONR_syn_mean) / LONR_syn_std)
+                try:
+                    node.add_feature('LONR_Zscore', (node.LONR - LONR_syn_mean) / LONR_syn_std)
+                except:
+                    node.add_feature('LONR_Zscore', None)
 
     def __str__(self):
         '''Return a string representation for printing.'''
