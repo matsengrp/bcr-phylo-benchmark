@@ -31,7 +31,7 @@ def tree_rank(args):
     except:
         import pickle
     from GCutils import CollapsedForest, CollapsedTree, hamming_distance
-    from samm.cft_tools import likelihood_of_tree_from_shazam
+    from samm.samm_rank import likelihood_of_tree_from_shazam
 
     with open(args.forest, 'rb') as fh:
         forest_obj = pickle.load(fh)
