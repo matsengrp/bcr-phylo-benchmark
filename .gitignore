@@ -6,13 +6,13 @@
 *.pyc
 ._*
 *.tar.gz
-tools/IgPhyML/src/.deps/*.Po
-tools/IgPhyML/config.log
-tools/IgPhyML/src/*.o
-tools/IgPhyML/src/igphyml
-tools/IgPhyML/autom4te.cache/*
-tools/IgPhyML/src/Makefile*
-tools/IgPhyML/Makefile*
+#tools/IgPhyML/src/.deps/*.Po
+#tools/IgPhyML/config.log
+#tools/IgPhyML/src/*.o
+#tools/IgPhyML/src/igphyml
+#tools/IgPhyML/autom4te.cache/*
+#tools/IgPhyML/src/Makefile*
+#tools/IgPhyML/Makefile*
 
 
 
