@@ -205,52 +205,37 @@ TMPDIR=/tmp xvfb-run -a python bin/simulator.py --mutability motifs/Mutability_S
 
 
 
-
-
-
-
-
-
-
-
 ## scons pipeline
 
-Three programs are implemented:
-- an inference program for experimental data
+Two programs are implemented:
 - a simulation/inference/validation program
 - a inference/validation program for isotype data
 
 All commands should be issued from within the bcr-phylo-benchmark repo directory.
 
 
-### Inference
-
-`scons --inference ...`
-
-#### Required arguments
-
-`--fasta=[path]` path to FASTA input alignment
-`--outdir=[path]` directory for output (created if does not exist)
-
-#### Optional arguments
-
-`--naiveID=[string]` ID of naive sequence in FASTA file used for outgroup rooting, default 'naive'
-
-`colorfile=[path]  ` path to a file of plotting colors for cells in the input FASTA file. Example, if the FASTA contains a sequence with ID `cell_1`, this cell could be colored red in the tree image by including the line `cell_1,red` in the color file.
-
-`--converter=[string]` if set to "tas", parse FASTA input IDs that are integers as indicating sequence abundance. Otherwise each line in the FASTA is assumed to indicate an individual (non-deduplicated) sequence. **NOTE:** the included FASTA file `sequence_data/150228_Clone_3-8.fasta` requires this option.
-
-
-
 
 ### Simulation
 
-`scons --simulation ...`
+`scons --simulate ...`
+
+Example:
+```
+scons --simulate --igphyml --gctree --samm_rank --dnapars --dnaml --iqtree --iqtree_option_str="-m 000000" --iqtree_option_str="-m 010010" --iqtree_option_str="-m 123450" --outdir=neutral_sim_validation --xvfb --lambda=1.5 --lambda0=0.1825 --lambda0=0.365 --lambda0=0.73 --N=75 --nsim=1000 --jobs=16 --random_naive="sequence_data/AbPair_naive_seqs.fa"
+```
+
 
 #### Required arguments
 
 `--N=[int]` populaton size to simulate
+
 `--outdir=[path]` directory for output (created if does not exist)
+
+`--igphyml --gctree --samm_rank --dnapars --dnaml --iqtree` one or several inference tools
+
+* for `--iqtree` the model needs to be defined using `--iqtree_option_str` e.g. `--iqtree_option_str="-m 000000"` for JC. For other models replace the six figure [model code](http://www.iqtree.org/doc/Substitution-Models#dna-models).
+
+
 
 #### Optional arguments
 
