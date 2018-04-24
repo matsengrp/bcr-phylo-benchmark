@@ -43,141 +43,87 @@ Install dependencies with `apt-get`:
 ```
 sudo apt-get update
 sudo apt-get upgrade -y
-sudo apt-get install -y libz-dev cmake scons libgsl0-dev libncurses5-dev libxml2-dev libxslt1-dev mafft hmmer
+sudo apt-get install -y libpq-dev build-essential xvfb libblas-dev liblapack-dev gfortran autotools-dev automake
 ```
 
-Use the INSTALL executable to install the required python environment and partis (via `./INSTALL`).
+Install perl modules:
+```
+cpan PDL
+cpan install PDL::LinearAlgebra::Trans
+```
+
+IgPhyML is provided but needs to be recompiled due to its use of hard-coded full path:
+```
+cd tools/IgPhyML
+./make_phyml_omp
+cd ../..
+```
+
+Use the conda environment yaml file to create the "bpb" conda environment:
+```
+conda env create -f environment_bpb.yml
+```
+
 After installation, the Conda environment needs to be loaded every time before use, like this:
 ```
-source activate SPURF
+source activate bpb
 ```
+
 
 
 ### Using Docker
 
 First [install Docker](https://docs.docker.com/engine/installation/).
 
-We have a Docker [image on Docker Hub](https://hub.docker.com/r/krdav/spurf/) that is automatically kept up to date with the master branch of this repository.
+We have a Docker [image on Docker Hub](https://hub.docker.com/r/krdav/bcr-phylo-benchmark) that is automatically kept up to date with the master branch of this repository.
 It can be pulled and used directly:
 ```
-sudo docker pull krdav/spurf
+sudo docker pull krdav/bcr-phylo-benchmark
 ```
 
 Alternatively you can build the container yourself from inside the main repository directory:
 ```
-sudo docker build -t spurf .
+sudo docker build -t bpb .
 ```
 
 To run this container, use a command such as (see modifications below)
 
 ```
-sudo docker run -it -v host-dir:/host krdav/spurf /bin/bash
+sudo docker run -it -v host-dir:/host krdav/bpb /bin/bash
 ```
 
 * replace `host-dir` with the local directory to which you would like access inside your container 
 * replace `/host` with the place you would like this directory to be mounted
-* if you built your own container, use `spurf` in place of `krdav/spurf`
+* if you built your own container, use `bpb` in place of `krdav/bpb`
 
 Detach using `ctrl-p ctrl-q`.
 
 
 
+### Dependencies
 
-
-
-
-
-
-
-
-
-
-
-
-IgPhyML is provided but needs to be recompiled due to its use of hard-coded full path. Recompile by navigating to `tools/IgPhyML` and execute the OMP install:
-```
-./make_phyml_omp
-```
-
-## DEPENDENCIES
-* scons
-* Python 2, with modules:
-  * scipy
-  * matplotlib
-  * seaborn
-  * pandas
-  * biopython
-  * [ete3](http://etetoolkit.org/download/)
-  * [nestly](https://pypi.python.org/pypi/nestly/0.6)
-* X11 or xvfb-run (for rendering phylogenetic trees using ete3)
-* [seqmagick](https://github.com/fhcrc/seqmagick)
-* [GCtree](github.com/matsengrp/gctree) the Git repo should be kept under `./tools/gctree/`
-  * Provided as a Git submodule
+* Python 2 with conda
+  * Python dependencies kept in `environment_bpb.yml`
+* [GCtree](github.com/matsengrp/gctree) the GitHub repo should be kept under `./tools/gctree/`
+  * Provided as a submodule
 * [PHYLIP](http://evolution.genetics.washington.edu/phylip/getme-new.html) `dnaml` and `dnapars` stored under `./tools/dnaml/dnaml` and `./tools/dnapars/dnapars` respectively
   * Precompile Linux binaries provided for both programs
 * [IQ-TREE](http://www.iqtree.org/) stored under `./tools/IQ-TREE/iqtree`
   * Precompile Linux binaries provided
-* [IgPhyML](https://github.com/kbhoehn/IgPhyML) stored under `./tools/IgPhyML/igphyml`
-  * Precompile Linux binaries provided
+* [IgPhyML](https://github.com/kbhoehn/IgPhyML) stored under `./tools/IgPhyML/src/igphyml`
+  * Provided as a submodule
+* [SAMM](github.com/matsengrp/samm) the GitHub repo should be kept under `./tools/samm/`
+  * Provided as a submodule
 * perl5, with modules:
   * PDL
   * PDL::LinearAlgebra::Trans
-```
-sudo apt-get update && apt-get install -y libblas-dev liblapack-dev gfortran
-
-cpan
-> install PDL
-> install PDL::LinearAlgebra::Trans
-```
-
-**NOTE:** for installing scons, ete, and other python dependencies, [conda](https://conda.io/docs/) is recommended:
-```
-conda env create -f environment_bpb.yml
-```
-Alternatively, an example linux environment spec file is included (`spec-file.txt`), which may be used to create a conda environment.
-For example, to create an environment called `gctree`, execute `conda create --name gctree --file spec-file.txt`, then activate the environment with `source activate gctree`.
 
 
-## SCONS PIPELINES
-
-Two programs are implemented:
-- an inference program for experimental data
-- a simulation/inference/validation program
-
-All commands should be issued from within the gctree repo directory.
-
-## QUICK START
-
-* **inference:**  `scons --inference --outdir=<output directory path> --fasta=<input fasta file>`
-* **simulation:** `scons --simulate  --outdir=<output directory path> --N=<integer population size to simulate>`
-
-### **example:** to run GCtree inference on the included FASTA file on a remote machine
-```
-scons --inference --fasta=sequence_data/150228_Clone_3-8.fasta --outdir=test --converter=tas --naiveID=GL --xvfb --jobs=10
-```
-Results are saved in directory `test/`. The `--converter=tas` argument means that integer sequence IDs in the FASTA file are interpreted as abundances. The flag `--xvfb` allows X rendering of ETE trees on remote machines. The argument `--jobs=10` indicates that 10 parallel processes should be used.
-
-## **INFERENCE**
-
-`scons --inference ...`
-
-### required arguments
-
-`--fasta=[path]` path to FASTA input alignment
-`--outdir=[path]` directory for output (created if does not exist)
-
-### optional arguments
-
-`--naiveID=[string]` ID of naive sequence in FASTA file used for outgroup rooting, default 'naive'
-
-`colorfile=[path]  ` path to a file of plotting colors for cells in the input FASTA file. Example, if the FASTA contains a sequence with ID `cell_1`, this cell could be colored red in the tree image by including the line `cell_1,red` in the color file.
-
-`--converter=[string]` if set to "tas", parse FASTA input IDs that are integers as indicating sequence abundance. Otherwise each line in the FASTA is assumed to indicate an individual (non-deduplicated) sequence. **NOTE:** the included FASTA file `sequence_data/150228_Clone_3-8.fasta` requires this option.
 
 
-## **Sequence simulation**
+## Sequence simulation
 
-A couple of simulation commands with reasonable model parameters.
+Simulation commands with reasonable model parameters.
 
 ### Neutral simulation
 
@@ -258,24 +204,46 @@ TMPDIR=/tmp xvfb-run -a python bin/simulator.py --mutability motifs/Mutability_S
 
 
 
-## **SIMULATION**
 
-`scons --simulation ...`
+## scons pipeline
 
-### required arguments
+Two programs are implemented:
+- a simulation/inference/validation program
+- an inference/validation program for isotype data
 
-`--N=[int]` populaton size to simulate
-`--outdir=[path]` directory for output (created if does not exist)
+All commands should be issued from within the bcr-phylo-benchmark repo directory.
 
-### optional arguments
+
+
+### Simulation
+
+`scons --simulate ...`
+
+Example:
+```
+scons --simulate --igphyml --gctree --samm_rank --dnapars --dnaml --iqtree --iqtree_option_str="-m 000000" --iqtree_option_str="-m 010010" --iqtree_option_str="-m 123450" --outdir=neutral_sim_validation --xvfb --lambda=1.5 --lambda0=0.1825 --lambda0=0.365 --lambda0=0.73 --N=75 --nsim=1000 --jobs=16 --random_naive="sequence_data/AbPair_naive_seqs.fa"
+```
+
+
+#### Required arguments
+
+`--N=[int]                                                ` populaton size to simulate
+
+`--outdir=[path]                                          ` directory for output (created if does not exist)
+
+`--igphyml --gctree --samm_rank --dnapars --dnaml --iqtree` one or several inference tools
+
+* For `--iqtree` the model needs to be defined using `--iqtree_option_str` e.g. `--iqtree_option_str="-m 000000"` for JC. For other models replace the six figure [model code](http://www.iqtree.org/doc/Substitution-Models#dna-models).
+
+
+
+#### Optional arguments
 
 `--naive=[string]             ` DNA sequence of naive sequence from which to begin simulating, a default is used if omitted
 
-`--mutability=[path]          ` path to motifs mutability file, default 'motifs/Mutability_S5F.csv'
+`--random_naive=[path]        ` path to file with naive DNA sequences. Will be randomly picked for simulation
 
-`--substitution=[path]        ` path to motifs substitution file, default 'motifs/Substitution_S5F.csv'
-
-`--lambda=[float, float, ...] ` values for Poisson branching parameter for simulation, default 2.0
+`--lambda=[float, float, ...] ` values for Poisson branching parameter for simulation, default 2.0. Is overwritten under affinity simulation
 
 `--lambda0=[float, float, ...]` values for baseline mutation rate, default 0.25
 
@@ -285,52 +253,63 @@ TMPDIR=/tmp xvfb-run -a python bin/simulator.py --mutability motifs/Mutability_S
 
 `--n=[int]                    ` number of cells to sample from final population, default all
 
-## OPTIONAL ARGUMENTS FOR BOTH INFERENCE AND SIMULATION PROGRAMS
+`--idlabel                    ` label sequence IDs on tree, and write FASTA alignment of distinct sequences. The mapping of the unique names in this FASTA file to the cell names in the original input FASTA file can be found in the output file with suffix `.idmap`
 
-`--jobs=[int]  ` number of parallel processes to use
+`--selection                  ` simulation with affinity selection
 
-`--srun        ` should cluster jobs be submitted with Slurm's srun?
+`--target_dist                ` distance to selection target
 
-`--frame=[int] ` codon reading frame, default `None`
+`--target_count               ` number of targets
 
-`--quick       ` less thorough parsimony tree search (faster, but smaller parsimony forest)
+`--verbose                    ` verbose printing
 
-`--idlabel     ` label sequence IDs on tree, and write FASTA alignment of distinct sequences. The mapping of the unique names in this FASTA file to the cell names in the original input FASTA file can be found in the output file with suffix `.idmap`
+`--carry_cap                  ` carrying capacity of germinal center
 
-`--xvfb        ` needed for X rendering in on remote machines
+`--skip_update                ` skip update step
+
+
+
+
+
+### Isotype validation
+
+`scons --exp_data_test ...`
+
+Example:
+```
+scons --exp_data_test --gctree --dnapars --dnaml --igphyml --samm_rank --iqtree --iqtree_option_str="-m 000000" --iqtree_option_str="-m 010010" --iqtree_option_str="-m 123450" --outdir=isotype_validation --xvfb --jobs=10000 --srun --exp_data=isotype_validation_finalset.csv --naiveIDexp=naive
+```
+
+
+
+#### Required arguments
+
+`--exp_data=[path]                                        ` dataset with isotype information
+
+`--outdir=[path]                                          ` directory for output (created if does not exist)
+
+`--igphyml --gctree --samm_rank --dnapars --dnaml --iqtree` one or several inference tools
+
+* For `--iqtree` the model needs to be defined using `--iqtree_option_str` e.g. `--iqtree_option_str="-m 000000"` for JC. For other models replace the six figure [model code](http://www.iqtree.org/doc/Substitution-Models#dna-models).
+
+
+
+
+
+### Optional arguments for both simulation and isotype validation
+
+`--mutability=[path]          ` path to motifs mutability file, default 'motifs/Mutability_S5F.csv'
+
+`--substitution=[path]        ` path to motifs substitution file, default 'motifs/Substitution_S5F.csv'
+
+`--jobs=[int]                 ` number of parallel processes to use
+
+`--srun                       ` should cluster jobs be submitted with Slurm's srun?
+
+`--quick                      ` less thorough parsimony tree search (faster, but smaller parsimony forest)
+
+`--xvfb                       ` needed for X rendering in on remote machines
 
    * Try setting the above option if you get the error:`ETE: cannot connect to X server`
-
-## `gctree.py`
-Underlying both pipelines is the `gctree.py` Python library (located in the `bin/` subdirectory) for simulating and compute likelihoods for collapsed trees generated from a binary branching process with mutation and infinite types, as well as forests of such trees. General usage info `gctree.py --help`. There are three subprograms, each of which has usage info:
-* `gctree.py infer --help`: takes an `outfile` file made by phylip's `dnapars` as a command line argument, converts each tree therein to a collapsed tree, and ranks by GCtree likelihood.
-* `gctree.py simulate --help`: simulate data
-* `gctree.py test --help`: performs tests of the likelihood and outputs validation plots.
-
-The under-the-hood functionality of the `gctree.py` library might be useful for some users trying to go beyond the scons pipelines. For example mapping colors to tree image nodes can be achieved with the `--colormap` argument. Colors can be useful for visualizing other cell/genotype properties on the tree.
-
-## FUNCTIONALITY UNDER DEVELOPMENT
-
-### arguments for both inference and simulation programs
-
-`--igphyml`  include results for tree inference with the IgPhyML package
-
-`--dnaml`    include results for maximum likelihood tree inference using `dnaml` from the PHYLIP package
-
-`--nogctree` do not perform gctree inference
-
-### arguments for non-neutral simulation
-
-`--selection`    simulation with affinity selection
-
-`--target_dist`  distance to selection target
-
-`--target_count` number of targets
-
-`--verbose`      verbose printing
-
-`--carry_cap`    carrying capacity of germinal center
-
-`--skip_update`  skip update step
 
 
