@@ -11,6 +11,7 @@ This code repository contains an `scons` pipeline to run a number of phylogeneti
 The standard workflow involves 1) simulate sequences, 2) run X phylogenetic tools, and 3) compare true with inferred and report differences.
 The same workflow is also used to run comparisons based on isotype misplacement scores.
 Pre-run simulation results and their corresponding scons commands can be found on [our Zenodo bucket](https://doi.org/10.5281/zenodo.1218140).
+We have a [preprint article](https://www.biorxiv.org/content/early/2018/04/25/307736) describing the results of the benchmark.
 
 
 
@@ -166,7 +167,7 @@ The tree is generated from a naive sequence seed, which will also be the root of
 A naive seed sequence is drawn randomly from the naive sequences provided in `sequence_data/AbPair_naive_seqs.fa`.
 
 ```
-TMPDIR=/tmp xvfb-run -a python bin/simulator.py --mutability motifs/Mutability_S5F.csv --substitution motifs/Substitution_S5F.csv --outbase selection_sim --lambda 2.0 --lambda0 0.365 --T 35 --n 60 --selection --target_dist 5 --target_count 100 --carry_cap 1000 --skip_update 100 --verbose --random_seq sequence_data/AbPair_naive_seqs.fa > sele_simulator.log
+TMPDIR=/tmp xvfb-run -a python bin/simulator.py --mutability motifs/Mutability_S5F.csv --substitution motifs/Substitution_S5F.csv --outbase selection_sim --lambda0 0.365 --T 35 --n 60 --selection --target_dist 5 --target_count 100 --carry_cap 1000 --skip_update 100 --verbose --random_seq sequence_data/AbPair_naive_seqs.fa > sele_simulator.log
 ```
 
 The output consists of different informative files e.g. SVG renderings of the trees.
@@ -198,7 +199,7 @@ This is done with providing additional timepoint with the `--T` parameter.
 Sampled cells are removed from the simulated cell population.
 
 ```
-TMPDIR=/tmp xvfb-run -a python bin/simulator.py --mutability motifs/Mutability_S5F.csv --substitution motifs/Substitution_S5F.csv --outbase selection_inter_sim --lambda 2.0 --lambda0 0.365 --T 15 30 45 --n 30 --selection --target_dist 5 --target_count 100 --carry_cap 1000 --skip_update 100 --verbose --random_seq sequence_data/AbPair_naive_seqs.fa > sele_inter_simulator.log
+TMPDIR=/tmp xvfb-run -a python bin/simulator.py --mutability motifs/Mutability_S5F.csv --substitution motifs/Substitution_S5F.csv --outbase selection_inter_sim --lambda0 0.365 --T 15 30 45 --n 30 --selection --target_dist 5 --target_count 100 --carry_cap 1000 --skip_update 100 --verbose --random_seq sequence_data/AbPair_naive_seqs.fa > sele_inter_simulator.log
 ```
 
 

@@ -1,4 +1,0 @@
-
-Sequence data is compressed because redundant sequence information take a lot of space.
-Unzip before use.
-
