@@ -188,6 +188,8 @@ class MutationModel():
             raise ValueError('Either N or T must be specified.')
         if N is not None and n > N:
             raise ValueError('n ({}) must not larger than N ({})'.format(n, N))
+        if len(T) > 1 and n is None:
+            raise ValueError('n must be specified when using intermediate sampling.')
 
         # Planting the tree:
         tree = TreeNode()
@@ -227,7 +229,7 @@ class MutationModel():
                 live_leaves = [l for l in tree.iter_leaves() if not l.terminated]
                 random.shuffle(live_leaves)
                 if len(live_leaves) < n:
-                    raise RuntimeError('tree terminated with {} leaves, less than what desired after downsampling {}'.format(leaves_unterminated, n))
+                    raise RuntimeError('tree with {} leaves, less than what desired for intermediate sampling {}. Try later generation or increasing the carrying capacity.'.format(leaves_unterminated, n))
                 # Make the sample and kill the cells sampled:
                 samples_taken = 0
                 for leaf in live_leaves:
@@ -317,9 +319,9 @@ class MutationModel():
         # Do the normal sampling of the last time step:
         final_leaves = [leaf for leaf in tree.iter_leaves() if leaf.time == t and not has_stop(leaf.sequence)]
         # Report stop codon sequences:
-        stop_leaves = [leaf for leaf in tree.iter_descendants() if has_stop(leaf.sequence)]
+        stop_leaves = [leaf for leaf in tree.iter_leaves() if leaf.time == t and has_stop(leaf.sequence)]
         if stop_leaves:
-            print('Tree contains {} nodes with stop codons, out of {} total at last time point.'.format(len(stop_leaves), len(final_leaves)))
+            print('Tree contains {} leaves with stop codons, out of {} total at last time point.'.format(len(stop_leaves), len(final_leaves)))
 
         # By default, downsample to the target simulation size:
         if n is not None and len(final_leaves) >= n:
