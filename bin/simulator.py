@@ -186,10 +186,14 @@ class MutationModel():
             raise ValueError('Simulation with selection was chosen. A time, T, must be specified.')
         elif N is None and T is None:
             raise ValueError('Either N or T must be specified.')
-        if N is not None and n > N:
-            raise ValueError('n ({}) must not larger than N ({})'.format(n, N))
-        if len(T) > 1 and n is None:
-            raise ValueError('n must be specified when using intermediate sampling.')
+        if N is not None and n is not None and n[-1] > N:
+            raise ValueError('n ({}) must not larger than N ({})'.format(n[-1], N))
+        elif N is not None and n is not None and len(n) != 1:
+            raise ValueError('n ({}) must a single value when specifying N'.format(n))
+        if len(T) > 1 and (n is None or (len(n) != 1 and len(n) != len(T))):
+            raise ValueError('n must be specified when using intermediate sampling:', n)
+        elif len(T) > 1 and len(n) == 1:
+            n = [n[-1]] * len(T)
 
         # Planting the tree:
         tree = TreeNode()
@@ -226,9 +230,10 @@ class MutationModel():
             t += 1
             # Sample intermediate time point:
             if T is not None and len(T) > 1 and (t-1) in T:
+                si = T.index(t-1)
                 live_leaves = [l for l in tree.iter_leaves() if not l.terminated]
                 random.shuffle(live_leaves)
-                if len(live_leaves) < n:
+                if len(live_leaves) < n[si]:
                     raise RuntimeError('tree with {} leaves, less than what desired for intermediate sampling {}. Try later generation or increasing the carrying capacity.'.format(leaves_unterminated, n))
                 # Make the sample and kill the cells sampled:
                 samples_taken = 0
@@ -238,7 +243,7 @@ class MutationModel():
                     leaves_unterminated -= 1
                     leaf.sampled = True
                     leaf.terminated = True
-                    if samples_taken == n:
+                    if samples_taken == n[si]:
                         break
                     else:
                         samples_taken += 1
@@ -308,10 +313,11 @@ class MutationModel():
         if T is not None and len(T) > 1:
             # Iterate the intermediate time steps (excluding the last time):
             for Ti in sorted(T)[:-1]:
+                si = T.index(Ti)
                 # Only sample those that have been 'sampled' at intermediate sampling times:
                 final_leaves = [leaf for leaf in tree.iter_descendants() if leaf.time == Ti and leaf.sampled]
-                if len(final_leaves) < n:
-                    raise RuntimeError('tree terminated with {} leaves, less than what desired after downsampling {}'.format(leaves_unterminated, n))
+                if len(final_leaves) < n[si]:
+                    raise RuntimeError('tree terminated with {} leaves, less than what desired after downsampling {}'.format(leaves_unterminated, n[si]))
                 for leaf in final_leaves:  # No need to down-sample, this was already done in the simulation loop
                     leaf.frequency = 1
         if selection_params and max(T) != t:
@@ -323,9 +329,10 @@ class MutationModel():
         if stop_leaves:
             print('Tree contains {} leaves with stop codons, out of {} total at last time point.'.format(len(stop_leaves), len(final_leaves)))
 
+        si = T.index(sorted(T)[-1])
         # By default, downsample to the target simulation size:
-        if n is not None and len(final_leaves) >= n:
-            for leaf in random.sample(final_leaves, n):
+        if n is not None and len(final_leaves) >= n[si]:
+            for leaf in random.sample(final_leaves, n[si]):
                 leaf.frequency = 1
         elif n is None and N is not None:
             if len(final_leaves) < N:  # Removed nonsense sequences might decrease the number of final leaves to less than N
@@ -335,8 +342,8 @@ class MutationModel():
         elif N is None and T is not None:
             for leaf in final_leaves:
                 leaf.frequency = 1
-        elif n is not None and len(final_leaves) < n:
-            raise RuntimeError('tree terminated with {} leaves, less than what desired after downsampling {}'.format(leaves_unterminated, n))
+        elif n is not None and len(final_leaves) < n[si]:
+            raise RuntimeError('tree terminated with {} leaves, less than what desired after downsampling {}'.format(leaves_unterminated, n[si]))
         else:
             raise RuntimeError('Unknown option.')
 
@@ -557,7 +564,7 @@ def main():
     parser.add_argument('--lambda0', type=float, default=None, nargs='*', help='List of one or two elements with the baseline mutation rates. Space separated input values. '
                         'First element belonging to seed sequence one and optionally the next to sequence 2. If only one rate is provided for two sequences,'
                         'this rate will be used on both.')
-    parser.add_argument('--n', type=int, default=None, help='Cells downsampled')
+    parser.add_argument('--n', type=int, nargs='+', default=None, help='Cells downsampled')
     parser.add_argument('--N', type=int, default=None, help='Target simulation size')
     parser.add_argument('--T', type=int, nargs='+', default=None, help='Observation time, if None we run until termination and take all leaves')
     parser.add_argument('--selection', action='store_true', default=False, help='Simulation with selection? true/false. When doing simulation with selection an observation time cut must be set.')
