@@ -10,7 +10,7 @@
 This code repository contains an `scons` pipeline to run a number of phylogenetic inference tools for simulated B cell receptor sequences.
 The standard workflow involves 1) simulate sequences, 2) run X phylogenetic tools, and 3) compare true with inferred and report differences.
 The same workflow is also used to run comparisons based on isotype misplacement scores.
-Pre-run simulation results and their corresponding scons commands can be found on [our Zenodo bucket](https://doi.org/10.5281/zenodo.1218140).
+Pre-run simulation results and their corresponding scons commands can be found in [our Zenodo bucket](https://doi.org/10.5281/zenodo.1218140).
 We have a [preprint article](https://www.biorxiv.org/content/early/2018/04/25/307736) describing the results of the benchmark.
 
 
