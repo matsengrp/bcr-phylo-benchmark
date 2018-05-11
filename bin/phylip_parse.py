@@ -182,6 +182,7 @@ def main():
 
     # Parse dnaml/dnapars trees into a collapsed trees and pack them into a forest:
     tree_list = parse_outfile(args.phylip_outfile, args.countfile, args.naive)
+    pickle.dump(tree_list[0], open(args.outbase+'_first_lineage.p', 'w'))
     trees = [CollapsedTree(tree=tree, name=args.name) for tree in tree_list]
     forest_obj = CollapsedForest(forest=trees, name=args.name)
     pickle.dump(forest_obj, open(args.outbase+'.p', 'w'))
