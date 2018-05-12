@@ -5,7 +5,7 @@ import os
 from nestly import Nest
 from nestly.scons import SConsWrap
 # the following must be exported by parent SConstruct/SConscript
-Import('env tool_dict quick idlabel outdir naive random_naive mutability substitution lambda_list lambda0_list n N T nsim CommandRunner experimental_list naiveIDexp selection_param xarg buffarg uniform_mut')
+Import('env tool_dict quick idlabel outdir naive random_naive mutability substitution lambda_list lambda0_list seed n N T nsim CommandRunner experimental_list naiveIDexp selection_param xarg buffarg uniform_mut')
 
 nest = Nest()
 w = SConsWrap(nest, outdir, alias_environment=env)
@@ -32,6 +32,7 @@ def gc_sim(outdir, c):
     T_arg = ' --T {} '.format(' '.join(map(str, T))) if T else ''
     N_arg = ' --N {} '.format(N) if N is not None else ''
     n_arg = ' --n {} '.format(n) if n is not None else ''
+    seed_arg = ' --random_seed {} '.format(seed) if seed is not None else ''
     random_seq = ' --random_seq {} '.format(random_naive) if random_naive is not None else ''
     mut_sub = ' --mutability {} --substitution {} '.format(mutability, substitution) if not uniform_mut else ' --mutability none --substitution none '
     sele_arg = ' --selection --target_dist {} --target_count {} --carry_cap {} --skip_update {} {}'.format(*selection_param) if selection_param is not None else ''
@@ -49,6 +50,7 @@ def gc_sim(outdir, c):
                         T_arg+
                         N_arg+
                         n_arg+
+                        seed_arg+
                         sele_arg+
                         random_seq+
                         ' > ${TARGETS[5]}')

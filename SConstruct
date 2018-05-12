@@ -174,6 +174,12 @@ if simulate:
     if len(lambda0_list) == 0:
         lambda0_list = [.25]
 
+    AddOption('--seed',
+              type='int',
+              default=None,
+              help='Simulation seed for random number generation.')
+    seed = GetOption('seed')
+
     AddOption('--n',
               type='int',
               default=None,
@@ -299,7 +305,7 @@ if simulate and not GetOption('help'):
     if outdir is None:
         raise InputError('Outdir must be specified.')
     SConscript('SConscript.simulation',
-               exports='env tool_dict quick idlabel outdir naive random_naive mutability substitution lambda_list lambda0_list n N T nsim CommandRunner experimental_list naiveIDexp selection_param xarg buffarg uniform_mut')
+               exports='env tool_dict quick idlabel outdir naive random_naive mutability substitution lambda_list lambda0_list seed n N T nsim CommandRunner experimental_list naiveIDexp selection_param xarg buffarg uniform_mut')
 if exp_data_test and not GetOption('help'):
     if None in [outdir, exp_data]:
         raise InputError('Both outdir and exp_data must be specified.')
