@@ -31,7 +31,7 @@ def gc_sim(outdir, c):
     idlabel_arg = ' --idlabel' if idlabel else ''
     T_arg = ' --T {} '.format(' '.join(map(str, T))) if T else ''
     N_arg = ' --N {} '.format(N) if N is not None else ''
-    n_arg = ' --n {} '.format(n) if n is not None else ''
+    n_arg = ' --n {} '.format(' '.join(map(str, n))) if n != [] else ''
     seed_arg = ' --random_seed {} '.format(seed) if seed is not None else ''
     random_seq = ' --random_seq {} '.format(random_naive) if random_naive is not None else ''
     mut_sub = ' --mutability {} --substitution {} '.format(mutability, substitution) if not uniform_mut else ' --mutability none --substitution none '

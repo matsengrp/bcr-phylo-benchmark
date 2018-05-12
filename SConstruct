@@ -182,7 +182,8 @@ if simulate:
 
     AddOption('--n',
               type='int',
-              default=None,
+              action='append',
+              default=[],
               help='Cells downsampled.')
     n = GetOption('n')
 
