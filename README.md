@@ -90,12 +90,12 @@ sudo docker build -t bpb .
 To run this container, use a command such as (see modifications below)
 
 ```
-sudo docker run -it -v host-dir:/host krdav/bpb /bin/bash
+sudo docker run -it -v host-dir:/host krdav/bcr-phylo-benchmark /bin/bash
 ```
 
 * replace `host-dir` with the local directory to which you would like access inside your container 
 * replace `/host` with the place you would like this directory to be mounted
-* if you built your own container, use `bpb` in place of `krdav/bpb`
+* if you built your own container, use `bpb` in place of `krdav/bcr-phylo-benchmark`
 
 Detach using `ctrl-p ctrl-q`.
 
