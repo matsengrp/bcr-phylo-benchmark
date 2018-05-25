@@ -99,6 +99,10 @@ sudo docker run -it -v host-dir:/host krdav/bcr-phylo-benchmark /bin/bash
 
 Detach using `ctrl-p ctrl-q`.
 
+Inside the docker container the Conda environment needs to be loaded every time before use, like this:
+```
+source activate bpb
+```
 
 
 ### Dependencies
