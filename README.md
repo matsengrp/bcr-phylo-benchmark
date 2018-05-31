@@ -20,7 +20,7 @@ We have a [preprint article](https://www.biorxiv.org/content/early/2018/04/25/30
 Clone this GitHub repo recursively to get the necessary submodules:
 ```
 git clone --recursive https://github.com/matsengrp/bcr-phylo-benchmark.git
-cd SPURF
+cd bcr-phylo-benchmark
 git pull --recurse-submodules https://github.com/matsengrp/bcr-phylo-benchmark.git
 ```
 
