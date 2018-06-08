@@ -233,22 +233,15 @@ class MutationModel():
             # Sample intermediate time point:
             if T is not None and len(T) > 1 and (t-1) in T:
                 si = T.index(t-1)
-                live_leaves = [l for l in tree.iter_leaves() if not l.terminated]
-                random.shuffle(live_leaves)
-                if len(live_leaves) < n[si]:
+                live_nostop_leaves = [l for l in tree.iter_leaves() if not l.terminated and not has_stop(l.sequence)]
+                random.shuffle(live_nostop_leaves)
+                if len(live_nostop_leaves) < n[si]:
                     raise RuntimeError('tree with {} leaves, less than what desired for intermediate sampling {}. Try later generation or increasing the carrying capacity.'.format(leaves_unterminated, n))
                 # Make the sample and kill the cells sampled:
-                samples_taken = 0
-                for leaf in live_leaves:
-                    if has_stop(leaf.sequence):
-                        continue
+                for leaf in live_nostop_leaves[:n[si]]:
                     leaves_unterminated -= 1
                     leaf.sampled = True
                     leaf.terminated = True
-                    if samples_taken == n[si]:
-                        break
-                    else:
-                        samples_taken += 1
                 if verbose:
                     print('Made an intermediate sample at time:', t-1)
             live_leaves = [l for l in tree.iter_leaves() if not l.terminated]
