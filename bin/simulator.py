@@ -190,9 +190,9 @@ class MutationModel():
             raise ValueError('n ({}) must not larger than N ({})'.format(n[-1], N))
         elif N is not None and n is not None and len(n) != 1:
             raise ValueError('n ({}) must a single value when specifying N'.format(n))
-        if len(T) > 1 and (n is None or (len(n) != 1 and len(n) != len(T))):
+        if T is not None and len(T) > 1 and (n is None or (len(n) != 1 and len(n) != len(T))):
             raise ValueError('n must be specified when using intermediate sampling:', n)
-        elif len(T) > 1 and len(n) == 1:
+        elif T is not None and len(T) > 1 and len(n) == 1:
             n = [n[-1]] * len(T)
 
         # Planting the tree:
@@ -206,7 +206,9 @@ class MutationModel():
 
         if selection_params is not None:
             hd_generation = list()  # Collect an array of the counts of each hamming distance at each time step
-            stop_dist, mature_affy, naive_affy, target_dist, skip_update, targetAAseqs, A_total, B_total, Lp, k, outbase = selection_params
+            stop_dist, mature_affy, naive_affy, target_dist, target_count, skip_update, A_total, B_total, Lp, k, outbase = selection_params
+            # Make a list of target sequences:
+            targetAAseqs = [self.one_mutant(sequence, target_dist) for i in range(target_count)]
             # Assert that the target sequences are comparable to the naive sequence:
             aa = translate(tree.sequence)
             assert(sum([1 for t in targetAAseqs if len(t) != len(aa)]) == 0)  # All targets are same length
@@ -329,7 +331,10 @@ class MutationModel():
         if stop_leaves:
             print('Tree contains {} leaves with stop codons, out of {} total at last time point.'.format(len(stop_leaves), len(final_leaves)))
 
-        si = T.index(sorted(T)[-1])
+        if T is not None:
+            si = T.index(sorted(T)[-1])
+        else:
+            si = 0
         # By default, downsample to the target simulation size:
         if n is not None and len(final_leaves) >= n[si]:
             for leaf in random.sample(final_leaves, n[si]):
@@ -402,14 +407,12 @@ def simulate(args):
         pair_bounds = None
     if args.selection:
         assert(args.B_total >= args.f_full)  # the fully activating fraction on BA must be possible to reach within B_total
-        # Make a list of target sequences:
-        targetAAseqs = [mutation_model.one_mutant(args.sequence, args.target_dist) for i in range(args.target_count)]
         # Find the total amount of A necessary for sustaining the inputted carrying capacity:
         print((args.carry_cap, args.B_total, args.f_full, args.mature_affy))
         A_total = selection_utils.find_A_total(args.carry_cap, args.B_total, args.f_full, args.mature_affy, args.U)
         # Calculate the parameters for the logistic function:
         Lp = selection_utils.find_Lp(args.f_full, args.U)
-        selection_params = [args.stop_dist, args.mature_affy, args.naive_affy, args.target_dist, args.skip_update, targetAAseqs, A_total, args.B_total, Lp, args.k, args.outbase]
+        selection_params = [args.stop_dist, args.mature_affy, args.naive_affy, args.target_dist, args.target_count, args.skip_update, A_total, args.B_total, Lp, args.k, args.outbase]
     else:
         selection_params = None
 
