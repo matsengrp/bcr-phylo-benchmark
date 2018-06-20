@@ -201,6 +201,34 @@ if tool_dict['iqtree']:
         return_list.append(iqtree_infer)
 
 
+
+##############
+### FastML ###
+##############
+if tool_dict['fastml']:
+    fastml_outdir = outdir + '/fastml'
+    make_dir_if_nonexisting(fastml_outdir)
+    # Run FastML:
+    fastml = CommandRunner([fastml_outdir+'/tree.newick.txt',
+                            fastml_outdir+'/seq.marginal.txt',
+                            fastml_outdir+'/seq.joint.txt',
+                            fastml_outdir+'/fastml_pipe.log'],
+                           [phylip[0]],
+                           'cp '+run_dir+'*.phylip '+fastml_outdir+' && cd '+fastml_outdir+' && '+buffarg+' perl '+repo_home+'/tools/FastML/www/fastml/FastML_Wrapper.pl --outDir '+repo_home+'/'+fastml_outdir+' --MSA_File ${SOURCES[0].file} --seqType NUC --SubMatrix HKY > ${TARGETS[3].file}')
+    env.Depends(fastml, phylip)
+
+    for idx, mode in enumerate(['marginal', 'joint']):
+        # Convert the ASR output to a collapsed forest with an ete3 tree and pickle it:
+        fastml_infer = env.Command([fastml_outdir+'/'+mode+'_inferred_tree.p',
+                                    fastml_outdir+'/'+mode+'_inferred_tree.tree',
+                                    fastml_outdir+'/'+mode+'_fastml_tools.log'],
+                                    [phylip[1], phylip[2], fastml[0], fastml[idx+1]],
+                                    xarg + 'python '+repo_home+'/tool_integration/FastML/fastml_tools.py ASR_parser --name '+mode+' --tree ${SOURCES[2]} '+colormap+' --idmap ${SOURCES[1]} --counts ${SOURCES[0]} --asr_seq ${SOURCES[3]} --outbase '+fastml_outdir+'/'+mode+'_inferred_tree --naive '+naiveID+' > ${TARGETS[2]}')
+        return_list.append(fastml_infer)
+
+
+
+
 ###############
 ### IgPhyML ###
 ###############

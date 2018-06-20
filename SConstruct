@@ -86,6 +86,11 @@ AddOption('--uniform_mut',
           help='Mutation and substitution drawn from uniform distribution.')
 uniform_mut = GetOption('uniform_mut')
 
+AddOption('--fastml',
+           action='store_true',
+           help='Use FastML inference')
+fastml = GetOption('fastml')
+
 AddOption('--iqtree',
            action='store_true',
            help='Use IQ-TREE inference')
@@ -102,7 +107,7 @@ if iqtree:
         raise Exception('At least one --iqtree_option_str must be defined when requesting to run IQ-TREE.')
 
 # Fill a dictionary with the tools:
-tool_dict = {name: tool for tool, name in zip([gctree, igphyml, dnaml, dnapars, samm_rank, iqtree_options], ['gctree', 'igphyml', 'dnaml', 'dnapars', 'samm_rank', 'iqtree'])}
+tool_dict = {name: tool for tool, name in zip([gctree, igphyml, dnaml, dnapars, samm_rank, fastml, iqtree_options], ['gctree', 'igphyml', 'dnaml', 'dnapars', 'samm_rank', 'fastml', 'iqtree'])}
 
 AddOption('--outdir',
           type='string',
