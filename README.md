@@ -162,7 +162,7 @@ tree.sequence
 ### Selection simulation
 
 This command will simulate a poisson branching process coupled with a selection process.
-The progeny distribution is dynamically set for each cell in the simulation an depends on its fitness defined by its similarity to a "target" sequence and the fitness of the rest of the cell population (carrying capacity of 1000 cells).
+The progeny distribution is dynamically set for each cell in the simulation and depends on its fitness defined by its similarity to any of set a number of "target" sequences (here equal to 100), and by the fitness of the rest of the cell population (carrying capacity of 1000 cells).
 Possion lambda=2 is the maximum progeny distribution and lambda is then adjusted smaller according to the cell fitness.
 The simulation terminates after 35 rounds of evaluating the progeny for all live cells, then 60 leaves are randomly picked from the whole cell population and the tree is pruned to remove all non-picked leaves.
 The number of mutations to introduce in a daugther cell is drawn from another possion distribution (lambda0=0.365) introducing mutations at a rate of approx. 1e-3, similar to real SHM rates.

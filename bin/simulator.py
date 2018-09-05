@@ -78,6 +78,8 @@ class MutationModel():
                 for sequence_recurse in MutationModel.disambiguate(sequence[:N_index] + n_replace + sequence[N_index+1:]):
                     yield sequence_recurse
 
+# ----------------------------------------------------------------------------------------
+# this fcn is crazy slow (~90% of cpu time)
     def mutability(self, kmer):
         '''
         Returns the mutability of a central base of a kmer, along with nucleotide bias
@@ -96,6 +98,7 @@ class MutationModel():
         average_substitution = {b:sum(substitution_dict[b] for substitution_dict in substitutions_to_average)/len(substitutions_to_average) for b in 'ACGT'}
 
         return average_mutability, average_substitution
+# ----------------------------------------------------------------------------------------
 
     def mutabilities(self, sequence):
         '''Returns the mutability of a sequence at each site, along with nucleotide biases.'''
@@ -548,32 +551,36 @@ def main():
     file_path = os.path.realpath(__file__)
     file_dir = os.path.dirname(file_path)
 
+    class MultiplyInheritedFormatter(argparse.RawTextHelpFormatter, argparse.ArgumentDefaultsHelpFormatter):
+        pass
+    formatter_class = MultiplyInheritedFormatter
     parser = argparse.ArgumentParser(description='Germinal center simulation',
-                                     formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+                                     formatter_class=MultiplyInheritedFormatter)
+
     parser.add_argument('--sequence', type=str, default='GGACCTAGCCTCGTGAAACCTTCTCAGACTCTGTCCCTCACCTGTTCTGTCACTGGCGACTCCATCACCAGTGGTTACTGGAACTGGATCCGGAAATTCCCAGGGAATAAACTTGAGTACATGGGGTACATAAGCTACAGTGGTAGCACTTACTACAATCCATCTCTCAAAAGTCGAATCTCCATCACTCGAGACACATCCAAGAACCAGTACTACCTGCAGTTGAATTCTGTGACTACTGAGGACACAGCCACATATTACTGT',
-                        help='Seed naive nucleotide sequence')
-    parser.add_argument('--random_seq', type=str, default=None, help='Path to fasta file containing seed sequences. Will draw one of these at random.')
-    parser.add_argument('--mutability', type=str, default=file_dir+'/../motifs/Mutability_S5F.csv', help='Path to mutability model file')
-    parser.add_argument('--substitution', type=str, default=file_dir+'/../motifs/Substitution_S5F.csv', help='Path to substitution model file')
+                        help='Seed naive nucleotide sequence (ignored if --random_seq is set)')
+    parser.add_argument('--random_seq', type=str, default=None, help='Path to fasta file containing seed naive sequences. Will draw one of these at random.')
+    parser.add_argument('--mutability', type=str, default=file_dir+'/../S5F/Mutability.csv', help='Path to mutability model file')
+    parser.add_argument('--substitution', type=str, default=file_dir+'/../S5F/Substitution.csv', help='Path to substitution model file')
     parser.add_argument('--sequence2', type=str, default=None, help='Second seed naive nucleotide sequence. For simulating heavy/light chain co-evolution.')
     parser.add_argument('--lambda', dest='lambda_', type=float, default=.9, help='Poisson branching parameter')
-    parser.add_argument('--lambda0', type=float, default=None, nargs='*', help='List of one or two elements with the baseline mutation rates. Space separated input values. '
-                        'First element belonging to seed sequence one and optionally the next to sequence 2. If only one rate is provided for two sequences,'
-                        'this rate will be used on both.')
-    parser.add_argument('--n', type=int, nargs='+', default=None, help='Cells downsampled')
-    parser.add_argument('--N', type=int, default=None, help='Target simulation size')
-    parser.add_argument('--T', type=int, nargs='+', default=None, help='Observation time, if None we run until termination and take all leaves')
+    parser.add_argument('--lambda0', type=float, default=None, nargs='*', help='List of one or two elements with the baseline mutation rates. Space separated input values.\n'
+                        'First element belonging to seed sequence one and optionally the next to sequence 2. If only one rate is provided for two sequences, this rate will be used on both.')
+    parser.add_argument('--n', type=int, default=None, help='Number of cells kept (not discarded) during final downsampling step')
+    parser.add_argument('--N', type=int, default=None, help='Desired number of final sequences (actual number may be less due to removal of nonsense sequences)')
+    parser.add_argument('--T', type=int, nargs='+', default=None, help='Observation time, in units of rounds of reproduction. Required for selection. If None, run until the settings of other parameters lead to termination, and take all leaves')
     parser.add_argument('--selection', action='store_true', default=False, help='Simulation with selection? true/false. When doing simulation with selection an observation time cut must be set.')
-    parser.add_argument('--stop_dist', type=int, default=None, help='Stop when this distance has been reached in the selection model.')
+    parser.add_argument('--stop_dist', type=int, default=None, help='Stop when any simulated sequence is closer than this (hamming distance) to any of the target sequences.')
     parser.add_argument('--carry_cap', type=int, default=1000, help='The carrying capacity of the simulation with selection. This number affects the fixation time of a new mutation. '
                         'Fixation time is approx. log2(carry_cap), e.g. log2(1000) ~= 10.')
-    parser.add_argument('--target_count', type=int, default=10, help='The number of targets to generate.')
-    parser.add_argument('--target_dist', type=int, default=10, help='The number of non-synonymous mutations the target should be away from the naive.')
+    parser.add_argument('--target_count', type=int, default=10, help='The number of target sequences to generate.')
+    parser.add_argument('--target_dist', type=int, default=10, help='Desired distance (number of non-synonymous mutations) between the naive sequence and the target sequences.')
     parser.add_argument('--naive_affy', type=float, default=100, help='Affinity of the naive sequence in nano molar.')
     parser.add_argument('--mature_affy', type=float, default=1, help='Affinity of the mature sequences in nano molar.')
-    parser.add_argument('--skip_update', type=int, default=100, help='When iterating through the leaves skip updating the binding equilibrium for this many leaves.'
-                        'It is possible though to update less often and get the same approximate results. This parameter sets the number of iterations to skip, '
-                        'before updating the B:A results. skip_update < carry_cap/10 recommended.')
+    parser.add_argument('--skip_update', type=int, default=100, help='Number of leaves/iterations to perform before updating the binding equilibrium (B:A).\n'
+                        'The binding equilibrium at any point in time depends, in principle, on the properties of every leaf/cell, and thus would ideally be updated every time any leaf changes.\n'
+                        'However, since each individual leaf typically causes only a small change in the overall equilibrium, a substantial speedup with minimal impact on accuracy can be achieved by updating B:A only after modifying every <--skip-update> leaves.\n'
+                        '(skip_update < carry_cap/10 recommended.)')
     parser.add_argument('--B_total', type=float, default=1, help='Total number of BCRs per B cell normalized to 10e4. So 1 equals 10e4, 100 equals 10e6 etc. '
                         'It is recommended to keep this as the default.')
     parser.add_argument('--U', type=float, default=5, help='Controls the fraction of BCRs binding antigen necessary to only sustain the life of the B cell '
