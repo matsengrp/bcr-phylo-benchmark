@@ -78,8 +78,6 @@ class MutationModel():
                 for sequence_recurse in MutationModel.disambiguate(sequence[:N_index] + n_replace + sequence[N_index+1:]):
                     yield sequence_recurse
 
-# ----------------------------------------------------------------------------------------
-# this fcn is crazy slow (~90% of cpu time)
     def mutability(self, kmer):
         '''
         Returns the mutability of a central base of a kmer, along with nucleotide bias
@@ -98,7 +96,6 @@ class MutationModel():
         average_substitution = {b:sum(substitution_dict[b] for substitution_dict in substitutions_to_average)/len(substitutions_to_average) for b in 'ACGT'}
 
         return average_mutability, average_substitution
-# ----------------------------------------------------------------------------------------
 
     def mutabilities(self, sequence):
         '''Returns the mutability of a sequence at each site, along with nucleotide biases.'''
@@ -560,8 +557,8 @@ def main():
     parser.add_argument('--sequence', type=str, default='GGACCTAGCCTCGTGAAACCTTCTCAGACTCTGTCCCTCACCTGTTCTGTCACTGGCGACTCCATCACCAGTGGTTACTGGAACTGGATCCGGAAATTCCCAGGGAATAAACTTGAGTACATGGGGTACATAAGCTACAGTGGTAGCACTTACTACAATCCATCTCTCAAAAGTCGAATCTCCATCACTCGAGACACATCCAAGAACCAGTACTACCTGCAGTTGAATTCTGTGACTACTGAGGACACAGCCACATATTACTGT',
                         help='Seed naive nucleotide sequence (ignored if --random_seq is set)')
     parser.add_argument('--random_seq', type=str, default=None, help='Path to fasta file containing seed naive sequences. Will draw one of these at random.')
-    parser.add_argument('--mutability', type=str, default=file_dir+'/../S5F/Mutability.csv', help='Path to mutability model file')
-    parser.add_argument('--substitution', type=str, default=file_dir+'/../S5F/Substitution.csv', help='Path to substitution model file')
+    parser.add_argument('--mutability', type=str, default=file_dir+'/../motifs/Mutability_S5F.csv', help='Path to mutability model file')
+    parser.add_argument('--substitution', type=str, default=file_dir+'/../motifs/Substitution_S5F.csv', help='Path to substitution model file')
     parser.add_argument('--sequence2', type=str, default=None, help='Second seed naive nucleotide sequence. For simulating heavy/light chain co-evolution.')
     parser.add_argument('--lambda', dest='lambda_', type=float, default=.9, help='Poisson branching parameter')
     parser.add_argument('--lambda0', type=float, default=None, nargs='*', help='List of one or two elements with the baseline mutation rates. Space separated input values.\n'
