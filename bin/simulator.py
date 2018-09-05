@@ -571,7 +571,7 @@ def main():
     parser.add_argument('--target_dist', type=int, default=10, help='The number of non-synonymous mutations the target should be away from the naive.')
     parser.add_argument('--naive_affy', type=float, default=100, help='Affinity of the naive sequence in nano molar.')
     parser.add_argument('--mature_affy', type=float, default=1, help='Affinity of the mature sequences in nano molar.')
-    parser.add_argument('--skip_update', type=int, default=100, help='When iterating through the leafs the B:A fraction is recalculated every time. '
+    parser.add_argument('--skip_update', type=int, default=100, help='When iterating through the leaves skip updating the binding equilibrium for this many leaves.'
                         'It is possible though to update less often and get the same approximate results. This parameter sets the number of iterations to skip, '
                         'before updating the B:A results. skip_update < carry_cap/10 recommended.')
     parser.add_argument('--B_total', type=float, default=1, help='Total number of BCRs per B cell normalized to 10e4. So 1 equals 10e4, 100 equals 10e6 etc. '
