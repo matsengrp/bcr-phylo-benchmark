@@ -33,6 +33,8 @@ ISO_TYPE_charORDER = {'M': 1, 'D': 2, 'G': 3, 'E': 4, 'A': 5}
 ISO_SHORT = {'IgM': 'M', 'IgD': 'D', 'IgG': 'G', 'IgGA': 'G', 'IgGb': 'G', 'IgE': 'E', 'IgA': 'A'}
 
 def translate(seq):
+    if len(seq) % 3 != 0:
+        seq += 'N' * (3 - (len(seq) % 3))
     return str(Seq(seq[:], generic_dna).translate())
 
 
