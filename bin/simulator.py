@@ -593,9 +593,9 @@ def main():
     parser.add_argument('--random_seed', type=int, help='for random number generator')
 
     args = parser.parse_args()
-    if True:#args.mutability.lower() == 'false' or args.mutability.lower() == 'none' or args.mutability.lower() == 'uniform':
+    if args.mutability.lower() == 'false' or args.mutability.lower() == 'none' or args.mutability.lower() == 'uniform':
         args.mutability = None
-    if True:#args.substitution.lower() == 'false' or args.substitution.lower() == 'none' or args.substitution.lower() == 'uniform':
+    if args.substitution.lower() == 'false' or args.substitution.lower() == 'none' or args.substitution.lower() == 'uniform':
         args.substitution = None
     simulate(args)
 
