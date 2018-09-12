@@ -563,7 +563,7 @@ def main():
     parser.add_argument('--lambda', dest='lambda_', type=float, default=.9, help='Poisson branching parameter')
     parser.add_argument('--lambda0', type=float, default=None, nargs='*', help='List of one or two elements with the baseline mutation rates. Space separated input values.\n'
                         'First element belonging to seed sequence one and optionally the next to sequence 2. If only one rate is provided for two sequences, this rate will be used on both.')
-    parser.add_argument('--n', type=int, default=None, help='Number of cells kept (not discarded) during final downsampling step')
+    parser.add_argument('--n', type=int, nargs='+', default=None, help='Number of cells kept (not discarded) during final downsampling step')
     parser.add_argument('--N', type=int, default=None, help='Desired number of final sequences (actual number may be less due to removal of nonsense sequences)')
     parser.add_argument('--T', type=int, nargs='+', default=None, help='Observation time, in units of rounds of reproduction. Required for selection. If None, run until the settings of other parameters lead to termination, and take all leaves')
     parser.add_argument('--selection', action='store_true', default=False, help='Simulation with selection? true/false. When doing simulation with selection an observation time cut must be set.')
