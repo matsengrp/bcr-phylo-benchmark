@@ -171,7 +171,7 @@ class MutationModel():
         raise RuntimeError('100 consecutive attempts for creating a target sequence failed.')
 
     def simulate(self, sequence, pair_bounds=None, lambda_=0.9, lambda0=[1],
-                 N=None, T=None, n_to_downsample=None, verbose=False, selection_params=None):
+                 N=None, obs_times=None, n_to_downsample=None, verbose=False, selection_params=None):
         '''
         Simulate a poisson branching process with mutation introduced
         by the chosen mutation model e.g. motif or uniform.
@@ -181,20 +181,20 @@ class MutationModel():
         progeny = poisson(lambda_)  # Default progeny distribution
         stop_dist = None  # Default stopping criterium for affinity simulation
         # Checking the validity of the input parameters:
-        if N is not None and T is not None:
-            raise ValueError('Only one of N and T can be used. One must be None.')
-        if selection_params is not None and T is None:
-            raise ValueError('Simulation with selection was chosen. A time, T, must be specified.')
-        elif N is None and T is None:
-            raise ValueError('Either N or T must be specified.')
+        if N is not None and obs_times is not None:
+            raise ValueError('Only one of N and obs_times can be used. One must be None.')
+        if selection_params is not None and obs_times is None:
+            raise ValueError('Simulation with selection was chosen. A time, obs_times, must be specified.')
+        elif N is None and obs_times is None:
+            raise ValueError('Either N or obs_times must be specified.')
         if N is not None and n_to_downsample is not None and n_to_downsample[-1] > N:
             raise ValueError('n ({}) must not larger than N ({})'.format(n_to_downsample[-1], N))
         elif N is not None and n_to_downsample is not None and len(n_to_downsample) != 1:
             raise ValueError('n_to_downsample ({}) must a single value when specifying N'.format(n_to_downsample))
-        if T is not None and len(T) > 1 and (n_to_downsample is None or (len(n_to_downsample) != 1 and len(n_to_downsample) != len(T))):
+        if obs_times is not None and len(obs_times) > 1 and (n_to_downsample is None or (len(n_to_downsample) != 1 and len(n_to_downsample) != len(obs_times))):
             raise ValueError('n must be specified when using intermediate sampling:', n_to_downsample)
-        elif T is not None and len(T) > 1 and len(n_to_downsample) == 1:
-            n_to_downsample = [n_to_downsample[-1]] * len(T)
+        elif obs_times is not None and len(obs_times) > 1 and len(n_to_downsample) == 1:
+            n_to_downsample = [n_to_downsample[-1]] * len(obs_times)
 
         # Planting the tree:
         tree = TreeNode()
@@ -228,8 +228,8 @@ class MutationModel():
         lambda_min = 10e-10
         hd_distrib = []
         if not verbose:
-            print('generation (out of %d):' % max(T)
-        while leaves_unterminated > 0 and (leaves_unterminated < N if N is not None else True) and (t < max(T) if T is not None else True) and (stop_dist >= min(hd_distrib) if stop_dist is not None and t > 0 else True):
+            print('generation (out of %d):' % max(obs_times))
+        while leaves_unterminated > 0 and (leaves_unterminated < N if N is not None else True) and (t < max(obs_times) if obs_times is not None else True) and (stop_dist >= min(hd_distrib) if stop_dist is not None and t > 0 else True):
             if verbose:
                 print('At time:', t)
             else:
@@ -237,8 +237,8 @@ class MutationModel():
                 sys.stdout.flush()
             t += 1
             # Sample intermediate time point:
-            if T is not None and len(T) > 1 and (t-1) in T:
-                si = T.index(t-1)
+            if obs_times is not None and len(obs_times) > 1 and (t-1) in obs_times:
+                si = obs_times.index(t-1)
                 live_nostop_leaves = [l for l in tree.iter_leaves() if not l.terminated and not has_stop(l.sequence)]
                 random.shuffle(live_nostop_leaves)
                 if len(live_nostop_leaves) < n_to_downsample[si]:
@@ -313,17 +313,17 @@ class MutationModel():
                 pickle.dump(hd_generation, f)
 
         # Each leaf in final generation gets an observation frequency of 1, unless downsampled:
-        if T is not None and len(T) > 1:
+        if obs_times is not None and len(obs_times) > 1:
             # Iterate the intermediate time steps (excluding the last time):
-            for Ti in sorted(T)[:-1]:
-                si = T.index(Ti)
+            for Ti in sorted(obs_times)[:-1]:
+                si = obs_times.index(Ti)
                 # Only sample those that have been 'sampled' at intermediate sampling times:
                 final_leaves = [leaf for leaf in tree.iter_descendants() if leaf.time == Ti and leaf.sampled]
                 if len(final_leaves) < n_to_downsample[si]:
                     raise RuntimeError('tree terminated with {} leaves, less than what desired after downsampling {}'.format(leaves_unterminated, n_to_downsample[si]))
                 for leaf in final_leaves:  # No need to down-sample, this was already done in the simulation loop
                     leaf.frequency = 1
-        if selection_params and max(T) != t:
+        if selection_params and max(obs_times) != t:
             raise RuntimeError('tree terminated with before the requested sample time.')
         # Do the normal sampling of the last time step:
         final_leaves = [leaf for leaf in tree.iter_leaves() if leaf.time == t and not has_stop(leaf.sequence)]
@@ -332,8 +332,8 @@ class MutationModel():
         if stop_leaves:
             print('Tree contains {} leaves with stop codons, out of {} total at last time point.'.format(len(stop_leaves), len(final_leaves)))
 
-        if T is not None:
-            si = T.index(sorted(T)[-1])
+        if obs_times is not None:
+            si = obs_times.index(sorted(obs_times)[-1])
         else:
             si = 0
         # By default, downsample to the target simulation size:
@@ -345,7 +345,7 @@ class MutationModel():
                 N = len(final_leaves)
             for leaf in random.sample(final_leaves, N):
                 leaf.frequency = 1
-        elif N is None and T is not None:
+        elif N is None and obs_times is not None:
             for leaf in final_leaves:
                 leaf.frequency = 1
         elif n_to_downsample is not None and len(final_leaves) < n_to_downsample[si]:
@@ -419,7 +419,7 @@ def simulate(args):
                                            lambda0=args.lambda0,
                                            n_to_downsample=args.n_to_downsample,
                                            N=args.N,
-                                           T=args.T,
+                                           obs_times=args.obs_times,
                                            verbose=args.verbose,
                                            selection_params=selection_params)
             if args.selection:
@@ -566,14 +566,14 @@ def main():
     parser.add_argument('--random_seq', type=str, default=None, help='Path to fasta file containing seed naive sequences. Will draw one of these at random.')
     parser.add_argument('--mutability', type=str, default=file_dir+'/../motifs/Mutability_S5F.csv', help='Path to mutability model file.')
     parser.add_argument('--substitution', type=str, default=file_dir+'/../motifs/Substitution_S5F.csv', help='Path to substitution model file.')
-    parser.add_argument('--no-context', action='store_true', help='Disable context dependence, i.e. use a uniform mutability and substitution.')
+    parser.add_argument('--no_context', action='store_true', help='Disable context dependence, i.e. use a uniform mutability and substitution.')
     parser.add_argument('--sequence2', type=str, default=None, help='Second seed naive nucleotide sequence. For simulating heavy/light chain co-evolution.')
     parser.add_argument('--lambda', dest='lambda_', type=float, default=.9, help='Poisson branching parameter')
     parser.add_argument('--lambda0', type=float, default=None, nargs='*', help='List of one or two elements with the baseline mutation rates. Space separated input values.\n'
                         'First element belonging to seed sequence one and optionally the next to sequence 2. If only one rate is provided for two sequences, this rate will be used on both.')
-    parser.add_argument('--n-to-downsample', type=int, nargs='+', default=None, help='Number of cells kept (not discarded) during final downsampling step')
+    parser.add_argument('--n_to_downsample', type=int, nargs='+', default=None, help='Number of cells kept (not discarded) during final downsampling step')
     parser.add_argument('--N', type=int, default=None, help='Desired number of final sequences (actual number may be less due to removal of nonsense sequences)')
-    parser.add_argument('--T', type=int, nargs='+', default=None, help='Observation time, in units of rounds of reproduction. Required for selection. If None, run until the settings of other parameters lead to termination, and take all leaves')
+    parser.add_argument('--obs_times', type=int, nargs='+', default=None, help='Observation time, in units of rounds of reproduction. Required for selection. If None, run until the settings of other parameters lead to termination, and take all leaves')
     parser.add_argument('--selection', action='store_true', default=False, help='Simulation with selection? true/false. When doing simulation with selection an observation time cut must be set.')
     parser.add_argument('--stop_dist', type=int, default=None, help='Stop when any simulated sequence is closer than this (hamming distance) to any of the target sequences.')
     parser.add_argument('--carry_cap', type=int, default=1000, help='The carrying capacity of the simulation with selection. This number affects the fixation time of a new mutation. '
