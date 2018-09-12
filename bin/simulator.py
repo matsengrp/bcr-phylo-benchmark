@@ -171,7 +171,7 @@ class MutationModel():
         raise RuntimeError('100 consecutive attempts for creating a target sequence failed.')
 
     def simulate(self, sequence, pair_bounds=None, lambda_=0.9, lambda0=[1],
-                 N=None, T=None, n=None, verbose=False, selection_params=None):
+                 N=None, T=None, n_to_downsample=None, verbose=False, selection_params=None):
         '''
         Simulate a poisson branching process with mutation introduced
         by the chosen mutation model e.g. motif or uniform.
@@ -187,14 +187,14 @@ class MutationModel():
             raise ValueError('Simulation with selection was chosen. A time, T, must be specified.')
         elif N is None and T is None:
             raise ValueError('Either N or T must be specified.')
-        if N is not None and n is not None and n[-1] > N:
-            raise ValueError('n ({}) must not larger than N ({})'.format(n[-1], N))
-        elif N is not None and n is not None and len(n) != 1:
-            raise ValueError('n ({}) must a single value when specifying N'.format(n))
-        if T is not None and len(T) > 1 and (n is None or (len(n) != 1 and len(n) != len(T))):
-            raise ValueError('n must be specified when using intermediate sampling:', n)
-        elif T is not None and len(T) > 1 and len(n) == 1:
-            n = [n[-1]] * len(T)
+        if N is not None and n_to_downsample is not None and n_to_downsample[-1] > N:
+            raise ValueError('n ({}) must not larger than N ({})'.format(n_to_downsample[-1], N))
+        elif N is not None and n_to_downsample is not None and len(n_to_downsample) != 1:
+            raise ValueError('n_to_downsample ({}) must a single value when specifying N'.format(n_to_downsample))
+        if T is not None and len(T) > 1 and (n_to_downsample is None or (len(n_to_downsample) != 1 and len(n_to_downsample) != len(T))):
+            raise ValueError('n must be specified when using intermediate sampling:', n_to_downsample)
+        elif T is not None and len(T) > 1 and len(n_to_downsample) == 1:
+            n_to_downsample = [n_to_downsample[-1]] * len(T)
 
         # Planting the tree:
         tree = TreeNode()
@@ -228,8 +228,7 @@ class MutationModel():
         lambda_min = 10e-10
         hd_distrib = []
         if not verbose:
-            assert len(T) == 1  # not sure why it's a list
-            print('generation (out of %d):' % T[0])
+            print('generation (out of %d):' % max(T)
         while leaves_unterminated > 0 and (leaves_unterminated < N if N is not None else True) and (t < max(T) if T is not None else True) and (stop_dist >= min(hd_distrib) if stop_dist is not None and t > 0 else True):
             if verbose:
                 print('At time:', t)
@@ -242,10 +241,10 @@ class MutationModel():
                 si = T.index(t-1)
                 live_nostop_leaves = [l for l in tree.iter_leaves() if not l.terminated and not has_stop(l.sequence)]
                 random.shuffle(live_nostop_leaves)
-                if len(live_nostop_leaves) < n[si]:
-                    raise RuntimeError('tree with {} leaves, less than what desired for intermediate sampling {}. Try later generation or increasing the carrying capacity.'.format(leaves_unterminated, n))
+                if len(live_nostop_leaves) < n_to_downsample[si]:
+                    raise RuntimeError('tree with {} leaves, less than what desired for intermediate sampling {}. Try later generation or increasing the carrying capacity.'.format(leaves_unterminated, n_to_downsample))
                 # Make the sample and kill the cells sampled:
-                for leaf in live_nostop_leaves[:n[si]]:
+                for leaf in live_nostop_leaves[:n_to_downsample[si]]:
                     leaves_unterminated -= 1
                     leaf.sampled = True
                     leaf.terminated = True
@@ -320,8 +319,8 @@ class MutationModel():
                 si = T.index(Ti)
                 # Only sample those that have been 'sampled' at intermediate sampling times:
                 final_leaves = [leaf for leaf in tree.iter_descendants() if leaf.time == Ti and leaf.sampled]
-                if len(final_leaves) < n[si]:
-                    raise RuntimeError('tree terminated with {} leaves, less than what desired after downsampling {}'.format(leaves_unterminated, n[si]))
+                if len(final_leaves) < n_to_downsample[si]:
+                    raise RuntimeError('tree terminated with {} leaves, less than what desired after downsampling {}'.format(leaves_unterminated, n_to_downsample[si]))
                 for leaf in final_leaves:  # No need to down-sample, this was already done in the simulation loop
                     leaf.frequency = 1
         if selection_params and max(T) != t:
@@ -338,10 +337,10 @@ class MutationModel():
         else:
             si = 0
         # By default, downsample to the target simulation size:
-        if n is not None and len(final_leaves) >= n[si]:
-            for leaf in random.sample(final_leaves, n[si]):
+        if n_to_downsample is not None and len(final_leaves) >= n_to_downsample[si]:
+            for leaf in random.sample(final_leaves, n_to_downsample[si]):
                 leaf.frequency = 1
-        elif n is None and N is not None:
+        elif n_to_downsample is None and N is not None:
             if len(final_leaves) < N:  # Removed nonsense sequences might decrease the number of final leaves to less than N
                 N = len(final_leaves)
             for leaf in random.sample(final_leaves, N):
@@ -349,8 +348,8 @@ class MutationModel():
         elif N is None and T is not None:
             for leaf in final_leaves:
                 leaf.frequency = 1
-        elif n is not None and len(final_leaves) < n[si]:
-            raise RuntimeError('tree terminated with {} leaves, less than what desired after downsampling {}'.format(leaves_unterminated, n[si]))
+        elif n_to_downsample is not None and len(final_leaves) < n_to_downsample[si]:
+            raise RuntimeError('tree terminated with {} leaves, less than what desired after downsampling {}'.format(leaves_unterminated, n_to_downsample[si]))
         else:
             raise RuntimeError('Unknown option.')
 
@@ -418,7 +417,7 @@ def simulate(args):
                                            pair_bounds=pair_bounds,
                                            lambda_=args.lambda_,
                                            lambda0=args.lambda0,
-                                           n=args.n,
+                                           n_to_downsample=args.n_to_downsample,
                                            N=args.N,
                                            T=args.T,
                                            verbose=args.verbose,
@@ -572,7 +571,7 @@ def main():
     parser.add_argument('--lambda', dest='lambda_', type=float, default=.9, help='Poisson branching parameter')
     parser.add_argument('--lambda0', type=float, default=None, nargs='*', help='List of one or two elements with the baseline mutation rates. Space separated input values.\n'
                         'First element belonging to seed sequence one and optionally the next to sequence 2. If only one rate is provided for two sequences, this rate will be used on both.')
-    parser.add_argument('--n', type=int, default=None, help='Number of cells kept (not discarded) during final downsampling step')
+    parser.add_argument('--n-to-downsample', type=int, nargs='+', default=None, help='Number of cells kept (not discarded) during final downsampling step')
     parser.add_argument('--N', type=int, default=None, help='Desired number of final sequences (actual number may be less due to removal of nonsense sequences)')
     parser.add_argument('--T', type=int, nargs='+', default=None, help='Observation time, in units of rounds of reproduction. Required for selection. If None, run until the settings of other parameters lead to termination, and take all leaves')
     parser.add_argument('--selection', action='store_true', default=False, help='Simulation with selection? true/false. When doing simulation with selection an observation time cut must be set.')
