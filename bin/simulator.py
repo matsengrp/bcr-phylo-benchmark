@@ -222,23 +222,23 @@ class MutationModel():
             tree.add_feature('Kd', selection_utils.calc_Kd(tree.AAseq, targetAAseqs, hd2affy))
             tree.add_feature('target_dist', min([hamming_distance(tree.AAseq, taa) for taa in targetAAseqs]))
 
-        t = 0  # <-- Time at start
+        t_start = 0  # <-- Time at start
         leaves_unterminated = 1
         # Small lambdas are causing problems so make a minimum:
         lambda_min = 10e-10
         hd_distrib = []
         if not verbose:
             print('generation (out of %d):' % max(obs_times))
-        while leaves_unterminated > 0 and (leaves_unterminated < n_final_seqs if n_final_seqs is not None else True) and (t < max(obs_times) if obs_times is not None else True) and (stop_dist >= min(hd_distrib) if stop_dist is not None and t > 0 else True):
+        while leaves_unterminated > 0 and (leaves_unterminated < n_final_seqs if n_final_seqs is not None else True) and (t_start < max(obs_times) if obs_times is not None else True) and (stop_dist >= min(hd_distrib) if stop_dist is not None and t_start > 0 else True):
             if verbose:
-                print('At time:', t)
+                print('At time:', t_start)
             else:
-                print(' %d' % t, end='')
+                print(' %d' % t_start, end='')
                 sys.stdout.flush()
-            t += 1
+            t_start += 1
             # Sample intermediate time point:
-            if obs_times is not None and len(obs_times) > 1 and (t-1) in obs_times:
-                si = obs_times.index(t-1)
+            if obs_times is not None and len(obs_times) > 1 and (t_start-1) in obs_times:
+                si = obs_times.index(t_start-1)
                 live_nostop_leaves = [l for l in tree.iter_leaves() if not l.terminated and not has_stop(l.sequence)]
                 random.shuffle(live_nostop_leaves)
                 if len(live_nostop_leaves) < n_to_downsample[si]:
@@ -249,7 +249,7 @@ class MutationModel():
                     leaf.sampled = True
                     leaf.terminated = True
                 if verbose:
-                    print('Made an intermediate sample at time:', t-1)
+                    print('Made an intermediate sample at time:', t_start-1)
             live_leaves = [l for l in tree.iter_leaves() if not l.terminated]
             random.shuffle(live_leaves)
             skip_lambda_n = 0  # At every new round reset the all the lambdas
@@ -287,7 +287,7 @@ class MutationModel():
                     child.add_feature('frequency', 0)
                     child.add_feature('terminated', False)
                     child.add_feature('sampled', False)
-                    child.add_feature('time', t)
+                    child.add_feature('time', t_start)
                     leaf.add_child(child)
             if selection_params is not None:
                 hd_distrib = [min([hamming_distance(tn.AAseq, ta) for ta in targetAAseqs]) for tn in tree.iter_leaves() if not tn.terminated]
@@ -323,12 +323,12 @@ class MutationModel():
                     raise RuntimeError('tree terminated with {} leaves, less than what desired after downsampling {}'.format(leaves_unterminated, n_to_downsample[si]))
                 for leaf in final_leaves:  # No need to down-sample, this was already done in the simulation loop
                     leaf.frequency = 1
-        if selection_params and max(obs_times) != t:
+        if selection_params and max(obs_times) != t_start:
             raise RuntimeError('tree terminated with before the requested sample time.')
         # Do the normal sampling of the last time step:
-        final_leaves = [leaf for leaf in tree.iter_leaves() if leaf.time == t and not has_stop(leaf.sequence)]
+        final_leaves = [leaf for leaf in tree.iter_leaves() if leaf.time == t_start and not has_stop(leaf.sequence)]
         # Report stop codon sequences:
-        stop_leaves = [leaf for leaf in tree.iter_leaves() if leaf.time == t and has_stop(leaf.sequence)]
+        stop_leaves = [leaf for leaf in tree.iter_leaves() if leaf.time == t_start and has_stop(leaf.sequence)]
         if stop_leaves:
             print('Tree contains {} leaves with stop codons, out of {} total at last time point.'.format(len(stop_leaves), len(final_leaves)))
 
