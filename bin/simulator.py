@@ -11,6 +11,7 @@ import scipy, random, pandas as pd, os, time
 from itertools import cycle
 from scipy.stats import poisson
 import numpy
+import sys
 from ete3 import TreeNode, TreeStyle, NodeStyle, SVG_COLORS
 import matplotlib; matplotlib.use('agg')
 try:
@@ -226,9 +227,15 @@ class MutationModel():
         # Small lambdas are causing problems so make a minimum:
         lambda_min = 10e-10
         hd_distrib = []
+        if not verbose:
+            assert len(T) == 1  # not sure why it's a list
+            print('generation (out of %d):' % T[0])
         while leaves_unterminated > 0 and (leaves_unterminated < N if N is not None else True) and (t < max(T) if T is not None else True) and (stop_dist >= min(hd_distrib) if stop_dist is not None and t > 0 else True):
             if verbose:
                 print('At time:', t)
+            else:
+                print(' %d' % t, end='')
+                sys.stdout.flush()
             t += 1
             # Sample intermediate time point:
             if T is not None and len(T) > 1 and (t-1) in T:
@@ -296,6 +303,8 @@ class MutationModel():
                     print('Affinity of latest sampled leaf:', leaf.Kd)
                     print('Progeny distribution lambda for the latest sampled leaf:', leaf.lambda_)
 
+        if not verbose:
+            print()
         if leaves_unterminated < N:
             raise RuntimeError('Tree terminated with {} leaves, {} desired'.format(leaves_unterminated, N))
 
@@ -366,13 +375,6 @@ class MutationModel():
 
 
 def simulate(args):
-    '''
-    Simulation subprogram. Can simulate in two modes.
-    a) Neutral mode. A Galton–Watson process, with mutation probabilities according to a user defined motif model e.g. S5F.
-    b) Selection mode. Using the same mutation process as in a), but in selection mode the poisson progeny distribution's lambda parameter
-    is dynamically adjusted accordring to the hamming distance to a list of target sequences. The closer a sequence gets to one of the targets
-    the higher fitness and the closer lambda will approach 2, vice versa when the sequence is far away lambda approaches 0.
-    '''
     if args.random_seed is not None:
         numpy.random.seed(args.random_seed)
         random.seed(args.random_seed)
@@ -400,8 +402,7 @@ def simulate(args):
         pair_bounds = None
     if args.selection:
         assert(args.B_total >= args.f_full)  # the fully activating fraction on BA must be possible to reach within B_total
-        # Find the total amount of A necessary for sustaining the inputted carrying capacity:
-        print((args.carry_cap, args.B_total, args.f_full, args.mature_affy))
+        # Find the total amount of A necessary for sustaining the specified carrying capacity
         A_total = selection_utils.find_A_total(args.carry_cap, args.B_total, args.f_full, args.mature_affy, args.U)
         # Calculate the parameters for the logistic function:
         Lp = selection_utils.find_Lp(args.f_full, args.U)
@@ -551,14 +552,22 @@ def main():
     class MultiplyInheritedFormatter(argparse.RawTextHelpFormatter, argparse.ArgumentDefaultsHelpFormatter):
         pass
     formatter_class = MultiplyInheritedFormatter
-    parser = argparse.ArgumentParser(description='Germinal center simulation',
+    help_str = '''
+    Germinal center simulation. Can simulate in two modes:
+      a) Neutral mode. A Galton–Watson process, with mutation probabilities according to a user defined motif model e.g. S5F.
+      b) Selection mode. With the same mutation process as in a), but the poisson progeny distribution's lambda parameter is dynamically adjusted according to the hamming distance to any of a list
+         of target sequences such that the closer a sequence gets to any of the targets, the higher its fitness (and the closer lambda gets to 2). Similarly, when the sequence is far away
+         from any target, lambda approaches 0.
+    '''
+    parser = argparse.ArgumentParser(description=help_str,
                                      formatter_class=MultiplyInheritedFormatter)
 
     parser.add_argument('--sequence', type=str, default='GGACCTAGCCTCGTGAAACCTTCTCAGACTCTGTCCCTCACCTGTTCTGTCACTGGCGACTCCATCACCAGTGGTTACTGGAACTGGATCCGGAAATTCCCAGGGAATAAACTTGAGTACATGGGGTACATAAGCTACAGTGGTAGCACTTACTACAATCCATCTCTCAAAAGTCGAATCTCCATCACTCGAGACACATCCAAGAACCAGTACTACCTGCAGTTGAATTCTGTGACTACTGAGGACACAGCCACATATTACTGT',
                         help='Seed naive nucleotide sequence (ignored if --random_seq is set)')
     parser.add_argument('--random_seq', type=str, default=None, help='Path to fasta file containing seed naive sequences. Will draw one of these at random.')
-    parser.add_argument('--mutability', type=str, default=file_dir+'/../motifs/Mutability_S5F.csv', help='Path to mutability model file')
-    parser.add_argument('--substitution', type=str, default=file_dir+'/../motifs/Substitution_S5F.csv', help='Path to substitution model file')
+    parser.add_argument('--mutability', type=str, default=file_dir+'/../motifs/Mutability_S5F.csv', help='Path to mutability model file.')
+    parser.add_argument('--substitution', type=str, default=file_dir+'/../motifs/Substitution_S5F.csv', help='Path to substitution model file.')
+    parser.add_argument('--no-context', action='store_true', help='Disable context dependence, i.e. use a uniform mutability and substitution.')
     parser.add_argument('--sequence2', type=str, default=None, help='Second seed naive nucleotide sequence. For simulating heavy/light chain co-evolution.')
     parser.add_argument('--lambda', dest='lambda_', type=float, default=.9, help='Poisson branching parameter')
     parser.add_argument('--lambda0', type=float, default=None, nargs='*', help='List of one or two elements with the baseline mutation rates. Space separated input values.\n'
@@ -593,9 +602,8 @@ def main():
     parser.add_argument('--random_seed', type=int, help='for random number generator')
 
     args = parser.parse_args()
-    if True:#args.mutability.lower() == 'false' or args.mutability.lower() == 'none' or args.mutability.lower() == 'uniform':
+    if args.no_context:
         args.mutability = None
-    if True:#args.substitution.lower() == 'false' or args.substitution.lower() == 'none' or args.substitution.lower() == 'uniform':
         args.substitution = None
     simulate(args)
 
