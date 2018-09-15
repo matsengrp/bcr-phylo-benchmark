@@ -135,8 +135,6 @@ class MutationModel():
         # Introduce mutations (note: we very commonly just return, i.e. if the poisson kicks up zero mutations)
         unmutated_positions = range(len(sequence))
         for i in range(n_mutations):
-            sequence_list = list(sequence)  # Make mutable
-
             # Determine the position to mutate from the mutability matrix:
             mutability_p = None
             if self.context_model is not None:
@@ -145,13 +143,13 @@ class MutationModel():
             mut_pos = scipy.random.choice(unmutated_positions, p=mutability_p)
 
             # Now draw the target nucleotide using the substitution matrix
-            nucs = [n for n in 'ACGT' if n != sequence_list[mut_pos]]
+            nucs = [n for n in 'ACGT' if n != sequence[mut_pos]]
             substitution_p = None
             if self.context_model is not None:
                 substitution_p = [mutabilities[mut_pos][1][n] for n in nucs]
                 assert 0 <= abs(sum(substitution_p) - 1.) < 1e-10
-            sequence_list[mut_pos] = scipy.random.choice(nucs, p=substitution_p)
-            sequence = ''.join(sequence_list)  # Reconstruct our string
+            new_nuc = scipy.random.choice(nucs, p=substitution_p)
+            sequence = sequence[ : mut_pos] + new_nuc + sequence[mut_pos + 1 :]
             if self.context_model is not None and self.mutation_order:  # If mutation order matters, the mutabilities of the sequence need to be updated
                 mutabilities = self.mutabilities(sequence)
             if not self.allow_re_mutation:  # Remove this position so we don't mutate it again
