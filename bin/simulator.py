@@ -11,6 +11,7 @@ import scipy, random, pandas as pd, os, time
 from itertools import cycle
 from scipy.stats import poisson
 import numpy
+from colored_traceback import always
 import sys
 from ete3 import TreeNode, TreeStyle, NodeStyle, SVG_COLORS
 import matplotlib; matplotlib.use('agg')
@@ -29,15 +30,15 @@ class MutationModel():
     '''
     A class for a mutation model, and functions to mutate sequences.
     '''
-    def __init__(self, mutability_file=None, substitution_file=None, mutation_order=True, with_replacement=True):
+    def __init__(self, mutability_file=None, substitution_file=None, mutation_order=True, allow_re_mutation=True):
         """
         initialized with input files of the S5F format
         @param mutation_order: whether or not to mutate sequences using a context sensitive manner
                                where mutation order matters
-        @param with_replacement: allow the same position to mutate multiple times on a single branch
+        @param allow_re_mutation: allow the same position to mutate multiple times on a single branch
         """
         self.mutation_order = mutation_order
-        self.with_replacement = with_replacement
+        self.allow_re_mutation = allow_re_mutation
         if mutability_file is not None and substitution_file is not None:
             self.context_model = {}
             with open(mutability_file, 'r') as f:
@@ -100,13 +101,10 @@ class MutationModel():
 
     def mutabilities(self, sequence):
         '''Returns the mutability of a sequence at each site, along with nucleotide biases.'''
-        if self.context_model is None:
-            return [(1, dict((n2, 1/3) if n2 is not n else (n2, 0.) for n2 in 'ACGT')) for n in sequence]
-        else:
-            # Pad with Ns to allow averaged edge effects:
-            sequence = 'N'*(self.k//2) + sequence + 'N'*(self.k//2)
-            # Mutabilities of each nucleotide:
-            return [self.mutability(sequence[(i-self.k//2):(i+self.k//2+1)]) for i in range(self.k//2, len(sequence) - self.k//2)]
+        # Pad with Ns to allow averaged edge effects:
+        sequence = 'N'*(self.k//2) + sequence + 'N'*(self.k//2)
+        # Mutabilities of each nucleotide:
+        return [self.mutability(sequence[(i-self.k//2):(i+self.k//2+1)]) for i in range(self.k//2, len(sequence) - self.k//2)]
 
     def mutate(self, sequence, lambda0=1):
         """
@@ -115,42 +113,53 @@ class MutationModel():
         @param sequence: the original sequence to mutate
         @param lambda0: a "baseline" mutation rate
         """
-        sequence_length = len(sequence)
-        mutabilities = self.mutabilities(sequence)
-        sequence_mutability = sum(mutability[0] for mutability in mutabilities)/sequence_length
-        # Poisson rate for this sequence (given its relative mutability):
-        lambda_sequence = sequence_mutability*lambda0
-        # Number of mutations m:
-        trials = 20
-        for trial in range(1, trials+1):
-            m = scipy.random.poisson(lambda_sequence)
-            if m <= sequence_length or self.with_replacement:
-                break
-            if trial == trials:
-                raise RuntimeError('mutations saturating, consider reducing lambda0')
 
-        # Introduce mutations:
-        unmutated_positions = range(sequence_length)
-        for i in range(m):
+        mutabilities = None
+        sequence_mutability = 1.
+        if self.context_model is not None:
+            mutabilities = self.mutabilities(sequence)
+            sequence_mutability = sum(mty[0] for mty in mutabilities) / len(sequence)
+        lambda_sequence = sequence_mutability*lambda0  # Poisson rate for this sequence (given its relative mutability):
+
+        # decide how many mutations we'll apply
+        n_mutations = scipy.random.poisson(lambda_sequence)
+        if not self.allow_re_mutation:
+            trials = 20
+            for trial in range(1, trials+1):
+                n_mutations = scipy.random.poisson(lambda_sequence)
+                if n_mutations <= len(sequence):
+                    break
+                if trial == trials:
+                    raise RuntimeError('mutations saturating, consider reducing lambda0')
+
+        # Introduce mutations (note: we very commonly just return, i.e. if the poisson kicks up zero mutations)
+        unmutated_positions = range(len(sequence))
+        for i in range(n_mutations):
             sequence_list = list(sequence)  # Make mutable
+
             # Determine the position to mutate from the mutability matrix:
-            mutability_p = scipy.array([mutabilities[pos][0] for pos in unmutated_positions])
-            mut_pos = scipy.random.choice(unmutated_positions, p=mutability_p/mutability_p.sum())
+            mutability_p = None
+            if self.context_model is not None:
+                mutability_p = scipy.array([mutabilities[pos][0] for pos in unmutated_positions])
+                mutability_p /= mutability_p.sum()
+            mut_pos = scipy.random.choice(unmutated_positions, p=mutability_p)
+
             # Now draw the target nucleotide using the substitution matrix
-            substitution_p = [mutabilities[mut_pos][1][n] for n in 'ACGT']
-            assert 0 <= abs(sum(substitution_p) - 1.) < 1e-10
-            chosen_target = scipy.random.choice(4, p=substitution_p)
-            sequence_list[mut_pos] = 'ACGT'[chosen_target]
+            nucs = [n for n in 'ACGT' if n != sequence_list[mut_pos]]
+            substitution_p = None
+            if self.context_model is not None:
+                substitution_p = [mutabilities[mut_pos][1][n] for n in nucs]
+                assert 0 <= abs(sum(substitution_p) - 1.) < 1e-10
+            sequence_list[mut_pos] = scipy.random.choice(nucs, p=substitution_p)
             sequence = ''.join(sequence_list)  # Reconstruct our string
-            if self.mutation_order:
-                # If mutation order matters, the mutabilities of the sequence need to be updated:
+            if self.context_model is not None and self.mutation_order:  # If mutation order matters, the mutabilities of the sequence need to be updated
                 mutabilities = self.mutabilities(sequence)
-            if not self.with_replacement:
-                # Remove this position so we don't mutate it again:
+            if not self.allow_re_mutation:  # Remove this position so we don't mutate it again
                 unmutated_positions.remove(mut_pos)
+
         return sequence
 
-    def one_mutant(self, sequence, Nmuts, lambda0=0.1):
+    def make_one_mutant(self, sequence, Nmuts, lambda0=0.1):
         '''
         Make a single mutant with a hamming distance, in amino acid space, of Nmuts away from the starting point.
         '''
@@ -168,6 +177,7 @@ class MutationModel():
                 return aa_mut
             else:
                 trial -= 1
+
         raise RuntimeError('100 consecutive attempts for creating a target sequence failed.')
 
     def simulate(self, sequence, pair_bounds=None, lambda_=0.9, lambda0=[1],
@@ -209,7 +219,7 @@ class MutationModel():
             hd_generation = list()  # Collect an array of the counts of each hamming distance at each time step
             stop_dist, mature_affy, naive_affy, target_dist, target_count, skip_update, A_total, B_total, Lp, k, outbase = selection_params
             # Make a list of target sequences:
-            targetAAseqs = [self.one_mutant(sequence, target_dist) for i in range(target_count)]
+            targetAAseqs = [self.make_one_mutant(sequence, target_dist) for i in range(target_count)]
             # Assert that the target sequences are comparable to the naive sequence:
             aa = translate(tree.sequence)
             assert(sum([1 for t in targetAAseqs if len(t) != len(aa)]) == 0)  # All targets are same length
@@ -324,7 +334,7 @@ class MutationModel():
                 for leaf in final_leaves:  # No need to down-sample, this was already done in the simulation loop
                     leaf.frequency = 1
         if selection_params and max(obs_times) != t_start:
-            raise RuntimeError('tree terminated with before the requested sample time.')
+            raise RuntimeError('tree terminated before the requested sample time  obs_times: %s    t_start: %d  ' % (obs_times, t_start))
         # Do the normal sampling of the last time step:
         final_leaves = [leaf for leaf in tree.iter_leaves() if leaf.time == t_start and not has_stop(leaf.sequence)]
         # Report stop codon sequences:
