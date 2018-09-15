@@ -37,8 +37,9 @@ def translate(seq):
         seq += 'N' * (3 - (len(seq) % 3))
     return str(Seq(seq[:], generic_dna).translate())
 
-
 def has_stop(seq):
+    if len(seq) % 3 != 0:
+        seq += 'N' * (3 - (len(seq) % 3))
     return '*' in str(Seq(seq[:], generic_dna).translate())
 
 
