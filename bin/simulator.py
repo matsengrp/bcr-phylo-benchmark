@@ -106,7 +106,7 @@ class MutationModel():
         # Mutabilities of each nucleotide:
         return [self.mutability(sequence[(i-self.k//2):(i+self.k//2+1)]) for i in range(self.k//2, len(sequence) - self.k//2)]
 
-    def mutate(self, sequence, lambda0=1):
+    def mutate(self, sequence, lambda0=1, return_n_mutations=False, debug=False):
         """
         Mutate a sequence, with lamdba0 the baseline mutability.
         Cannot mutate the same position multiple times.
@@ -119,7 +119,7 @@ class MutationModel():
         if self.context_model is not None:
             mutabilities = self.mutabilities(sequence)
             sequence_mutability = sum(mty[0] for mty in mutabilities) / len(sequence)
-        lambda_sequence = sequence_mutability*lambda0  # Poisson rate for this sequence (given its relative mutability):
+        lambda_sequence = sequence_mutability * lambda0  # Poisson rate for this sequence (given its relative mutability):
 
         # decide how many mutations we'll apply
         n_mutations = scipy.random.poisson(lambda_sequence)
@@ -134,6 +134,10 @@ class MutationModel():
 
         # Introduce mutations (note: we very commonly just return, i.e. if the poisson kicks up zero mutations)
         unmutated_positions = range(len(sequence))
+        if debug:
+            dbg_str = []
+            print('     adding %d mutations:  ' % n_mutations, end='')
+            sys.stdout.flush()
         for i in range(n_mutations):
             # Determine the position to mutate from the mutability matrix:
             mutability_p = None
@@ -149,13 +153,20 @@ class MutationModel():
                 substitution_p = [mutabilities[mut_pos][1][n] for n in nucs]
                 assert 0 <= abs(sum(substitution_p) - 1.) < 1e-10
             new_nuc = scipy.random.choice(nucs, p=substitution_p)
+            if debug:
+                dbg_str += ['%s%d%s' % (sequence[mut_pos], mut_pos, new_nuc)]
             sequence = sequence[ : mut_pos] + new_nuc + sequence[mut_pos + 1 :]
             if self.context_model is not None and self.mutation_order:  # If mutation order matters, the mutabilities of the sequence need to be updated
                 mutabilities = self.mutabilities(sequence)
             if not self.allow_re_mutation:  # Remove this position so we don't mutate it again
                 unmutated_positions.remove(mut_pos)
 
-        return sequence
+        if debug:
+            print('  '.join(dbg_str))
+        if return_n_mutations:
+            return sequence, n_mutations
+        else:
+            return sequence
 
     def make_one_mutant(self, sequence, Nmuts, lambda0=0.1):
         '''
@@ -215,16 +226,24 @@ class MutationModel():
 
         if selection_params is not None:
             hd_generation = list()  # Collect an array of the counts of each hamming distance at each time step
-            stop_dist, mature_affy, naive_affy, target_dist, target_count, skip_update, A_total, B_total, Lp, k, outbase = selection_params
+            stop_dist, mature_affy, naive_affy, target_dist, target_count, skip_update, A_total, B_total, Lp, k_exp, outbase = selection_params
+
             # Make a list of target sequences:
+            print('    generating %d target sequences' % target_count)
             targetAAseqs = [self.make_one_mutant(sequence, target_dist) for i in range(target_count)]
+
             # Assert that the target sequences are comparable to the naive sequence:
             aa = translate(tree.sequence)
+            if '*' in aa:
+                raise Exception('stop codon in naive sequence AA translation')
             assert(sum([1 for t in targetAAseqs if len(t) != len(aa)]) == 0)  # All targets are same length
             assert(sum([1 for t in targetAAseqs if hamming_distance(aa, t) == target_dist]))  # All target are "target_dist" away from the naive sequence
+
             # Affinity is an exponential function of hamming distance:
             assert(target_dist > 0)
-            def hd2affy(hd): return(mature_affy + hd**k * (naive_affy - mature_affy) / target_dist**k)
+            def hd2affy(hd):
+                return(mature_affy + hd**k_exp * (naive_affy - mature_affy) / target_dist**k_exp)
+
             # We store both the amino acid sequence and the affinity as tree features:
             tree.add_feature('AAseq', str(aa))
             tree.add_feature('Kd', selection_utils.calc_Kd(tree.AAseq, targetAAseqs, hd2affy))
@@ -235,14 +254,11 @@ class MutationModel():
         # Small lambdas are causing problems so make a minimum:
         lambda_min = 10e-10
         hd_distrib = []
-        if not verbose:
-            print('generation (out of %d):' % max(obs_times))
+        print('  starting %d generations' % max(obs_times))
         while leaves_unterminated > 0 and (leaves_unterminated < n_final_seqs if n_final_seqs is not None else True) and (t_start < max(obs_times) if obs_times is not None else True) and (stop_dist >= min(hd_distrib) if stop_dist is not None and t_start > 0 else True):
-            if verbose:
-                print('At time:', t_start)
-            else:
-                print(' %d' % t_start, end='')
-                sys.stdout.flush()
+            print('%s%d' % ('   gen ' if verbose else ' ', t_start), end='\n' if verbose else '')
+            sys.stdout.flush()
+
             t_start += 1
             # Sample intermediate time point:
             if obs_times is not None and len(obs_times) > 1 and (t_start-1) in obs_times:
@@ -258,10 +274,14 @@ class MutationModel():
                     leaf.terminated = True
                 if verbose:
                     print('Made an intermediate sample at time:', t_start-1)
+
             live_leaves = [l for l in tree.iter_leaves() if not l.terminated]
             random.shuffle(live_leaves)
             skip_lambda_n = 0  # At every new round reset the all the lambdas
-            # Draw progeny for each leaf:
+
+            # Draw progeny for each leaf
+            if verbose:
+                print('     %3d leaves:   n children    n mutations          Kd' % len(live_leaves))
             for leaf in live_leaves:
                 if selection_params is not None:
                     if skip_lambda_n == 0:
@@ -272,18 +292,28 @@ class MutationModel():
                     else:
                         progeny = poisson(lambda_min)
                     skip_lambda_n -= 1
-                n_children = progeny.rvs()
+
+                n_children = int(progeny.rvs())
+                if len(live_leaves) == 1:  # kind of silly to throw away the whole tree just because we tossed one leaf with zero children
+                    while n_children == 0:
+                        n_children = int(progeny.rvs())
+
                 leaves_unterminated += n_children - 1  # <-- Getting 1, is equal to staying alive
-                if not n_children:
+                if n_children == 0:
                     leaf.terminated = True
+                    if len(live_leaves) == 1:
+                        print('  terminating only leaf with no children')
+                if verbose:
+                    n_mutation_list, kd_list = [], []
                 for child_count in range(n_children):
-                    # If sequence pair mutate them separately with their own mutation rate:
-                    if pair_bounds is not None:
+                    if pair_bounds is not None:  # for paired heavy/light we mutate them separately with their own mutation rate
                         mutated_sequence1 = self.mutate(leaf.sequence[pair_bounds[0][0]:pair_bounds[0][1]], lambda0=lambda0[0])
                         mutated_sequence2 = self.mutate(leaf.sequence[pair_bounds[1][0]:pair_bounds[1][1]], lambda0=lambda0[1])
                         mutated_sequence = mutated_sequence1 + mutated_sequence2
                     else:
-                        mutated_sequence = self.mutate(leaf.sequence, lambda0=lambda0[0])
+                        mutated_sequence, n_muts = self.mutate(leaf.sequence, lambda0=lambda0[0], return_n_mutations=True)
+                        if verbose:
+                            n_mutation_list.append(n_muts)
                     child = TreeNode()
                     child.dist = sum(x!=y for x,y in zip(mutated_sequence, leaf.sequence))
                     child.add_feature('sequence', mutated_sequence)
@@ -291,12 +321,18 @@ class MutationModel():
                         aa = translate(child.sequence)
                         child.add_feature('AAseq', str(aa))
                         child.add_feature('Kd', selection_utils.calc_Kd(child.AAseq, targetAAseqs, hd2affy))
+                        if verbose:
+                            kd_list.append(child.Kd)
                         child.add_feature('target_dist', min([hamming_distance(child.AAseq, taa) for taa in targetAAseqs]))
                     child.add_feature('frequency', 0)
                     child.add_feature('terminated', False)
                     child.add_feature('sampled', False)
                     child.add_feature('time', t_start)
                     leaf.add_child(child)
+                if verbose and n_children > 0:
+                    n_mutation_str_list = ['%d' % n for n in n_mutation_list]
+                    kd_str_list = ['%.0f' % kd for kd in kd_list]
+                    print(('                   %3d            %-14s       %-28s') % (n_children, ' '.join(n_mutation_str_list), ' '.join(kd_str_list)))
             if selection_params is not None:
                 hd_distrib = [min([hamming_distance(tn.AAseq, ta) for ta in targetAAseqs]) for tn in tree.iter_leaves() if not tn.terminated]
                 if target_dist > 0:
@@ -305,10 +341,7 @@ class MutationModel():
                     hist = scipy.histogram(hd_distrib, bins=list(range(10)))
                 hd_generation.append(hist)
                 if verbose and hd_distrib:
-                    print('Total cell population:', sum(hist[0]))
-                    print('Majority hamming distance:', scipy.argmax(hist[0]))
-                    print('Affinity of latest sampled leaf:', leaf.Kd)
-                    print('Progeny distribution lambda for the latest sampled leaf:', leaf.lambda_)
+                    print('            total population %-4d    majority distance to target %-3d' % (sum(hist[0]), scipy.argmax(hist[0])))
 
         if not verbose:
             print()

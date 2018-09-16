@@ -24,7 +24,7 @@ def calc_Kd(seqAA, targetAAseqs, hd2affy):
 def lambda_selection(tree, targetAAseqs, hd2affy, A_total, B_total, Lp):
     '''
     Given a node and its tree and a "hamming distance to affinity" transformation function
-    reutrn the poisson lambda parameter for the progeny distribution.
+    return the poisson lambda parameter for the progeny distribution.
     '''
     def calc_BnA(Kd_n, A, B_total):
         '''
