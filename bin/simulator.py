@@ -204,19 +204,22 @@ class MutationModel():
         stop_dist = None  # Default stopping criterium for affinity simulation
         # Checking the validity of the input parameters:
         if n_final_seqs is not None and obs_times is not None:
-            raise ValueError('Only one of N and obs_times can be used. One must be None.')
+            raise ValueError('Can only set one of --n_final_seqs and --obs_times')
+
         if selection_params is not None and obs_times is None:
             raise ValueError('Simulation with selection was chosen. A time, obs_times, must be specified.')
         elif n_final_seqs is None and obs_times is None:
             raise ValueError('Either n_final_seqs or obs_times must be specified.')
+
         if n_final_seqs is not None and n_to_downsample is not None and n_to_downsample[-1] > n_final_seqs:
             raise ValueError('n ({}) must not larger than n_final_seqs ({})'.format(n_to_downsample[-1], n_final_seqs))
         elif n_final_seqs is not None and n_to_downsample is not None and len(n_to_downsample) != 1:
             raise ValueError('n_to_downsample ({}) must a single value when specifying n_final_seqs'.format(n_to_downsample))
+
         if obs_times is not None and len(obs_times) > 1 and (n_to_downsample is None or (len(n_to_downsample) != 1 and len(n_to_downsample) != len(obs_times))):
             raise ValueError('n must be specified when using intermediate sampling:', n_to_downsample)
-        elif obs_times is not None and len(obs_times) > 1 and len(n_to_downsample) == 1:
-            n_to_downsample = [n_to_downsample[-1]] * len(obs_times)
+        if obs_times is not None and len(obs_times) > 1 and len(n_to_downsample) == 1:
+            n_to_downsample = [n_to_downsample[-1]] * len(obs_times)  # TODO don't do this
 
         # Planting the tree:
         tree = TreeNode()
@@ -231,25 +234,27 @@ class MutationModel():
             hd_generation = list()  # Collect an array of the counts of each hamming distance (to a target) at each time step
             stop_dist, mature_affy, naive_affy, target_distance, target_count, skip_update, A_total, B_total, Lp, k_exp, outbase = selection_params
 
-            print('   making %d target sequences' % target_count)
+            print('    making %d target sequences' % target_count)
             targetAAseqs = [self.make_one_mutant(sequence, target_distance) for i in range(target_count)]
 
             aa_naive_seq = translate(tree.sequence)
             if '*' in aa_naive_seq:
                 raise Exception('stop codon in naive sequence AA translation (this isn\'t necessarily otherwise forbidden, but it\'ll quickly end you in a thicket of infinite loops)')
             assert len(set([len(aa_naive_seq)] + [len(t) for t in targetAAseqs])) == 1  # targets and naive seq are same length
-            assert len(set([target_distance] + [hamming_distance(aa_naive_seq, t) for t in targetAAseqs])) == 1  # all targets are the rights distance from the naive
+            assert len(set([target_distance] + [hamming_distance(aa_naive_seq, t) for t in targetAAseqs])) == 1  # all targets are the right distance from the naive
 
-            # Affinity is an exponential function of hamming distance
             assert target_distance > 0
-            def hd2affy(hd):
+            def hd2affy(hd):  # affinity is an exponential function of hamming distance
                 return(mature_affy + hd**k_exp * (naive_affy - mature_affy) / target_distance**k_exp)
 
             tree.add_feature('AAseq', str(aa_naive_seq))
             tree.add_feature('Kd', selection_utils.calc_Kd(tree.AAseq, targetAAseqs, hd2affy))
             tree.add_feature('target_distance', target_distance)
 
-        print('   starting %d generations' % max(obs_times))
+        print('    starting %d generations' % max(obs_times))
+        if verbose:
+            print('       gen   live leaves')
+            print('             before/after   ileaf   n children     n mutations          Kd   (%s: updated lambdas)' % selection_utils.color('blue', 'x'))
         current_time = 0
         n_unterminated_leaves = 1
         lambda_min = 10e-10  # small lambdas are causing problems so make a minimum
@@ -264,40 +269,35 @@ class MutationModel():
             if stop_dist is not None and current_time > 0 and stop_dist < min(hd_distrib):  # if the leaves have gotten close enough to the target sequences
                 break
 
-            # print('%s%d' % ('   gen ' if verbose else ' ', current_time), end='\n' if verbose else '')
-            # sys.stdout.flush()
-            if verbose:
-                print('   gen %d' % current_time)
-
             # sample any requested intermediate time points (from *last* generation, since haven't yet incremented current_time)
             if obs_times is not None and len(obs_times) > 1 and current_time in obs_times:
                 assert len(obs_times) == len(n_to_downsample)
-                n_to_sample = n_to_downsample[obs_times.index(current_time)]
+                n_this_sample = n_to_downsample[obs_times.index(current_time)]
                 live_nostop_leaves = [l for l in tree.iter_leaves() if not l.terminated and not has_stop(l.sequence)]
-                if len(live_nostop_leaves) < n_to_sample:
-                    raise RuntimeError('tried to sample %d leaves at intermediate timepoint %d, but tree only has %d live leaves without stops (try a later generation or larger carrying capacity).' % (n_to_sample, current_time, len(live_nostop_leaves)))
-                for leaf in scipy.random.choice(live_nostop_leaves, n_to_sample):
+                if len(live_nostop_leaves) < n_this_sample:
+                    raise RuntimeError('tried to sample %d leaves at intermediate timepoint %d, but tree only has %d live leaves without stops (try a later generation or larger carrying capacity).' % (n_this_sample, current_time, len(live_nostop_leaves)))
+                for leaf in scipy.random.choice(live_nostop_leaves, n_this_sample, replace=False):
                     leaf.sampled = True
                     if self.args.kill_sampled_intermediates:
                         leaf.terminated = True
                         n_unterminated_leaves -= 1
                 if verbose:
-                    print('        sampled %d (of %d live and stop-free) intermediate leaves at time %d (%s)' % (n_to_sample, live_nostop_leaves, current_time, 'killed each of them' if self.args.kill_sampled_intermediates else 'leaving them alive'))
+                    print('                  sampled %d (of %d live and stop-free) intermediate leaves (%s) at time %d (but time is about to increment to %d)' % (n_this_sample, len(live_nostop_leaves), 'killing each of them' if self.args.kill_sampled_intermediates else 'leaving them alive', current_time, current_time + 1))
 
             current_time += 1
 
+            skip_lambda_n = 0  # index keeping track of how many leaves since we last updated all the lambdas
             live_leaves = [l for l in tree.iter_leaves() if not l.terminated]
             random.shuffle(live_leaves)
-            skip_lambda_n = 0  # index keeping track of how many leaves since we last updated all the lambdas
-
-            # Draw progeny for each leaf
             if verbose:
-                print('     %3d leaves:   n children    n mutations          Kd' % len(live_leaves))
+                print('      %3d    %3d' % (current_time, len(live_leaves)), end='\n' if len(live_leaves) == 0 else '')  # NOTE these are live leaves *after* the intermediate sampling above
             for leaf in live_leaves:
                 if selection_params is not None:
-                    if skip_lambda_n == 0:  # time to update the lambdas
-                        skip_lambda_n = skip_update + 1  # reset it so we don't update again until we've done <skip_update> more leaves (+1 is so that skip_update=0 is no skip)
+                    lambda_update_dbg_str = ' '
+                    if skip_lambda_n == 0:  # time to update the lambdas for every leaf
+                        skip_lambda_n = skip_update + 1  # reset it so we don't update again until we've done <skip_update> more leaves (+ 1 is so that if skip_update is 0 we don't skip at all, i.e. skip_update is the number of leaves skipped, *not* the number of leaves *between* updates)
                         tree = selection_utils.update_lambda_values(tree, targetAAseqs, hd2affy, A_total, B_total, Lp)
+                        lambda_update_dbg_str = selection_utils.color('blue', 'x')
                     progeny = poisson(max(leaf.lambda_, lambda_min))
                     skip_lambda_n -= 1
 
@@ -316,9 +316,10 @@ class MutationModel():
                     leaf.terminated = True
                     if len(live_leaves) == 1:
                         print('  terminating only leaf with no children')
+
                 if verbose:
                     n_mutation_list, kd_list = [], []
-                for child_count in range(n_children):
+                for _ in range(n_children):
                     if pair_bounds is not None:  # for paired heavy/light we mutate them separately with their own mutation rate
                         mutated_sequence1 = self.mutate(leaf.sequence[pair_bounds[0][0]:pair_bounds[0][1]], lambda0=lambda0[0])
                         mutated_sequence2 = self.mutate(leaf.sequence[pair_bounds[1][0]:pair_bounds[1][1]], lambda0=lambda0[1])
@@ -331,54 +332,51 @@ class MutationModel():
                     child.dist = sum(x!=y for x,y in zip(mutated_sequence, leaf.sequence))
                     child.add_feature('sequence', mutated_sequence)
                     if selection_params is not None:
-                        aa_tmp_seq = translate(child.sequence)
-                        child.add_feature('AAseq', str(aa_tmp_seq))
+                        child.add_feature('AAseq', str(translate(child.sequence)))
                         child.add_feature('Kd', selection_utils.calc_Kd(child.AAseq, targetAAseqs, hd2affy))
+                        child.add_feature('target_distance', min([hamming_distance(child.AAseq, taa) for taa in targetAAseqs]))
                         if verbose:
                             kd_list.append(child.Kd)
-                        child.add_feature('target_distance', min([hamming_distance(child.AAseq, taa) for taa in targetAAseqs]))
                     child.add_feature('frequency', 0)
                     child.add_feature('terminated', False)
                     child.add_feature('sampled', False)
                     child.add_feature('time', current_time)
                     leaf.add_child(child)
-                if verbose and n_children > 0:
-                    n_mutation_str_list = ['%d' % n for n in n_mutation_list]
+                if verbose:
+                    n_mutation_str_list = [('%d' % n) if n > 0 else '-' for n in n_mutation_list]
                     kd_str_list = ['%.0f' % kd for kd in kd_list]
-                    print(('                   %3d            %-14s       %-28s') % (n_children, ' '.join(n_mutation_str_list), ' '.join(kd_str_list)))
+                    pre_leaf_str = '' if live_leaves.index(leaf) == 0 else ('%12s %3d' % ('', len([l for l in tree.iter_leaves() if not l.terminated])))
+                    print(('      %s      %4d   %3d  %s          %-14s       %-28s') % (pre_leaf_str, live_leaves.index(leaf), n_children, lambda_update_dbg_str, ' '.join(n_mutation_str_list), ' '.join(kd_str_list)))
             if selection_params is not None:
-                hd_distrib = [min([hamming_distance(tn.AAseq, ta) for ta in targetAAseqs]) for tn in tree.iter_leaves() if not tn.terminated]
-                if target_distance > 0:
-                    hist = scipy.histogram(hd_distrib, bins=list(range(target_distance*10)))
-                else:  # Just make a minimum of 10 bins
-                    hist = scipy.histogram(hd_distrib, bins=list(range(10)))
+                hd_distrib = [min([hamming_distance(tn.AAseq, ta) for ta in targetAAseqs]) for tn in tree.iter_leaves() if not tn.terminated]  # list, for each live leaf, of the smallest distance to any target
+                n_bins = target_distance * 10 if target_distance > 0 else 10
+                hist = scipy.histogram(hd_distrib, bins=list(range(n_bins)))
                 hd_generation.append(hist)
-                if verbose and hd_distrib:
-                    print('            total population %-4d    majority distance to target %-3d' % (sum(hist[0]), scipy.argmax(hist[0])))
+                # if verbose and hd_distrib:
+                #     print('            total population %-4d    majority distance to target %-3d' % (sum(hist[0]), scipy.argmax(hist[0])))
+            # if current_time > 5:
+            #     sys.exit()
 
-        if not verbose:
-            print()
-        if n_unterminated_leaves < n_final_seqs:
-            raise RuntimeError('Tree terminated with {} leaves, {} desired'.format(n_unterminated_leaves, n_final_seqs))
-
-        # Keep a histogram of the hamming distances at each generation:
+        # write a histogram of the hamming distances to target at each generation
         if selection_params is not None:
             with open(outbase + '_selection_runstats.p', 'wb') as f:
                 pickle.dump(hd_generation, f)
 
+        if n_final_seqs is not None and n_unterminated_leaves < n_final_seqs:
+            raise RuntimeError('tree terminated with %d leaves, but we were asked for %d' % (n_unterminated_leaves, n_final_seqs))
+        if selection_params is not None and obs_times is not None and max(obs_times) != current_time:
+            raise RuntimeError('tree terminated at time %d, but we were supposed to sample at time %d' % (current_time, max(obs_times)))
+
         # Each leaf in final generation gets an observation frequency of 1, unless downsampled:
         if obs_times is not None and len(obs_times) > 1:
-            # Iterate the intermediate time steps (excluding the last time):
-            for Ti in sorted(obs_times)[:-1]:
-                si = obs_times.index(Ti)
-                # Only sample those that have been 'sampled' at intermediate sampling times:
-                final_leaves = [leaf for leaf in tree.iter_descendants() if leaf.time == Ti and leaf.sampled]
-                if len(final_leaves) < n_to_downsample[si]:
-                    raise RuntimeError('tree terminated with {} leaves, less than what desired after downsampling {}'.format(n_unterminated_leaves, n_to_downsample[si]))
-                for leaf in final_leaves:  # No need to down-sample, this was already done in the simulation loop
-                    leaf.frequency = 1
-        if selection_params and max(obs_times) != current_time:
-            raise RuntimeError('tree terminated before the requested sample time  obs_times: %s    current_time: %d  ' % (obs_times, current_time))
+            for inter_time in sorted(obs_times)[:-1]:  # loop over intermediate times (from which we should have sampled above)
+                n_this_sample = n_to_downsample[obs_times.index(inter_time)]
+                intermediate_sampled_leaves = [leaf for leaf in tree.iter_descendants() if leaf.time == inter_time and leaf.sampled]  # find the leaves at this time point that we sampled above
+                if len(intermediate_sampled_leaves) < n_this_sample:
+                    raise RuntimeError('couldn\'t find the correct number of intermediate sampled leaves at time %d (should have sampled %d, but now we only find %d)' % (inter_time, n_this_sample, len(intermediate_sampled_leaves)))
+                for leaf in intermediate_sampled_leaves:  # No need to down-sample, this was already done in the simulation loop
+                    leaf.frequency = 1  # TODO why the fuck don't we just set this to 1 when we sample it to start with?
+
         # Do the normal sampling of the last time step:
         final_leaves = [leaf for leaf in tree.iter_leaves() if leaf.time == current_time and not has_stop(leaf.sequence)]
         # Report stop codon sequences:
@@ -662,6 +660,10 @@ def main():
         args.substitution = None
     if args.n_to_downsample is not None and args.obs_times is not None:  # TODO make this clearer
         assert len(args.n_to_downsample) == len(args.obs_times)
+    if args.obs_times is not None:  # sort the observation times
+        if args.obs_times != sorted(args.obs_times):
+            print('  note: sorting --obs_times (did you make the --n_to_downsample out of order, as well?)')
+            args.obs_times = sorted(args.obs_times)
 
     run_simulation(args)
 
