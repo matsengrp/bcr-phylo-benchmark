@@ -13,19 +13,19 @@ import matplotlib; matplotlib.use('agg')
 from matplotlib import pyplot as plt
 from GCutils import hamming_distance
 
+# ----------------------------------------------------------------------------------------
 def calc_Kd(seqAA, targetAAseqs, hd2affy):
-    '''Find the closest target sequence to and apply the "hamming distance to affinity" transformation function.'''
-    if '*' in seqAA:  # Non-sense sequences have zero affinity (zero affinty meaning infinity Kd)
+    ''' Find the closest target sequence, and apply the transformation function (hd2affy) between hamming distance and affinity. '''
+    if '*' in seqAA:  # nonsense sequences have zero affinity (zero affinty meaning infinity Kd)
         return(float('inf'))
     else:
         hd = min([hamming_distance(seqAA, t) for t in targetAAseqs])
     return(hd2affy(hd))
 
-def lambda_selection(tree, targetAAseqs, hd2affy, A_total, B_total, Lp):
-    '''
-    Given a node and its tree and a "hamming distance to affinity" transformation function
-    return the poisson lambda parameter for the progeny distribution.
-    '''
+# ----------------------------------------------------------------------------------------
+def update_lambda_values(tree, targetAAseqs, hd2affy, A_total, B_total, Lp):
+    ''' update the lambda_ feature (parameter for the poisson progeny distribution) for each live leaf in <tree> '''
+
     def calc_BnA(Kd_n, A, B_total):
         '''
         This calculated the fraction B:A (B bound to A), at equilibrium also referred to as "binding time",
@@ -66,13 +66,13 @@ def lambda_selection(tree, targetAAseqs, hd2affy, A_total, B_total, Lp):
     Kd_n = scipy.array([n.Kd for n in live_leaves])
     BnA = calc_binding_time(Kd_n, A_total, B_total)
     lambdas = trans_BA(BnA, Lp)
-    assert(len(lambdas) == len(live_leaves))
     for lambda_, n in zip(lambdas, live_leaves):
-        if n.terminated:
+        if n.terminated:  # TODO aren't these already all live leaves
             continue
         n.add_feature('lambda_', lambda_)
     return(tree)
 
+# ----------------------------------------------------------------------------------------
 def find_A_total(carry_cap, B_total, f_full, mature_affy, U):
     def A_total_fun(A, B_total, Kd_n): return(A + scipy.sum(B_total/(1+Kd_n/A)))
 
@@ -95,6 +95,7 @@ def find_A_total(carry_cap, B_total, f_full, mature_affy, U):
     return(A_total)
 
 
+# ----------------------------------------------------------------------------------------
 def find_Lp(f_full, U):
     assert(U > 1)
     def T_BA(BA, p):
@@ -134,6 +135,7 @@ def find_Lp(f_full, U):
     return(p)
 
 
+# ----------------------------------------------------------------------------------------
 def plot_runstats(runstats, outbase, colors):
     def make_bounds(runstats):
         all_counts = runstats[0][0].copy()
@@ -171,3 +173,32 @@ def plot_runstats(runstats, outbase, colors):
     plt.xlabel('GC generation')
     plt.title('Cell count as function of GC generation')
     fig.savefig(outbase + '.selection_sim.runstats.pdf')
+
+# ----------------------------------------------------------------------------------------
+# bash color codes
+Colors = {}
+Colors['head'] = '\033[95m'
+Colors['bold'] = '\033[1m'
+Colors['purple'] = '\033[95m'
+Colors['blue'] = '\033[94m'
+Colors['light_blue'] = '\033[1;34m'
+Colors['green'] = '\033[92m'
+Colors['yellow'] = '\033[93m'
+Colors['red'] = '\033[91m'
+Colors['reverse_video'] = '\033[7m'
+Colors['red_bkg'] = '\033[41m'
+Colors['end'] = '\033[0m'
+
+def color(col, seq, width=None, padside='left'):
+    if col is None:
+        return seq
+    return_str = [Colors[col], seq, Colors['end']]
+    if width is not None:  # make sure final string prints to correct width
+        n_spaces = max(0, width - len(seq))  # if specified <width> is greater than uncolored length of <seq>, pad with spaces so that when the colors show up properly the colored sequences prints with width <width>
+        if padside == 'left':
+            return_str.insert(0, n_spaces * ' ')
+        elif padside == 'right':
+            return_str.insert(len(return_str), n_spaces * ' ')
+        else:
+            assert False
+    return ''.join(return_str)

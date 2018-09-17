@@ -30,13 +30,14 @@ class MutationModel():
     '''
     A class for a mutation model, and functions to mutate sequences.
     '''
-    def __init__(self, mutability_file=None, substitution_file=None, mutation_order=True, allow_re_mutation=True):
+    def __init__(self, args, mutability_file=None, substitution_file=None, mutation_order=True, allow_re_mutation=True):
         """
         initialized with input files of the S5F format
         @param mutation_order: whether or not to mutate sequences using a context sensitive manner
                                where mutation order matters
         @param allow_re_mutation: allow the same position to mutate multiple times on a single branch
         """
+        self.args = args
         self.mutation_order = mutation_order
         self.allow_re_mutation = allow_re_mutation
         if mutability_file is not None and substitution_file is not None:
@@ -230,7 +231,7 @@ class MutationModel():
             hd_generation = list()  # Collect an array of the counts of each hamming distance (to a target) at each time step
             stop_dist, mature_affy, naive_affy, target_distance, target_count, skip_update, A_total, B_total, Lp, k_exp, outbase = selection_params
 
-            print('    generating %d target sequences' % target_count)
+            print('   making %d target sequences' % target_count)
             targetAAseqs = [self.make_one_mutant(sequence, target_distance) for i in range(target_count)]
 
             aa_naive_seq = translate(tree.sequence)
@@ -248,14 +249,13 @@ class MutationModel():
             tree.add_feature('Kd', selection_utils.calc_Kd(tree.AAseq, targetAAseqs, hd2affy))
             tree.add_feature('target_distance', target_distance)
 
+        print('   starting %d generations' % max(obs_times))
         current_time = 0
         n_unterminated_leaves = 1
-        # Small lambdas are causing problems so make a minimum:
-        lambda_min = 10e-10
+        lambda_min = 10e-10  # small lambdas are causing problems so make a minimum
         hd_distrib = []
-        print('  starting %d generations' % max(obs_times))
         while True:
-            if n_unterminated_leaves <= 0:  # probably can't go less than zero, but not sure
+            if n_unterminated_leaves <= 0:  # if everybody's dead (probably can't actually go less than zero, but not sure)
                 break
             if n_final_seqs is not None and n_unterminated_leaves >= n_final_seqs:  # if we've got as many sequences as we were asked for
                 break
@@ -264,47 +264,52 @@ class MutationModel():
             if stop_dist is not None and current_time > 0 and stop_dist < min(hd_distrib):  # if the leaves have gotten close enough to the target sequences
                 break
 
-            print('%s%d' % ('   gen ' if verbose else ' ', current_time), end='\n' if verbose else '')
-            sys.stdout.flush()
+            # print('%s%d' % ('   gen ' if verbose else ' ', current_time), end='\n' if verbose else '')
+            # sys.stdout.flush()
+            if verbose:
+                print('   gen %d' % current_time)
+
+            # sample any requested intermediate time points (from *last* generation, since haven't yet incremented current_time)
+            if obs_times is not None and len(obs_times) > 1 and current_time in obs_times:
+                assert len(obs_times) == len(n_to_downsample)
+                n_to_sample = n_to_downsample[obs_times.index(current_time)]
+                live_nostop_leaves = [l for l in tree.iter_leaves() if not l.terminated and not has_stop(l.sequence)]
+                if len(live_nostop_leaves) < n_to_sample:
+                    raise RuntimeError('tried to sample %d leaves at intermediate timepoint %d, but tree only has %d live leaves without stops (try a later generation or larger carrying capacity).' % (n_to_sample, current_time, len(live_nostop_leaves)))
+                for leaf in scipy.random.choice(live_nostop_leaves, n_to_sample):
+                    leaf.sampled = True
+                    if self.args.kill_sampled_intermediates:
+                        leaf.terminated = True
+                        n_unterminated_leaves -= 1
+                if verbose:
+                    print('        sampled %d (of %d live and stop-free) intermediate leaves at time %d (%s)' % (n_to_sample, live_nostop_leaves, current_time, 'killed each of them' if self.args.kill_sampled_intermediates else 'leaving them alive'))
 
             current_time += 1
-            # Sample intermediate time point:
-            if obs_times is not None and len(obs_times) > 1 and (current_time - 1) in obs_times:
-                si = obs_times.index(current_time - 1)
-                live_nostop_leaves = [l for l in tree.iter_leaves() if not l.terminated and not has_stop(l.sequence)]
-                random.shuffle(live_nostop_leaves)
-                if len(live_nostop_leaves) < n_to_downsample[si]:
-                    raise RuntimeError('tree with {} leaves, less than what desired for intermediate sampling {}. Try later generation or increasing the carrying capacity.'.format(n_unterminated_leaves, n_to_downsample))
-                # Make the sample and kill the cells sampled:
-                for leaf in live_nostop_leaves[:n_to_downsample[si]]:
-                    n_unterminated_leaves -= 1
-                    leaf.sampled = True
-                    leaf.terminated = True
-                if verbose:
-                    print('Made an intermediate sample at time:', current_time - 1)
 
             live_leaves = [l for l in tree.iter_leaves() if not l.terminated]
             random.shuffle(live_leaves)
-            skip_lambda_n = 0  # At every new round reset the all the lambdas
+            skip_lambda_n = 0  # index keeping track of how many leaves since we last updated all the lambdas
 
             # Draw progeny for each leaf
             if verbose:
                 print('     %3d leaves:   n children    n mutations          Kd' % len(live_leaves))
             for leaf in live_leaves:
                 if selection_params is not None:
-                    if skip_lambda_n == 0:
-                        skip_lambda_n = skip_update + 1  # Add one so skip_update=0 is no skip
-                        tree = selection_utils.lambda_selection(tree, targetAAseqs, hd2affy, A_total, B_total, Lp)
-                    if leaf.lambda_ > lambda_min:
-                        progeny = poisson(leaf.lambda_)
-                    else:
-                        progeny = poisson(lambda_min)
+                    if skip_lambda_n == 0:  # time to update the lambdas
+                        skip_lambda_n = skip_update + 1  # reset it so we don't update again until we've done <skip_update> more leaves (+1 is so that skip_update=0 is no skip)
+                        tree = selection_utils.update_lambda_values(tree, targetAAseqs, hd2affy, A_total, B_total, Lp)
+                    progeny = poisson(max(leaf.lambda_, lambda_min))
                     skip_lambda_n -= 1
 
                 n_children = int(progeny.rvs())
-                if len(live_leaves) == 1:  # kind of silly to throw away the whole tree just because we tossed one leaf with zero children
+                if current_time == 1 and len(live_leaves) == 1:  # if the first leaf draws zero children, keep trying so we don't have to throw out the whole tree and start over
+                    itry = 0
                     while n_children == 0:
                         n_children = int(progeny.rvs())
+                        itry += 1
+                        if itry > 10 == 0:
+                            print('too many tries to get at least one child, giving up on tree')
+                            break
 
                 n_unterminated_leaves += n_children - 1  # <-- Getting 1, is equal to staying alive
                 if n_children == 0:
@@ -427,7 +432,7 @@ def run_simulation(args):
     if args.random_seed is not None:
         numpy.random.seed(args.random_seed)
         random.seed(args.random_seed)
-    mutation_model = MutationModel(args.mutability, args.substitution)
+    mutation_model = MutationModel(args, args.mutability, args.substitution)  # TODO just pass the whole <args>, and then clean up the remains
     if args.lambda0 is None:
         args.lambda0 = [max([1, int(.01*len(args.sequence))])]
     if args.random_seq is not None:
@@ -481,7 +486,7 @@ def run_simulation(args):
                 raise RuntimeError('collapsed tree contains {} sampled sequences'.format(uniques))
             break
         except RuntimeError as e:
-            print('{}, trying again'.format(e))
+            print('      {} {}\n  trying again'.format(selection_utils.color('red', 'error:'), e))
         else:
             raise
     if trial == trials - 1:
@@ -625,6 +630,7 @@ def main():
     parser.add_argument('--n_final_seqs', type=int, default=None, help='Desired number of final sequences (actual number may be less due to removal of nonsense sequences)')
     parser.add_argument('--obs_times', type=int, nargs='+', default=None, help='Observation time, in units of rounds of reproduction. Required for selection. If None, run until the settings of other parameters lead to termination, and take all leaves')
     parser.add_argument('--selection', action='store_true', default=False, help='Simulation with selection? true/false. When doing simulation with selection an observation time cut must be set.')
+    parser.add_argument('--kill_sampled_intermediates', action='store_true', default=False, help='kill intermediate sequences as they are sampled')
     parser.add_argument('--stop_dist', type=int, default=None, help='Stop when any simulated sequence is closer than this (hamming distance) to any of the target sequences.')
     parser.add_argument('--carry_cap', type=int, default=1000, help='The carrying capacity of the simulation with selection. This number affects the fixation time of a new mutation. '
                         'Fixation time is approx. log2(carry_cap), e.g. log2(1000) ~= 10.')
@@ -654,6 +660,9 @@ def main():
     if args.no_context:
         args.mutability = None
         args.substitution = None
+    if args.n_to_downsample is not None and args.obs_times is not None:  # TODO make this clearer
+        assert len(args.n_to_downsample) == len(args.obs_times)
+
     run_simulation(args)
 
 if __name__ == '__main__':
