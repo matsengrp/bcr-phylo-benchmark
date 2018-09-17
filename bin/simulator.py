@@ -248,31 +248,40 @@ class MutationModel():
             tree.add_feature('Kd', selection_utils.calc_Kd(tree.AAseq, targetAAseqs, hd2affy))
             tree.add_feature('target_distance', target_distance)
 
-        t_start = 0  # <-- Time at start
-        leaves_unterminated = 1
+        current_time = 0
+        n_unterminated_leaves = 1
         # Small lambdas are causing problems so make a minimum:
         lambda_min = 10e-10
         hd_distrib = []
         print('  starting %d generations' % max(obs_times))
-        while leaves_unterminated > 0 and (leaves_unterminated < n_final_seqs if n_final_seqs is not None else True) and (t_start < max(obs_times) if obs_times is not None else True) and (stop_dist >= min(hd_distrib) if stop_dist is not None and t_start > 0 else True):
-            print('%s%d' % ('   gen ' if verbose else ' ', t_start), end='\n' if verbose else '')
+        while True:
+            if n_unterminated_leaves <= 0:  # probably can't go less than zero, but not sure
+                break
+            if n_final_seqs is not None and n_unterminated_leaves >= n_final_seqs:  # if we've got as many sequences as we were asked for
+                break
+            if obs_times is not None and current_time >= max(obs_times):  # if we've done as many generations as we were told to
+                break
+            if stop_dist is not None and current_time > 0 and stop_dist < min(hd_distrib):  # if the leaves have gotten close enough to the target sequences
+                break
+
+            print('%s%d' % ('   gen ' if verbose else ' ', current_time), end='\n' if verbose else '')
             sys.stdout.flush()
 
-            t_start += 1
+            current_time += 1
             # Sample intermediate time point:
-            if obs_times is not None and len(obs_times) > 1 and (t_start-1) in obs_times:
-                si = obs_times.index(t_start-1)
+            if obs_times is not None and len(obs_times) > 1 and (current_time - 1) in obs_times:
+                si = obs_times.index(current_time - 1)
                 live_nostop_leaves = [l for l in tree.iter_leaves() if not l.terminated and not has_stop(l.sequence)]
                 random.shuffle(live_nostop_leaves)
                 if len(live_nostop_leaves) < n_to_downsample[si]:
-                    raise RuntimeError('tree with {} leaves, less than what desired for intermediate sampling {}. Try later generation or increasing the carrying capacity.'.format(leaves_unterminated, n_to_downsample))
+                    raise RuntimeError('tree with {} leaves, less than what desired for intermediate sampling {}. Try later generation or increasing the carrying capacity.'.format(n_unterminated_leaves, n_to_downsample))
                 # Make the sample and kill the cells sampled:
                 for leaf in live_nostop_leaves[:n_to_downsample[si]]:
-                    leaves_unterminated -= 1
+                    n_unterminated_leaves -= 1
                     leaf.sampled = True
                     leaf.terminated = True
                 if verbose:
-                    print('Made an intermediate sample at time:', t_start-1)
+                    print('Made an intermediate sample at time:', current_time - 1)
 
             live_leaves = [l for l in tree.iter_leaves() if not l.terminated]
             random.shuffle(live_leaves)
@@ -297,7 +306,7 @@ class MutationModel():
                     while n_children == 0:
                         n_children = int(progeny.rvs())
 
-                leaves_unterminated += n_children - 1  # <-- Getting 1, is equal to staying alive
+                n_unterminated_leaves += n_children - 1  # <-- Getting 1, is equal to staying alive
                 if n_children == 0:
                     leaf.terminated = True
                     if len(live_leaves) == 1:
@@ -326,7 +335,7 @@ class MutationModel():
                     child.add_feature('frequency', 0)
                     child.add_feature('terminated', False)
                     child.add_feature('sampled', False)
-                    child.add_feature('time', t_start)
+                    child.add_feature('time', current_time)
                     leaf.add_child(child)
                 if verbose and n_children > 0:
                     n_mutation_str_list = ['%d' % n for n in n_mutation_list]
@@ -344,8 +353,8 @@ class MutationModel():
 
         if not verbose:
             print()
-        if leaves_unterminated < n_final_seqs:
-            raise RuntimeError('Tree terminated with {} leaves, {} desired'.format(leaves_unterminated, n_final_seqs))
+        if n_unterminated_leaves < n_final_seqs:
+            raise RuntimeError('Tree terminated with {} leaves, {} desired'.format(n_unterminated_leaves, n_final_seqs))
 
         # Keep a histogram of the hamming distances at each generation:
         if selection_params is not None:
@@ -360,15 +369,15 @@ class MutationModel():
                 # Only sample those that have been 'sampled' at intermediate sampling times:
                 final_leaves = [leaf for leaf in tree.iter_descendants() if leaf.time == Ti and leaf.sampled]
                 if len(final_leaves) < n_to_downsample[si]:
-                    raise RuntimeError('tree terminated with {} leaves, less than what desired after downsampling {}'.format(leaves_unterminated, n_to_downsample[si]))
+                    raise RuntimeError('tree terminated with {} leaves, less than what desired after downsampling {}'.format(n_unterminated_leaves, n_to_downsample[si]))
                 for leaf in final_leaves:  # No need to down-sample, this was already done in the simulation loop
                     leaf.frequency = 1
-        if selection_params and max(obs_times) != t_start:
-            raise RuntimeError('tree terminated before the requested sample time  obs_times: %s    t_start: %d  ' % (obs_times, t_start))
+        if selection_params and max(obs_times) != current_time:
+            raise RuntimeError('tree terminated before the requested sample time  obs_times: %s    current_time: %d  ' % (obs_times, current_time))
         # Do the normal sampling of the last time step:
-        final_leaves = [leaf for leaf in tree.iter_leaves() if leaf.time == t_start and not has_stop(leaf.sequence)]
+        final_leaves = [leaf for leaf in tree.iter_leaves() if leaf.time == current_time and not has_stop(leaf.sequence)]
         # Report stop codon sequences:
-        stop_leaves = [leaf for leaf in tree.iter_leaves() if leaf.time == t_start and has_stop(leaf.sequence)]
+        stop_leaves = [leaf for leaf in tree.iter_leaves() if leaf.time == current_time and has_stop(leaf.sequence)]
         if stop_leaves:
             print('Tree contains {} leaves with stop codons, out of {} total at last time point.'.format(len(stop_leaves), len(final_leaves)))
 
@@ -389,7 +398,7 @@ class MutationModel():
             for leaf in final_leaves:
                 leaf.frequency = 1
         elif n_to_downsample is not None and len(final_leaves) < n_to_downsample[si]:
-            raise RuntimeError('tree terminated with {} leaves, less than what desired after downsampling {}'.format(leaves_unterminated, n_to_downsample[si]))
+            raise RuntimeError('tree terminated with {} leaves, less than what desired after downsampling {}'.format(n_unterminated_leaves, n_to_downsample[si]))
         else:
             raise RuntimeError('Unknown option.')
 
