@@ -168,6 +168,7 @@ class MutationModel():
         else:
             return sequence
 
+    # ----------------------------------------------------------------------------------------
     def make_one_mutant(self, sequence, Nmuts, lambda0=0.1):
         '''
         Make a single mutant with a hamming distance, in amino acid space, of Nmuts away from the starting point.
@@ -189,6 +190,7 @@ class MutationModel():
 
         raise RuntimeError('100 consecutive attempts for creating a target sequence failed.')
 
+    # ----------------------------------------------------------------------------------------
     def simulate(self, sequence, pair_bounds=None, lambda_=0.9, lambda0=[1],
                  n_final_seqs=None, obs_times=None, n_to_downsample=None, verbose=False, selection_params=None):
         '''
@@ -225,29 +227,26 @@ class MutationModel():
         tree.add_feature('time', 0)
 
         if selection_params is not None:
-            hd_generation = list()  # Collect an array of the counts of each hamming distance at each time step
-            stop_dist, mature_affy, naive_affy, target_dist, target_count, skip_update, A_total, B_total, Lp, k_exp, outbase = selection_params
+            hd_generation = list()  # Collect an array of the counts of each hamming distance (to a target) at each time step
+            stop_dist, mature_affy, naive_affy, target_distance, target_count, skip_update, A_total, B_total, Lp, k_exp, outbase = selection_params
 
-            # Make a list of target sequences:
             print('    generating %d target sequences' % target_count)
-            targetAAseqs = [self.make_one_mutant(sequence, target_dist) for i in range(target_count)]
+            targetAAseqs = [self.make_one_mutant(sequence, target_distance) for i in range(target_count)]
 
-            # Assert that the target sequences are comparable to the naive sequence:
-            aa = translate(tree.sequence)
-            if '*' in aa:
-                raise Exception('stop codon in naive sequence AA translation')
-            assert(sum([1 for t in targetAAseqs if len(t) != len(aa)]) == 0)  # All targets are same length
-            assert(sum([1 for t in targetAAseqs if hamming_distance(aa, t) == target_dist]))  # All target are "target_dist" away from the naive sequence
+            aa_naive_seq = translate(tree.sequence)
+            if '*' in aa_naive_seq:
+                raise Exception('stop codon in naive sequence AA translation (this isn\'t necessarily otherwise forbidden, but it\'ll quickly end you in a thicket of infinite loops)')
+            assert len(set([len(aa_naive_seq)] + [len(t) for t in targetAAseqs])) == 1  # targets and naive seq are same length
+            assert len(set([target_distance] + [hamming_distance(aa_naive_seq, t) for t in targetAAseqs])) == 1  # all targets are the rights distance from the naive
 
-            # Affinity is an exponential function of hamming distance:
-            assert(target_dist > 0)
+            # Affinity is an exponential function of hamming distance
+            assert target_distance > 0
             def hd2affy(hd):
-                return(mature_affy + hd**k_exp * (naive_affy - mature_affy) / target_dist**k_exp)
+                return(mature_affy + hd**k_exp * (naive_affy - mature_affy) / target_distance**k_exp)
 
-            # We store both the amino acid sequence and the affinity as tree features:
-            tree.add_feature('AAseq', str(aa))
+            tree.add_feature('AAseq', str(aa_naive_seq))
             tree.add_feature('Kd', selection_utils.calc_Kd(tree.AAseq, targetAAseqs, hd2affy))
-            tree.add_feature('target_dist', min([hamming_distance(tree.AAseq, taa) for taa in targetAAseqs]))
+            tree.add_feature('target_distance', target_distance)
 
         t_start = 0  # <-- Time at start
         leaves_unterminated = 1
@@ -318,12 +317,12 @@ class MutationModel():
                     child.dist = sum(x!=y for x,y in zip(mutated_sequence, leaf.sequence))
                     child.add_feature('sequence', mutated_sequence)
                     if selection_params is not None:
-                        aa = translate(child.sequence)
-                        child.add_feature('AAseq', str(aa))
+                        aa_tmp_seq = translate(child.sequence)
+                        child.add_feature('AAseq', str(aa_tmp_seq))
                         child.add_feature('Kd', selection_utils.calc_Kd(child.AAseq, targetAAseqs, hd2affy))
                         if verbose:
                             kd_list.append(child.Kd)
-                        child.add_feature('target_dist', min([hamming_distance(child.AAseq, taa) for taa in targetAAseqs]))
+                        child.add_feature('target_distance', min([hamming_distance(child.AAseq, taa) for taa in targetAAseqs]))
                     child.add_feature('frequency', 0)
                     child.add_feature('terminated', False)
                     child.add_feature('sampled', False)
@@ -335,8 +334,8 @@ class MutationModel():
                     print(('                   %3d            %-14s       %-28s') % (n_children, ' '.join(n_mutation_str_list), ' '.join(kd_str_list)))
             if selection_params is not None:
                 hd_distrib = [min([hamming_distance(tn.AAseq, ta) for ta in targetAAseqs]) for tn in tree.iter_leaves() if not tn.terminated]
-                if target_dist > 0:
-                    hist = scipy.histogram(hd_distrib, bins=list(range(target_dist*10)))
+                if target_distance > 0:
+                    hist = scipy.histogram(hd_distrib, bins=list(range(target_distance*10)))
                 else:  # Just make a minimum of 10 bins
                     hist = scipy.histogram(hd_distrib, bins=list(range(10)))
                 hd_generation.append(hist)
@@ -414,7 +413,8 @@ class MutationModel():
         return tree
 
 
-def simulate(args):
+# ----------------------------------------------------------------------------------------
+def run_simulation(args):
     if args.random_seed is not None:
         numpy.random.seed(args.random_seed)
         random.seed(args.random_seed)
@@ -446,13 +446,12 @@ def simulate(args):
         A_total = selection_utils.find_A_total(args.carry_cap, args.B_total, args.f_full, args.mature_affy, args.U)
         # Calculate the parameters for the logistic function:
         Lp = selection_utils.find_Lp(args.f_full, args.U)
-        selection_params = [args.stop_dist, args.mature_affy, args.naive_affy, args.target_dist, args.target_count, args.skip_update, A_total, args.B_total, Lp, args.k, args.outbase]
+        selection_params = [args.stop_dist, args.mature_affy, args.naive_affy, args.target_distance, args.target_count, args.skip_update, A_total, args.B_total, Lp, args.k_exp, args.outbase]
     else:
         selection_params = None
 
     trials = 1000
-    # This loop makes us resimulate if size too small, or backmutation:
-    for trial in range(trials):
+    for trial in range(trials):  # keep trying if we don't get enough leaves, or if there's backmutation
         try:
             tree = mutation_model.simulate(args.sequence,
                                            pair_bounds=pair_bounds,
@@ -573,7 +572,7 @@ def simulate(args):
         palette = cycle(list(palette)) # <-- circular iterator
         colors = {i: next(palette) for i in range(int(len(args.sequence) // 3))}
         # The minimum distance to the target is colored:
-        colormap = {node.name:colors[node.target_dist] for node in collapsed_tree.tree.traverse()}
+        colormap = {node.name:colors[node.target_distance] for node in collapsed_tree.tree.traverse()}
         collapsed_tree.write( args.outbase+'_collapsed_runstat_color_tree.p')
         collapsed_tree.render(args.outbase+'_collapsed_runstat_color_tree.svg',
                               idlabel=args.idlabel,
@@ -584,6 +583,7 @@ def simulate(args):
             selection_utils.plot_runstats(runstats, args.outbase, colors)
 
 
+# ----------------------------------------------------------------------------------------
 def main():
     import argparse
     file_path = os.path.realpath(__file__)
@@ -620,7 +620,7 @@ def main():
     parser.add_argument('--carry_cap', type=int, default=1000, help='The carrying capacity of the simulation with selection. This number affects the fixation time of a new mutation. '
                         'Fixation time is approx. log2(carry_cap), e.g. log2(1000) ~= 10.')
     parser.add_argument('--target_count', type=int, default=10, help='The number of target sequences to generate.')
-    parser.add_argument('--target_dist', type=int, default=10, help='Desired distance (number of non-synonymous mutations) between the naive sequence and the target sequences.')
+    parser.add_argument('--target_distance', type=int, default=10, help='Desired distance (number of non-synonymous mutations) between the naive sequence and the target sequences.')
     parser.add_argument('--naive_affy', type=float, default=100, help='Affinity of the naive sequence in nano molar.')
     parser.add_argument('--mature_affy', type=float, default=1, help='Affinity of the mature sequences in nano molar.')
     parser.add_argument('--skip_update', type=int, default=100, help='Number of leaves/iterations to perform before updating the binding equilibrium (B:A).\n'
@@ -633,7 +633,7 @@ def main():
                         'It is recommended to keep this as the default.')
     parser.add_argument('--f_full', type=float, default=1, help='The fraction of antigen bound BCRs on a B cell that is needed to elicit close to maximum reponse.'
                         'Cannot be smaller than B_total. It is recommended to keep this as the default.')
-    parser.add_argument('--k', type=float, default=2, help='The exponent in the function to map hamming distance to affinity. '
+    parser.add_argument('--k_exp', type=float, default=2, help='The exponent in the function to map hamming distance to affinity. '
                         'It is recommended to keep this as the default.')
     parser.add_argument('--plotAA', action='store_true', default=False, help='Plot trees with collapsing and coloring on amino acid level.')
     parser.add_argument('--verbose', action='store_true', default=False, help='Print progress during simulation. Mostly useful for simulation with selection since this can take a while.')
@@ -645,7 +645,7 @@ def main():
     if args.no_context:
         args.mutability = None
         args.substitution = None
-    simulate(args)
+    run_simulation(args)
 
 if __name__ == '__main__':
     main()
