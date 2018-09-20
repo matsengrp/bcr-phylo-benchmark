@@ -45,8 +45,7 @@ def has_stop(seq):
 
 class CollapsedTree():
     '''
-    Collapsed tree class from GCtree. Collapses an ete3 tree
-    into a genotype collapsed tree based on hamming distance between node seqeunces.
+    Collapses an ete3 tree into a genotype collapsed tree based on hamming distance between node seqeunces.
     '''
     def __init__(self, tree, name, meta=None, collapse_syn=False, allow_repeats=False):
         '''
@@ -77,10 +76,10 @@ class CollapsedTree():
             for node in tree.iter_descendants():
                 aa = translate(node.sequence)
                 aa_parent = translate(node.up.sequence)
-                node.dist = hamming_distance(aa, aa_parent)
+                node.dist = hamming_distance(aa, aa_parent)  # NOTE the .dist feature is previously set to be nucleotide distance
 
         # iterate over the tree below root and collapse edges of zero length
-        # if the node is a leaf and it's parent has nonzero frequency we combine taxa names to a set
+        # if the node is a leaf and its parent has nonzero frequency we combine taxa names to a set
         # this acommodates bootstrap samples that result in repeated genotypes
         observed_genotypes = set((node.name for node in self.tree.traverse() if node.frequency > 0))
         observed_genotypes.add(self.tree.name)
