@@ -8,7 +8,7 @@ in which the tree is collapsed to nodes that count the number of clonal leaves o
 
 from __future__ import division, print_function
 import scipy, random, pandas as pd, os, time
-from itertools import cycle
+import itertools
 from scipy.stats import poisson
 import numpy
 from colored_traceback import always
@@ -192,16 +192,33 @@ class MutationModel():
         raise RuntimeError('100 consecutive attempts for creating a target sequence failed.')
 
     # ----------------------------------------------------------------------------------------
-    def set_observation_frequencies(self, tree, obs_times, n_to_downsample, current_time, final_leaves):
+    def set_observation_frequencies_and_names(self, tree, obs_times, n_to_downsample, current_time, final_leaves):
+        tree.get_tree_root().name = 'naive'  # doesn't seem to get written properly
+
+        potential_names, used_names = None, None
+
         if obs_times is not None and len(obs_times) > 1:  # observe all intermediate sampled nodes
-            for leaf in [l for l in tree.iter_descendants() if l.sampled]:
-                leaf.frequency = 1
+            for node in [l for l in tree.iter_descendants() if l.sampled]:
+                node.frequency = 1
+                uid, potential_names, used_names = selection_utils.choose_new_uid(potential_names, used_names, initial_length=3)
+                node.name = 'int-' + uid
 
         if n_to_downsample is not None and len(final_leaves) > n_to_downsample[-1]:  # if we were asked to downsample, and if there's enough leaves to do so
             final_leaves = random.sample(final_leaves, n_to_downsample[-1])
 
         for leaf in final_leaves:
             leaf.frequency = 1
+            uid, potential_names, used_names = selection_utils.choose_new_uid(potential_names, used_names, initial_length=3)
+            leaf.name = 'leaf-' + uid
+
+        if self.args.observe_common_ancestors:
+            observed_nodes = [n for n in tree.iter_descendants() if n.frequency == 1]
+            for node_1, node_2 in itertools.combinations(observed_nodes, 2):
+                mrca = node_1.get_common_ancestor(node_2)
+                # print('    %s, %s:  %s' % (node_1.name, node_2.name, mrca.name))
+                mrca.frequency = 1
+                uid, potential_names, used_names = selection_utils.choose_new_uid(potential_names, used_names, initial_length=3)
+                mrca.name = 'mrca-' + uid
 
     # ----------------------------------------------------------------------------------------
     def simulate(self, sequence, pair_bounds=None, lambda_=0.9, lambda0=[1],
@@ -370,18 +387,18 @@ class MutationModel():
                     raise RuntimeError('couldn\'t find the correct number of intermediate sampled leaves at time %d (should have sampled %d, but now we only find %d)' % (inter_time, n_to_sample, len(intermediate_sampled_leaves)))
 
         stop_leaves = [l for l in tree.iter_leaves() if l.time == current_time and has_stop(l.sequence)]
+        non_stop_leaves = [l for l in tree.iter_leaves() if l.time == current_time and not has_stop(l.sequence)]  # non-stop leaves
         if len(stop_leaves) > 0:
             print('    %d / %d leaves at final time point have stop codons' % (len(stop_leaves), len(stop_leaves) + len(non_stop_leaves)))
-        non_stop_leaves = [l for l in tree.iter_leaves() if l.time == current_time and not has_stop(l.sequence)]  # non-stop leaves
 
-        self.set_observation_frequencies(tree, obs_times, n_to_downsample, current_time, non_stop_leaves)
+        self.set_observation_frequencies_and_names(tree, obs_times, n_to_downsample, current_time, non_stop_leaves)
 
         # prune away lineages that have zero total observation frequency
         for node in tree.iter_descendants():
             if sum(child.frequency for child in node.traverse()) == 0:  # if all children of <node> have zero observation frequency, detach <node> (only difference between traverse() and iter_descendants() seems to be that traverse() includes the node on which you're calling it, while iter_descendants() doesn't)
                 node.detach()
 
-        # TODO this happens also in CollapsedTree(), but I don't want to just remove it from here because then we'd be naming the removed ones
+        # NOTE duplicates code in CollapsedTree
         # remove unobserved unifurcations
         for node in tree.iter_descendants():
             parent = node.up
@@ -389,11 +406,6 @@ class MutationModel():
                 node.delete(prevent_nondicotomic=False)
                 node.children[0].dist = hamming_distance(node.children[0].sequence, parent.sequence)
 
-        # Assign unique names to each node:
-        for i, node in enumerate(tree.traverse(), 1):
-            node.name = 'simcell_{}'.format(i)
-
-        # Return the uncollapsed tree:
         return tree
 
 
@@ -451,9 +463,9 @@ def run_simulation(args):
             else:
                 collapsed_tree = CollapsedTree(tree=tree, name='GCsim neutral')  # <-- This will fail if backmutations
             tree.ladderize()
-            uniques = sum(node.frequency > 0 for node in collapsed_tree.tree.traverse())
-            if uniques < 2:
-                raise RuntimeError('collapsed tree contains {} sampled sequences'.format(uniques))
+            n_observed_seqs = sum(node.frequency > 0 for node in collapsed_tree.tree.traverse())
+            if n_observed_seqs < 2:
+                raise RuntimeError('collapsed tree contains {} sampled sequences'.format(n_observed_seqs))
             break
         except RuntimeError as e:
             print('      {} {}\n  trying again'.format(selection_utils.color('red', 'error:'), e))
@@ -470,20 +482,20 @@ def run_simulation(args):
         fh1.write(args.sequence[pair_bounds[0][0]:pair_bounds[0][1]]+'\n')
         fh2.write('>naive\n')
         fh2.write(args.sequence[pair_bounds[1][0]:pair_bounds[1][1]]+'\n')
-        for leaf in tree.iter_leaves():
-            if leaf.frequency != 0:
-                fh1.write('>' + leaf.name + '\n')
-                fh1.write(leaf.sequence[pair_bounds[0][0]:pair_bounds[0][1]]+'\n')
-                fh2.write('>' + leaf.name + '\n')
-                fh2.write(leaf.sequence[pair_bounds[1][0]:pair_bounds[1][1]]+'\n')
+        for node in tree.iter_descendants():
+            if node.frequency != 0:
+                fh1.write('>' + node.name + '\n')
+                fh1.write(node.sequence[pair_bounds[0][0]:pair_bounds[0][1]]+'\n')
+                fh2.write('>' + node.name + '\n')
+                fh2.write(node.sequence[pair_bounds[1][0]:pair_bounds[1][1]]+'\n')
     else:
         with open(args.outbase+'.fasta', 'w') as f:
             f.write('>naive\n')
             f.write(args.sequence+'\n')
-            for leaf in tree.iter_leaves():
-                if leaf.frequency != 0:
-                    f.write('>' + leaf.name + '\n')
-                    f.write(leaf.sequence + '\n')
+            for node in tree.iter_descendants():
+                if node.frequency != 0:
+                    f.write('>' + node.name + '\n')
+                    f.write(node.sequence + '\n')
 
     # Some observable simulation stats to write:
     frequency, distance_from_naive, degree = zip(*[(node.frequency,
@@ -495,7 +507,7 @@ def run_simulation(args):
                           'Hamming neighbor genotypes':degree})
     stats.to_csv(args.outbase+'_stats.tsv', sep='\t', index=False)
 
-    print('{} simulated observed sequences'.format(sum(leaf.frequency for leaf in collapsed_tree.tree.traverse())))
+    print('{} simulated observed sequences'.format(sum(node.frequency for node in collapsed_tree.tree.traverse())))
 
     # Render the full lineage tree:
     ts = TreeStyle()
@@ -506,7 +518,7 @@ def run_simulation(args):
     colors = {}
     palette = SVG_COLORS
     palette -= set(['black', 'white', 'gray'])
-    palette = cycle(list(palette))  # <-- Circular iterator
+    palette = itertools.cycle(list(palette))  # <-- Circular iterator
 
     # Either plot by DNA sequence or amino acid sequence:
     if args.plotAA and args.selection:
@@ -553,7 +565,7 @@ def run_simulation(args):
     if args.selection:
         # Define a list a suitable colors that are easy to distinguish:
         palette = ['crimson', 'purple', 'hotpink', 'limegreen', 'darkorange', 'darkkhaki', 'brown', 'lightsalmon', 'darkgreen', 'darkseagreen', 'darkslateblue', 'teal', 'olive', 'wheat', 'magenta', 'lightsteelblue', 'plum', 'gold']
-        palette = cycle(list(palette)) # <-- circular iterator
+        palette = itertools.cycle(list(palette)) # <-- circular iterator
         colors = {i: next(palette) for i in range(int(len(args.sequence) // 3))}
         # The minimum distance to the target is colored:
         colormap = {node.name:colors[node.target_distance] for node in collapsed_tree.tree.traverse()}
@@ -593,7 +605,7 @@ def main():
     parser.add_argument('--mutability', type=str, default=file_dir+'/../motifs/Mutability_S5F.csv', help='Path to mutability model file.')
     parser.add_argument('--substitution', type=str, default=file_dir+'/../motifs/Substitution_S5F.csv', help='Path to substitution model file.')
     parser.add_argument('--no_context', action='store_true', help='Disable context dependence, i.e. use a uniform mutability and substitution.')
-    parser.add_argument('--selection', action='store_true', default=False, help='If set, simulate with selection (otherwise neutral). Requires that you set --obs_times, and therefore that you *not* set --n_final_seqs.')
+    parser.add_argument('--selection', action='store_true', help='If set, simulate with selection (otherwise neutral). Requires that you set --obs_times, and therefore that you *not* set --n_final_seqs.')
     parser.add_argument('--n_final_seqs', type=int, default=None, help='If set, simulation stops when we\'ve reached this number of sequences (other stopping criteria: --stop_dist and --obs_times). Because sequences with stop codons are subsequently removed, and because more than on sequence is added per iteration, though we don\'t necessarily output this many. (If --n_to_downsample is also set, then we simulate until we have --n_final_seqs, then downsample to --n_to_downsample).')
     parser.add_argument('--obs_times', type=int, nargs='+', default=None, help='If set, simulation stops when we\'ve reached this many generations. If more than one value is specified, the largest value is the final observation time (and stopping criterion), and earlier values are used as additional, intermediate sampling times (other stopping criteria: --n_final_seqs, --stop_dist)')
     parser.add_argument('--stop_dist', type=int, default=None, help='If set, simulation stops when any simulated sequence is closer than this hamming distance to any of the target sequences (other stopping criteria: --n_final_seqs, --obs_times).')
@@ -601,8 +613,9 @@ def main():
     parser.add_argument('--lambda0', type=float, default=None, nargs='*', help='List of one or two elements with the baseline mutation rates. Space separated input values.\n'
                         'First element belonging to seed sequence one and optionally the next to sequence 2. If only one rate is provided for two sequences, this rate will be used on both.')
     parser.add_argument('--n_to_downsample', type=int, nargs='+', default=None, help='Number of cells sampled during final downsampling step (if only one value is specified), or during each time in --obs_times (if more than one value is specified).')
-    parser.add_argument('--kill_sampled_intermediates', action='store_true', default=False, help='kill intermediate sequences as they are sampled')
-    parser.add_argument('--carry_cap', type=int, default=1000, help='The carrying capacity of the simulation with selection. This number affects the fixation time of a new mutation. '
+    parser.add_argument('--kill_sampled_intermediates', action='store_true', help='kill intermediate sequences as they are sampled')
+    parser.add_argument('--observe_common_ancestors', action='store_true', help='If set, after deciding which nodes to observe (write to file) according to other options, we then also select the most recent common ancestor for every pair of those nodes.')
+    parser.add_argument('--carry_cap', type=int, default=1000, help='The carrying capacity of the simulation with selection. This number affects the fixation time of a new mutation.'
                         'Fixation time is approx. log2(carry_cap), e.g. log2(1000) ~= 10.')
     parser.add_argument('--target_count', type=int, default=10, help='The number of target sequences to generate.')
     parser.add_argument('--target_distance', type=int, default=10, help='Desired distance (number of non-synonymous mutations) between the naive sequence and the target sequences.')
@@ -621,8 +634,8 @@ def main():
                         'Cannot be smaller than B_total. It is recommended to keep this as the default.')
     parser.add_argument('--k_exp', type=float, default=2, help='The exponent in the function to map hamming distance to affinity. '
                         'It is recommended to keep this as the default.')
-    parser.add_argument('--plotAA', action='store_true', default=False, help='Plot trees with collapsing and coloring on amino acid level.')
-    parser.add_argument('--verbose', action='store_true', default=False, help='Print progress during simulation. Mostly useful for simulation with selection since this can take a while.')
+    parser.add_argument('--plotAA', action='store_true', help='Plot trees with collapsing and coloring on amino acid level.')
+    parser.add_argument('--verbose', action='store_true', help='Print progress during simulation. Mostly useful for simulation with selection since this can take a while.')
     parser.add_argument('--outbase', type=str, default='GCsimulator_out', help='Output file base name')
     parser.add_argument('--idlabel', action='store_true', help='Flag for labeling the sequence ids of the nodes in the output tree images, also write associated fasta alignment if True')
     parser.add_argument('--random_seed', type=int, help='for random number generator')

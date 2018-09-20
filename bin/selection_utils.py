@@ -8,6 +8,8 @@ Utility functions for selection simulation.
 from __future__ import division, print_function
 
 import scipy
+import itertools
+import string
 from scipy.optimize import minimize, fsolve
 import matplotlib; matplotlib.use('agg')
 from matplotlib import pyplot as plt
@@ -202,3 +204,17 @@ def color(col, seq, width=None, padside='left'):
         else:
             assert False
     return ''.join(return_str)
+
+# ----------------------------------------------------------------------------------------
+def choose_new_uid(potential_names, used_names, initial_length=1):
+    if potential_names is None:  # first time through
+        potential_names = [l for l in string.ascii_lowercase]
+        used_names = []
+        if initial_length > 1:  # this is kind of a dumb way to do it, since it adds stuff to <used_names> that we didn't actually use
+            while len(used_names) == 0 or len(used_names[-1]) < initial_length:
+                _, potential_names, used_names = choose_new_uid(potential_names, used_names)
+    if len(potential_names) == 0:  # ran out of names
+        potential_names += [''.join(ab) for ab in itertools.combinations(used_names, 2) if ''.join(ab) not in used_names]
+    new_id = potential_names.pop(0)
+    used_names.append(new_id)
+    return new_id, potential_names, used_names
