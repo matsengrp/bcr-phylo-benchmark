@@ -25,6 +25,10 @@ import selection_utils
 
 scipy.seterr(all='raise')
 
+# ----------------------------------------------------------------------------------------
+# For paired heavy/light, the sequences are stored sequentially in one string. This fcn is for extracting them.
+def get_seq_from_pair(joint_seq, pair_bounds, iseq):
+    return joint_seq[pair_bounds[iseq][0] : pair_bounds[iseq][1]]
 
 # ----------------------------------------------------------------------------------------
 class MutationModel():
@@ -223,7 +227,7 @@ class MutationModel():
                 mrca.name = 'mrca-' + uid
 
     # ----------------------------------------------------------------------------------------
-    def simulate(self, args, pair_bounds, selection_params):
+    def simulate(self, args, selection_params):
         '''
         Simulate a poisson branching process with mutation introduced
         by the chosen mutation model e.g. motif or uniform.
@@ -332,9 +336,9 @@ class MutationModel():
                 if args.verbose:
                     n_mutation_list, kd_list = [], []
                 for _ in range(n_children):
-                    if pair_bounds is not None:  # for paired heavy/light we mutate them separately with their own mutation rate
-                        mutated_sequence1 = self.mutate(leaf.sequence[pair_bounds[0][0]:pair_bounds[0][1]], args.lambda0[0])
-                        mutated_sequence2 = self.mutate(leaf.sequence[pair_bounds[1][0]:pair_bounds[1][1]], args.lambda0[1])
+                    if args.naive_seq2 is not None:  # for paired heavy/light we mutate them separately with their own mutation rate
+                        mutated_sequence1 = self.mutate(get_seq_from_pair(leaf.sequence, args.pair_bounds, iseq=0), args.lambda0[0])
+                        mutated_sequence2 = self.mutate(get_seq_from_pair(leaf.sequence, args.pair_bounds, iseq=1), args.lambda0[1])
                         mutated_sequence = mutated_sequence1 + mutated_sequence2
                     else:
                         mutated_sequence, n_muts = self.mutate(leaf.sequence, args.lambda0[0], return_n_mutations=True)
@@ -412,31 +416,7 @@ class MutationModel():
 
 # ----------------------------------------------------------------------------------------
 def run_simulation(args):
-    if args.random_seed is not None:
-        numpy.random.seed(args.random_seed)
-        random.seed(args.random_seed)
     mutation_model = MutationModel(args)
-    if args.lambda0 is None:
-        args.lambda0 = [max([1, int(.01*len(args.naive_seq))])]
-    if args.naive_seq_file is not None:
-        from Bio import SeqIO
-        records = list(SeqIO.parse(args.naive_seq_file, "fasta"))
-        random.shuffle(records)
-        args.naive_seq = str(records[0].seq).upper()
-    else:
-        args.naive_seq = args.naive_seq.upper()
-    if args.naive_seq2 is not None:
-        if len(args.lambda0) == 1:  # Use the same mutation rate on both sequences
-            args.lambda0 = [args.lambda0[0], args.lambda0[0]]
-        elif len(args.lambda0) != 2:
-            raise Exception('Only one or two lambda0 can be defined for a two sequence simulation.')
-
-        # Extract the bounds between sequence 1 and 2:
-        pair_bounds = ((0, len(args.naive_seq)), (len(args.naive_seq), len(args.naive_seq) + len(args.naive_seq2)))
-        # Merge the two seqeunces to simplify future dealing with the pair:
-        args.naive_seq += args.naive_seq2.upper()
-    else:
-        pair_bounds = None
     if args.selection:
         assert(args.B_total >= args.f_full)  # the fully activating fraction on BA must be possible to reach within B_total
         # Find the total amount of A necessary for sustaining the specified carrying capacity
@@ -450,7 +430,7 @@ def run_simulation(args):
     trials = 1000
     for trial in range(trials):  # keep trying if we don't get enough leaves, or if there's backmutation
         try:
-            tree = mutation_model.simulate(args, pair_bounds, selection_params)
+            tree = mutation_model.simulate(args, selection_params)
             if args.selection:
                 collapsed_tree = CollapsedTree(tree=tree, name='GCsim selection', collapse_syn=False, allow_repeats=True)
             else:
@@ -469,28 +449,19 @@ def run_simulation(args):
 
     # In the case of a sequence pair print them to separate files:
     if args.naive_seq2 is not None:
-        fh1 = open(args.outbase+'_seq1.fasta', 'w')
-        fh2 = open(args.outbase+'_seq2.fasta', 'w')
-        fh1.write('>naive\n')
-        fh1.write(args.naive_seq[pair_bounds[0][0]:pair_bounds[0][1]]+'\n')
-        fh2.write('>naive\n')
-        fh2.write(args.naive_seq[pair_bounds[1][0]:pair_bounds[1][1]]+'\n')
-        for node in tree.iter_descendants():
-            if node.frequency != 0:
-                fh1.write('>' + node.name + '\n')
-                fh1.write(node.sequence[pair_bounds[0][0]:pair_bounds[0][1]]+'\n')
-                fh2.write('>' + node.name + '\n')
-                fh2.write(node.sequence[pair_bounds[1][0]:pair_bounds[1][1]]+'\n')
+        fhandles = [open('%s_seq%d.fasta' % (args.outbase, iseq + 1), 'w') for iseq in range(2)]
+        for iseq, fh in enumerate(fhandles):
+            fh.write('>naive\n%s\n' % get_seq_from_pair(args.naive_seq, args.pair_bounds, iseq=iseq))
+        for node in [n for n in tree.iter_descendants() if n.frequency != 0]:
+            for iseq, fh in enumerate(fhandles):
+                fh.write('>%s\n%s\n' % (node.name, get_seq_from_pair(node.sequence, args.pair_bounds, iseq=iseq)))
     else:
-        with open(args.outbase+'.fasta', 'w') as f:
-            f.write('>naive\n')
-            f.write(args.naive_seq+'\n')
-            for node in tree.iter_descendants():
-                if node.frequency != 0:
-                    f.write('>' + node.name + '\n')
-                    f.write(node.sequence + '\n')
+        with open('%s.fasta' % args.outbase, 'w') as fh:
+            fh.write('>naive\n%s\n' % args.naive_seq)
+            for node in [n for n in tree.iter_descendants() if n.frequency != 0]:
+                fh.write('>%s\n%s\n' % (node.name, node.sequence))
 
-    # Some observable simulation stats to write:
+    # write some observable simulation stats
     frequency, distance_from_naive, degree = zip(*[(node.frequency,
                                                     hamming_distance(node.sequence, args.naive_seq),
                                                     sum(hamming_distance(node.sequence, node2.sequence) == 1 for node2 in collapsed_tree.tree.traverse() if node2.frequency and node2 is not node))
@@ -592,9 +563,8 @@ def main():
     parser = argparse.ArgumentParser(description=help_str,
                                      formatter_class=MultiplyInheritedFormatter)
 
-    parser.add_argument('--naive_seq', default='GGACCTAGCCTCGTGAAACCTTCTCAGACTCTGTCCCTCACCTGTTCTGTCACTGGCGACTCCATCACCAGTGGTTACTGGAACTGGATCCGGAAATTCCCAGGGAATAAACTTGAGTACATGGGGTACATAAGCTACAGTGGTAGCACTTACTACAATCCATCTCTCAAAAGTCGAATCTCCATCACTCGAGACACATCCAAGAACCAGTACTACCTGCAGTTGAATTCTGTGACTACTGAGGACACAGCCACATATTACTGT',
-                        help='Initial naive nucleotide sequence (ignored if --naive_seq_file is set)')
-    parser.add_argument('--naive_seq_file', default=None, help='Path to fasta file containing initial naive sequences from which do draw at random (overrides --naive_seq if both are set).')
+    parser.add_argument('--naive_seq', default='GGACCTAGCCTCGTGAAACCTTCTCAGACTCTGTCCCTCACCTGTTCTGTCACTGGCGACTCCATCACCAGTGGTTACTGGAACTGGATCCGGAAATTCCCAGGGAATAAACTTGAGTACATGGGGTACATAAGCTACAGTGGTAGCACTTACTACAATCCATCTCTCAAAAGTCGAATCTCCATCACTCGAGACACATCCAAGAACCAGTACTACCTGCAGTTGAATTCTGTGACTACTGAGGACACAGCCACATATTACTGT', help='Initial naive nucleotide sequence.')
+    parser.add_argument('--naive_seq_file', default=None, help='Path to fasta file containing initial naive sequences from which do draw at random.')
     parser.add_argument('--mutability_file', default=file_dir+'/../motifs/Mutability_S5F.csv', help='Path to mutability model file.')
     parser.add_argument('--substitution_file', default=file_dir+'/../motifs/Substitution_S5F.csv', help='Path to substitution model file.')
     parser.add_argument('--no_context', action='store_true', help='Disable context dependence, i.e. use a uniform mutability and substitution.')
@@ -603,8 +573,7 @@ def main():
     parser.add_argument('--obs_times', type=int, nargs='+', default=None, help='If set, simulation stops when we\'ve reached this many generations. If more than one value is specified, the largest value is the final observation time (and stopping criterion), and earlier values are used as additional, intermediate sampling times (other stopping criteria: --n_final_seqs, --stop_dist)')
     parser.add_argument('--stop_dist', type=int, default=None, help='If set, simulation stops when any simulated sequence is closer than this hamming distance to any of the target sequences (other stopping criteria: --n_final_seqs, --obs_times).')
     parser.add_argument('--lambda', dest='lambda_', type=float, default=0.9, help='Poisson branching parameter')
-    parser.add_argument('--lambda0', type=float, default=None, nargs='*', help='List of one (single-sequence) or two (paired heavy and light chain) elements with the baseline mutation rates. Space separated input values.\n'
-                        'First element belonging to seed sequence one and optionally the next to sequence 2. If only one rate is provided for two sequences, this rate will be used on both.')
+    parser.add_argument('--lambda0', type=float, default=None, nargs='*', help='Baseline sequence mutation rate(s): first value corresponds to --naive_seq, and optionally the second to --naive_seq2. If only one rate is provided for two sequences, this rate is used for both. If not set, the default is set below')
     parser.add_argument('--target_sequence_lambda0', type=float, default=0.1, help='baseline mutation rate used for generating target sequences (you shouldn\'t need to change this)')
     parser.add_argument('--n_to_downsample', type=int, nargs='+', default=None, help='Number of cells sampled during each sampling step. If one value is specified, this same value is applied to each time in --obs_times; whereas if more than one value is specified, each is applied to the corresponding value in --obs_times.')
     parser.add_argument('--kill_sampled_intermediates', action='store_true', help='kill intermediate sequences as they are sampled')
@@ -633,11 +602,26 @@ def main():
     parser.add_argument('--outbase', default='GCsimulator_out', help='Output file base name')
     parser.add_argument('--idlabel', action='store_true', help='Flag for labeling the sequence ids of the nodes in the output tree images, also write associated fasta alignment if True')
     parser.add_argument('--random_seed', type=int, help='for random number generator')
+    parser.add_argument('--pair_bounds', help='for internal use only')
 
     args = parser.parse_args()
+    if args.random_seed is not None:
+        numpy.random.seed(args.random_seed)
+        random.seed(args.random_seed)
     if args.no_context:
         args.mutability_file = None
         args.substitution_file = None
+    if args.lambda0 is None:
+        args.lambda0 = [max([1, int(.01*len(args.naive_seq))])]
+    if [args.naive_seq, args.naive_seq_file].count(None) != 1:
+        raise Exception('exactly one of --naive_seq and --naive_seq_file must be set')
+    if args.naive_seq_file is not None:
+        from Bio import SeqIO
+        records = list(SeqIO.parse(args.naive_seq_file, "fasta"))
+        random.shuffle(records)
+        args.naive_seq = str(records[0].seq).upper()
+    if args.naive_seq is not None:
+        args.naive_seq = args.naive_seq.upper()
     if [args.n_final_seqs, args.obs_times].count(None) != 1:
         raise Exception('exactly one of --n_final_seqs and --obs_times must be set')
     if args.selection and args.obs_times is None:
@@ -659,7 +643,16 @@ def main():
             raise Exception('--obs_times must be sorted (we could sort them here, but then you might think you didn\'t need to worry about the order of --n_to_downsample being the same)')
             # args.obs_times = sorted(args.obs_times)
 
+    if args.naive_seq2 is not None:
+        if len(args.lambda0) == 1:  # Use the same mutation rate on both sequences
+            args.lambda0 = [args.lambda0[0], args.lambda0[0]]
+        elif len(args.lambda0) != 2:
+            raise Exception('--lambda0 (set to \'%s\') has to have either two values (if --naive_seq2 is set) or one value (if it isn\'t).' % args.lambda0)
+        args.pair_bounds = ((0, len(args.naive_seq)), (len(args.naive_seq), len(args.naive_seq + args.naive_seq2)))  # bounds to allow mashing the two sequences toegether as one string
+        args.naive_seq += args.naive_seq2.upper()  # merge the two seqeunces to simplify future dealing with the pair:
+
     run_simulation(args)
 
+# ----------------------------------------------------------------------------------------
 if __name__ == '__main__':
     main()
