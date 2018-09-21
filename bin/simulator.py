@@ -96,7 +96,7 @@ class MutationModel():
         node.add_feature('time', time)
         node.dist = distance  # not sure why this isn't using add_feature(), but I don't want to change it
         node.add_feature('terminated', False)  # set if it's dead (only set if it draws zero children, or if --kill_sampled_intermediates is set and it's sampled at an intermediate time point)
-        node.add_feature('sampled', False)  # set if it's sampled at an intermediate time point
+        node.add_feature('intermediate_sampled', False)  # set if it's sampled at an intermediate time point
         node.add_feature('frequency', 0)  # observation frequency, seems to always be either 1 or 0 (set in set_observation_frequencies_and_names())
         if selection:
             node.add_feature('lambda_', None)  # set in selection_utils.update_lambda_values()
@@ -222,7 +222,7 @@ class MutationModel():
         potential_names, used_names = None, None
 
         if args.obs_times is not None and len(args.obs_times) > 1:  # observe all intermediate sampled nodes
-            for node in [l for l in tree.iter_descendants() if l.sampled]:
+            for node in [l for l in tree.iter_descendants() if l.intermediate_sampled]:
                 node.frequency = 1
                 uid, potential_names, used_names = selection_utils.choose_new_uid(potential_names, used_names, initial_length=3)
                 node.name = 'int-' + uid
@@ -298,7 +298,7 @@ class MutationModel():
                 if len(live_nostop_leaves) < n_to_sample:
                     raise RuntimeError('tried to sample %d leaves at intermediate timepoint %d, but tree only has %d live leaves without stops (try a later generation or larger carrying capacity).' % (n_to_sample, current_time, len(live_nostop_leaves)))
                 for leaf in random.sample(live_nostop_leaves, n_to_sample):
-                    leaf.sampled = True
+                    leaf.intermediate_sampled = True
                     if args.kill_sampled_intermediates:
                         leaf.terminated = True
                         n_unterminated_leaves -= 1
@@ -388,7 +388,7 @@ class MutationModel():
             raise RuntimeError('tree terminated with %d leaves, but --n_to_downsample[-1] was set to %d' % (n_unterminated_leaves, args.n_to_downsample[-1]))
         if args.obs_times is not None and len(args.obs_times) > 1:  # make sure we have the right number of sampled intermediates at each intermediate time point
             for inter_time, n_to_sample in zip(args.obs_times[:-1], args.n_to_downsample[:-1]):
-                intermediate_sampled_leaves = [l for l in tree.iter_descendants() if l.time == inter_time and l.sampled]  # nodes at this time point that we sampled above
+                intermediate_sampled_leaves = [l for l in tree.iter_descendants() if l.time == inter_time and l.intermediate_sampled]  # nodes at this time point that we sampled above
                 if len(intermediate_sampled_leaves) < n_to_sample:
                     raise RuntimeError('couldn\'t find the correct number of intermediate sampled leaves at time %d (should have sampled %d, but now we only find %d)' % (inter_time, n_to_sample, len(intermediate_sampled_leaves)))
 
