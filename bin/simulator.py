@@ -90,6 +90,22 @@ class MutationModel():
                     yield sequence_recurse
 
     # ----------------------------------------------------------------------------------------
+    def init_node(self, sequence, time, distance, selection=False):
+        node = TreeNode()
+        node.add_feature('sequence', sequence)
+        node.add_feature('time', time)
+        node.dist = distance  # not sure why this isn't using add_feature(), but I don't want to change it
+        node.add_feature('terminated', False)  # set if it's dead (only set if it draws zero children, or if --kill_sampled_intermediates is set and it's sampled at an intermediate time point)
+        node.add_feature('sampled', False)  # set if it's sampled at an intermediate time point
+        node.add_feature('frequency', 0)  # observation frequency, seems to always be either 1 or 0 (set in set_observation_frequencies_and_names())
+        if selection:
+            node.add_feature('lambda_', None)  # set in selection_utils.update_lambda_values()
+            node.add_feature('AAseq', None)  # set in MutationModel.simulate()
+            node.add_feature('Kd', None)  # same
+            node.add_feature('target_distance', None)  # same
+        return node
+
+    # ----------------------------------------------------------------------------------------
     def mutability(self, kmer):
         '''
         Returns the mutability of a central base of a kmer, along with nucleotide bias
@@ -237,14 +253,7 @@ class MutationModel():
         or using an affinity muturation inspired model for selection.
         '''
 
-        # Planting the tree:
-        tree = TreeNode()
-        tree.dist = 0
-        tree.add_feature('sequence', args.naive_seq)
-        tree.add_feature('terminated', False)
-        tree.add_feature('sampled', False)  # set if it's sampled at an intermediate time point
-        tree.add_feature('frequency', 0)  # observation frequency, seems to always be either 1 or 0
-        tree.add_feature('time', 0)
+        tree = self.init_node(args.naive_seq, time=0, distance=0, selection=args.selection)
 
         if args.selection:
             hd_generation = list()  # Collect an array of the counts of each hamming distance (to a target) at each time step
@@ -260,9 +269,9 @@ class MutationModel():
             def hd2affy(hd):  # affinity is an exponential function of hamming distance
                 return(args.mature_affy + hd**args.k_exp * (args.naive_affy - args.mature_affy) / args.target_distance**args.k_exp)
 
-            tree.add_feature('AAseq', str(aa_naive_seq))
-            tree.add_feature('Kd', selection_utils.calc_Kd(tree.AAseq, targetAAseqs, hd2affy))
-            tree.add_feature('target_distance', args.target_distance)
+            tree.AAseq = str(aa_naive_seq)
+            tree.Kd = selection_utils.calc_Kd(tree.AAseq, targetAAseqs, hd2affy)
+            tree.target_distance = args.target_distance
 
         print('    starting %d generations' % max(args.obs_times))
         if args.verbose:
@@ -342,19 +351,13 @@ class MutationModel():
                         mutated_sequence, n_muts = self.mutate(leaf.sequence, args.lambda0[0], return_n_mutations=True)
                         if args.verbose:
                             n_mutation_list.append(n_muts)
-                    child = TreeNode()
-                    child.dist = sum(x!=y for x,y in zip(mutated_sequence, leaf.sequence))  # NOTE the .dist feature later gets changed to AA distance
-                    child.add_feature('sequence', mutated_sequence)
+                    child = self.init_node(mutated_sequence, current_time, distance=sum(x!=y for x,y in zip(mutated_sequence, leaf.sequence)), selection=args.selection)
                     if args.selection:
-                        child.add_feature('AAseq', str(translate(child.sequence)))
-                        child.add_feature('Kd', selection_utils.calc_Kd(child.AAseq, targetAAseqs, hd2affy))
-                        child.add_feature('target_distance', min([hamming_distance(child.AAseq, taa) for taa in targetAAseqs]))
+                        child.AAseq = str(translate(child.sequence))
+                        child.Kd = selection_utils.calc_Kd(child.AAseq, targetAAseqs, hd2affy)
+                        child.target_distance = min([hamming_distance(child.AAseq, taa) for taa in targetAAseqs])
                         if args.verbose:
                             kd_list.append(child.Kd)
-                    child.add_feature('frequency', 0)  # observation frequency, seems to always be either 1 or 0
-                    child.add_feature('terminated', False)
-                    child.add_feature('sampled', False)  # set if it's sampled at an intermediate time point
-                    child.add_feature('time', current_time)
                     leaf.add_child(child)
                 if args.verbose:
                     n_mutation_str_list = [('%d' % n) if n > 0 else '-' for n in n_mutation_list]
@@ -362,7 +365,6 @@ class MutationModel():
                     pre_leaf_str = '' if live_leaves.index(leaf) == 0 else ('%12s %3d' % ('', len([l for l in tree.iter_leaves() if not l.terminated])))
                     print(('      %s      %4d   %3d  %s          %-14s       %-28s') % (pre_leaf_str, live_leaves.index(leaf), n_children, lambda_update_dbg_str, ' '.join(n_mutation_str_list), ' '.join(kd_str_list)))
             if args.selection:
-                # TODO avoid this leaf iteration/termination checking
                 hd_distrib = [min([hamming_distance(tn.AAseq, ta) for ta in targetAAseqs]) for tn in tree.iter_leaves() if not tn.terminated]  # list, for each live leaf, of the smallest distance to any target
                 n_bins = args.target_distance * 10 if args.target_distance > 0 else 10
                 hist = scipy.histogram(hd_distrib, bins=list(range(n_bins)))

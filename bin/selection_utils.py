@@ -68,10 +68,8 @@ def update_lambda_values(tree, targetAAseqs, hd2affy, A_total, B_total, Lp):
     Kd_n = scipy.array([n.Kd for n in live_leaves])
     BnA = calc_binding_time(Kd_n, A_total, B_total)
     lambdas = trans_BA(BnA, Lp)
-    for lambda_, n in zip(lambdas, live_leaves):
-        if n.terminated:  # TODO aren't these already all live leaves
-            continue
-        n.add_feature('lambda_', lambda_)
+    for lambda_, leaf in zip(lambdas, live_leaves):
+        leaf.lambda_ = lambda_
     return(tree)
 
 # ----------------------------------------------------------------------------------------
