@@ -224,7 +224,7 @@ class MutationModel():
                 mrca.name = 'mrca-' + uid
 
     # ----------------------------------------------------------------------------------------
-    def simulate(self, args, selection_params):
+    def simulate(self, args):
         '''
         Simulate a poisson branching process with mutation introduced
         by the chosen mutation model e.g. motif or uniform.
@@ -243,25 +243,23 @@ class MutationModel():
         tree.add_feature('frequency', 0)  # observation frequency, seems to always be either 1 or 0
         tree.add_feature('time', 0)
 
-        if selection_params is not None:
+        if args.selection:
             hd_generation = list()  # Collect an array of the counts of each hamming distance (to a target) at each time step
-            stop_dist, mature_affy, naive_affy, target_distance, target_count, skip_update, A_total, B_total, Lp, k_exp, outbase = selection_params
 
             aa_naive_seq = translate(tree.sequence)
 
-            print('    making %d target sequences' % target_count)
-            targetAAseqs = [self.make_target_sequence(args.naive_seq, aa_naive_seq, target_distance, args.target_sequence_lambda0) for i in range(target_count)]
+            print('    making %d target sequences' % args.target_count)
+            targetAAseqs = [self.make_target_sequence(args.naive_seq, aa_naive_seq, args.target_distance, args.target_sequence_lambda0) for i in range(args.target_count)]
 
             assert len(set([len(aa_naive_seq)] + [len(t) for t in targetAAseqs])) == 1  # targets and naive seq are same length
-            assert len(set([target_distance] + [hamming_distance(aa_naive_seq, t) for t in targetAAseqs])) == 1  # all targets are the right distance from the naive
+            assert len(set([args.target_distance] + [hamming_distance(aa_naive_seq, t) for t in targetAAseqs])) == 1  # all targets are the right distance from the naive
 
-            assert target_distance > 0
             def hd2affy(hd):  # affinity is an exponential function of hamming distance
-                return(mature_affy + hd**k_exp * (naive_affy - mature_affy) / target_distance**k_exp)
+                return(args.mature_affy + hd**args.k_exp * (args.naive_affy - args.mature_affy) / args.target_distance**args.k_exp)
 
             tree.add_feature('AAseq', str(aa_naive_seq))
             tree.add_feature('Kd', selection_utils.calc_Kd(tree.AAseq, targetAAseqs, hd2affy))
-            tree.add_feature('target_distance', target_distance)
+            tree.add_feature('target_distance', args.target_distance)
 
         print('    starting %d generations' % max(args.obs_times))
         if args.verbose:
@@ -278,7 +276,7 @@ class MutationModel():
                 break
             if args.obs_times is not None and current_time >= max(args.obs_times):  # if we've done as many generations as we were told to
                 break
-            if stop_dist is not None and current_time > 0 and stop_dist < min(hd_distrib):  # if the leaves have gotten close enough to the target sequences
+            if args.stop_dist is not None and current_time > 0 and args.stop_dist < min(hd_distrib):  # if the leaves have gotten close enough to the target sequences
                 break
 
             # sample any requested intermediate time points (from *last* generation, since haven't yet incremented current_time)
@@ -304,11 +302,11 @@ class MutationModel():
             if args.verbose:
                 print('      %3d    %3d' % (current_time, len(live_leaves)), end='\n' if len(live_leaves) == 0 else '')  # NOTE these are live leaves *after* the intermediate sampling above
             for leaf in live_leaves:
-                if selection_params is not None:
+                if args.selection:
                     lambda_update_dbg_str = ' '
                     if skip_lambda_n == 0:  # time to update the lambdas for every leaf
-                        skip_lambda_n = skip_update + 1  # reset it so we don't update again until we've done <skip_update> more leaves (+ 1 is so that if skip_update is 0 we don't skip at all, i.e. skip_update is the number of leaves skipped, *not* the number of leaves *between* updates)
-                        tree = selection_utils.update_lambda_values(tree, targetAAseqs, hd2affy, A_total, B_total, Lp)
+                        skip_lambda_n = args.skip_update + 1  # reset it so we don't update again until we've done <args.skip_update> more leaves (+ 1 is so that if args.skip_update is 0 we don't skip at all, i.e. args.skip_update is the number of leaves skipped, *not* the number of leaves *between* updates)
+                        tree = selection_utils.update_lambda_values(tree, targetAAseqs, hd2affy, args.A_total, args.B_total, args.Lp)
                         lambda_update_dbg_str = selection_utils.color('blue', 'x')
                     progeny = poisson(max(leaf.lambda_, lambda_min))
                     skip_lambda_n -= 1
@@ -343,7 +341,7 @@ class MutationModel():
                     child = TreeNode()
                     child.dist = sum(x!=y for x,y in zip(mutated_sequence, leaf.sequence))  # NOTE the .dist feature later gets changed to AA distance
                     child.add_feature('sequence', mutated_sequence)
-                    if selection_params is not None:
+                    if args.selection:
                         child.add_feature('AAseq', str(translate(child.sequence)))
                         child.add_feature('Kd', selection_utils.calc_Kd(child.AAseq, targetAAseqs, hd2affy))
                         child.add_feature('target_distance', min([hamming_distance(child.AAseq, taa) for taa in targetAAseqs]))
@@ -359,9 +357,9 @@ class MutationModel():
                     kd_str_list = ['%.0f' % kd for kd in kd_list]
                     pre_leaf_str = '' if live_leaves.index(leaf) == 0 else ('%12s %3d' % ('', len([l for l in tree.iter_leaves() if not l.terminated])))
                     print(('      %s      %4d   %3d  %s          %-14s       %-28s') % (pre_leaf_str, live_leaves.index(leaf), n_children, lambda_update_dbg_str, ' '.join(n_mutation_str_list), ' '.join(kd_str_list)))
-            if selection_params is not None:
+            if args.selection:
                 hd_distrib = [min([hamming_distance(tn.AAseq, ta) for ta in targetAAseqs]) for tn in tree.iter_leaves() if not tn.terminated]  # list, for each live leaf, of the smallest distance to any target
-                n_bins = target_distance * 10 if target_distance > 0 else 10
+                n_bins = args.target_distance * 10 if args.target_distance > 0 else 10
                 hist = scipy.histogram(hd_distrib, bins=list(range(n_bins)))
                 hd_generation.append(hist)
                 # if args.verbose and hd_distrib:
@@ -370,8 +368,8 @@ class MutationModel():
             #     assert False
 
         # write a histogram of the hamming distances to target at each generation
-        if selection_params is not None:
-            with open(outbase + '_selection_runstats.p', 'wb') as f:
+        if args.selection:
+            with open(args.outbase + '_selection_runstats.p', 'wb') as f:
                 pickle.dump(hd_generation, f)
 
         # check some things
@@ -413,20 +411,10 @@ class MutationModel():
 # ----------------------------------------------------------------------------------------
 def run_simulation(args):
     mutation_model = MutationModel(args)
-    if args.selection:
-        assert(args.B_total >= args.f_full)  # the fully activating fraction on BA must be possible to reach within B_total
-        # Find the total amount of A necessary for sustaining the specified carrying capacity
-        A_total = selection_utils.find_A_total(args.carry_cap, args.B_total, args.f_full, args.mature_affy, args.U)
-        # Calculate the parameters for the logistic function:
-        Lp = selection_utils.find_Lp(args.f_full, args.U)
-        selection_params = [args.stop_dist, args.mature_affy, args.naive_affy, args.target_distance, args.target_count, args.skip_update, A_total, args.B_total, Lp, args.k_exp, args.outbase]
-    else:
-        selection_params = None
-
     trials = 1000
     for trial in range(trials):  # keep trying if we don't get enough leaves, or if there's backmutation
         try:
-            tree = mutation_model.simulate(args, selection_params)
+            tree = mutation_model.simulate(args)
             if args.selection:
                 collapsed_tree = CollapsedTree(tree=tree, name='GCsim selection', collapse_syn=False, allow_repeats=True)
             else:
@@ -652,6 +640,14 @@ def main():
         args.naive_seq += args.naive_seq2.upper()  # merge the two seqeunces to simplify future dealing with the pair:
         if has_stop(args.naive_seq):
             raise Exception('stop codon in --naive_seq2 (this isn\'t necessarily otherwise forbidden, but it\'ll quickly end you in a thicket of infinite loops, so should be corrected).')
+
+    if args.selection:
+        assert args.target_distance > 0
+        assert args.B_total >= args.f_full  # the fully activating fraction on BA must be possible to reach within B_total
+        # find the total amount of A necessary for sustaining the specified carrying capacity
+        args.A_total = selection_utils.find_A_total(args.carry_cap, args.B_total, args.f_full, args.mature_affy, args.U)
+        # calculate the parameters for the logistic function
+        args.Lp = selection_utils.find_Lp(args.f_full, args.U)
 
     run_simulation(args)
 
