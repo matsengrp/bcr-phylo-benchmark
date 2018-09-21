@@ -32,6 +32,7 @@ ISO_TYPE_ORDER = {'IgM': 1, 'IgD': 1, 'IgG': 2, 'IgGA': 2, 'IgGb': 2, 'IgE': 3, 
 ISO_TYPE_charORDER = {'M': 1, 'D': 2, 'G': 3, 'E': 4, 'A': 5}
 ISO_SHORT = {'IgM': 'M', 'IgD': 'D', 'IgG': 'G', 'IgGA': 'G', 'IgGb': 'G', 'IgE': 'E', 'IgA': 'A'}
 
+# ----------------------------------------------------------------------------------------
 def translate(seq):
     if len(seq) % 3 != 0:
         seq += 'N' * (3 - (len(seq) % 3))
@@ -41,6 +42,7 @@ def has_stop(seq):
     if len(seq) % 3 != 0:
         seq += 'N' * (3 - (len(seq) % 3))
     return '*' in str(Seq(seq[:], generic_dna).translate())
+# ----------------------------------------------------------------------------------------
 
 
 class CollapsedTree():

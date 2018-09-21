@@ -176,26 +176,23 @@ class MutationModel():
             return sequence
 
     # ----------------------------------------------------------------------------------------
-    def make_one_mutant(self, sequence, Nmuts, lambda0):
+    def make_target_sequence(self, naive_seq, aa_naive_seq, n_muts, lambda0, n_max_tries=100):
         '''
-        Make a single mutant with a hamming distance, in amino acid space, of Nmuts away from the starting point.
+        Make a single target sequence with <n_muts> hamming distance from <naive_seq> (in amino acid space)
         '''
-        trial = 100  # Allow 100 trials before quitting
-        while trial > 0:
-            mut_seq = sequence[:]
-            aa = translate(sequence)
-            aa_mut = translate(mut_seq)
-            dist = hamming_distance(aa, aa_mut)
-            while dist < Nmuts:
-                mut_seq = self.mutate(mut_seq, lambda0)
+        assert not has_stop(naive_seq)  # already checked during argumetent parsing, but we really want to make sure since the loop will blow up if there's a stop to start with
+        itry = 0
+        while itry < n_max_tries:
+            dist = None
+            while dist is None or dist < n_muts:
+                mut_seq = self.mutate(naive_seq if dist is None else mut_seq, lambda0)
                 aa_mut = translate(mut_seq)
-                dist = hamming_distance(aa, aa_mut)
-            if dist == Nmuts and '*' not in aa_mut:  # Stop codon cannot be part of the return
-                return aa_mut
-            else:
-                trial -= 1
+                dist = hamming_distance(aa_naive_seq, aa_mut)
+                if dist == n_muts and '*' not in aa_mut:  # Stop codon cannot be part of the return
+                    return aa_mut
+            itry += 1
 
-        raise RuntimeError('100 consecutive attempts for creating a target sequence failed.')
+        raise RuntimeError('fell through after trying %d times to make a target sequence' % n_max_tries)
 
     # ----------------------------------------------------------------------------------------
     def set_observation_frequencies_and_names(self, args, tree, current_time, final_leaves):
@@ -250,12 +247,11 @@ class MutationModel():
             hd_generation = list()  # Collect an array of the counts of each hamming distance (to a target) at each time step
             stop_dist, mature_affy, naive_affy, target_distance, target_count, skip_update, A_total, B_total, Lp, k_exp, outbase = selection_params
 
-            print('    making %d target sequences' % target_count)
-            targetAAseqs = [self.make_one_mutant(args.naive_seq, target_distance, args.target_sequence_lambda0) for i in range(target_count)]
+            aa_naive_seq = translate(tree.sequence)
 
-            aa_naive_seq = translate(tree.sequence)  # root sequence
-            if '*' in aa_naive_seq:
-                raise Exception('stop codon in naive sequence AA translation (this isn\'t necessarily otherwise forbidden, but it\'ll quickly end you in a thicket of infinite loops)')
+            print('    making %d target sequences' % target_count)
+            targetAAseqs = [self.make_target_sequence(args.naive_seq, aa_naive_seq, target_distance, args.target_sequence_lambda0) for i in range(target_count)]
+
             assert len(set([len(aa_naive_seq)] + [len(t) for t in targetAAseqs])) == 1  # targets and naive seq are same length
             assert len(set([target_distance] + [hamming_distance(aa_naive_seq, t) for t in targetAAseqs])) == 1  # all targets are the right distance from the naive
 
@@ -622,6 +618,8 @@ def main():
         args.naive_seq = str(records[0].seq).upper()
     if args.naive_seq is not None:
         args.naive_seq = args.naive_seq.upper()
+    if has_stop(args.naive_seq):
+        raise Exception('stop codon in --naive_seq (this isn\'t necessarily otherwise forbidden, but it\'ll quickly end you in a thicket of infinite loops, so should be corrected).')
     if [args.n_final_seqs, args.obs_times].count(None) != 1:
         raise Exception('exactly one of --n_final_seqs and --obs_times must be set')
     if args.selection and args.obs_times is None:
@@ -648,8 +646,12 @@ def main():
             args.lambda0 = [args.lambda0[0], args.lambda0[0]]
         elif len(args.lambda0) != 2:
             raise Exception('--lambda0 (set to \'%s\') has to have either two values (if --naive_seq2 is set) or one value (if it isn\'t).' % args.lambda0)
+        if len(args.naive_seq) % 3 != 0:  # have to pad first one out to a full codon so we don't think there's a bunch of stop codons in the second sequence
+            args.naive_seq += 'N' * (3 - len(args.naive_seq) % 3)
         args.pair_bounds = ((0, len(args.naive_seq)), (len(args.naive_seq), len(args.naive_seq + args.naive_seq2)))  # bounds to allow mashing the two sequences toegether as one string
         args.naive_seq += args.naive_seq2.upper()  # merge the two seqeunces to simplify future dealing with the pair:
+        if has_stop(args.naive_seq):
+            raise Exception('stop codon in --naive_seq2 (this isn\'t necessarily otherwise forbidden, but it\'ll quickly end you in a thicket of infinite loops, so should be corrected).')
 
     run_simulation(args)
 
