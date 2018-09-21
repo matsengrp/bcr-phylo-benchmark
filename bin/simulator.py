@@ -7,9 +7,13 @@ in which the tree is collapsed to nodes that count the number of clonal leaves o
 '''
 
 from __future__ import division, print_function
-import scipy, random, pandas as pd, os, time
+import random
+import pandas as pd
+import os
+import time
 import itertools
-from scipy.stats import poisson
+import scipy
+from scipy import stats
 import numpy
 from colored_traceback import always
 import sys
@@ -40,6 +44,7 @@ class MutationModel():
                                where mutation order matters
         @param allow_re_mutation: allow the same position to mutate multiple times on a single branch
         """
+        self.lambda_min = 10e-10  # small lambdas are causing problems so make a minimum
         self.mutation_order = mutation_order
         self.allow_re_mutation = allow_re_mutation
         if args.mutability_file is not None and args.substitution_file is not None:
@@ -129,11 +134,11 @@ class MutationModel():
         lambda_sequence = sequence_mutability * lambda0  # Poisson rate for this sequence (given its relative mutability):
 
         # decide how many mutations we'll apply
-        n_mutations = scipy.random.poisson(lambda_sequence)
+        n_mutations = numpy.random.poisson(lambda_sequence)
         if not self.allow_re_mutation:
             trials = 20
             for trial in range(1, trials+1):
-                n_mutations = scipy.random.poisson(lambda_sequence)
+                n_mutations = numpy.random.poisson(lambda_sequence)
                 if n_mutations <= len(sequence):
                     break
                 if trial == trials:
@@ -231,8 +236,6 @@ class MutationModel():
         Can either simulate under a neutral model without selection,
         or using an affinity muturation inspired model for selection.
         '''
-        progeny = poisson(args.lambda_)  # Default progeny distribution
-        stop_dist = None  # Default stopping criterion for affinity simulation
 
         # Planting the tree:
         tree = TreeNode()
@@ -267,7 +270,6 @@ class MutationModel():
             print('             before/after   ileaf   n children     n mutations          Kd   (%s: updated lambdas)' % selection_utils.color('blue', 'x'))
         current_time = 0
         n_unterminated_leaves = 1
-        lambda_min = 10e-10  # small lambdas are causing problems so make a minimum
         hd_distrib = []
         while True:
             if n_unterminated_leaves <= 0:  # if everybody's dead (probably can't actually go less than zero, but not sure)
@@ -297,7 +299,7 @@ class MutationModel():
             current_time += 1
 
             skip_lambda_n = 0  # index keeping track of how many leaves since we last updated all the lambdas
-            live_leaves = [l for l in tree.iter_leaves() if not l.terminated]
+            live_leaves = [l for l in tree.iter_leaves() if not l.terminated]  # NOTE this is out of date as soon as we've added any children in the loop
             random.shuffle(live_leaves)
             if args.verbose:
                 print('      %3d    %3d' % (current_time, len(live_leaves)), end='\n' if len(live_leaves) == 0 else '')  # NOTE these are live leaves *after* the intermediate sampling above
@@ -308,14 +310,16 @@ class MutationModel():
                         skip_lambda_n = args.skip_update + 1  # reset it so we don't update again until we've done <args.skip_update> more leaves (+ 1 is so that if args.skip_update is 0 we don't skip at all, i.e. args.skip_update is the number of leaves skipped, *not* the number of leaves *between* updates)
                         tree = selection_utils.update_lambda_values(tree, targetAAseqs, hd2affy, args.A_total, args.B_total, args.Lp)
                         lambda_update_dbg_str = selection_utils.color('blue', 'x')
-                    progeny = poisson(max(leaf.lambda_, lambda_min))
+                    this_lambda = max(leaf.lambda_, self.lambda_min)
                     skip_lambda_n -= 1
+                else:
+                    this_lambda = args.lambda_
 
-                n_children = int(progeny.rvs())
+                n_children = numpy.random.poisson(this_lambda)
                 if current_time == 1 and len(live_leaves) == 1:  # if the first leaf draws zero children, keep trying so we don't have to throw out the whole tree and start over
                     itry = 0
                     while n_children == 0:
-                        n_children = int(progeny.rvs())
+                        n_children = numpy.random.poisson(this_lambda)
                         itry += 1
                         if itry > 10 == 0:
                             print('too many tries to get at least one child, giving up on tree')
@@ -358,6 +362,7 @@ class MutationModel():
                     pre_leaf_str = '' if live_leaves.index(leaf) == 0 else ('%12s %3d' % ('', len([l for l in tree.iter_leaves() if not l.terminated])))
                     print(('      %s      %4d   %3d  %s          %-14s       %-28s') % (pre_leaf_str, live_leaves.index(leaf), n_children, lambda_update_dbg_str, ' '.join(n_mutation_str_list), ' '.join(kd_str_list)))
             if args.selection:
+                # TODO avoid this leaf iteration/termination checking
                 hd_distrib = [min([hamming_distance(tn.AAseq, ta) for ta in targetAAseqs]) for tn in tree.iter_leaves() if not tn.terminated]  # list, for each live leaf, of the smallest distance to any target
                 n_bins = args.target_distance * 10 if args.target_distance > 0 else 10
                 hist = scipy.histogram(hd_distrib, bins=list(range(n_bins)))
