@@ -302,8 +302,7 @@ class MutationModel():
                     if args.kill_sampled_intermediates:
                         leaf.terminated = True
                         n_unterminated_leaves -= 1
-                if args.verbose:
-                    print('                  sampled %d (of %d live and stop-free) intermediate leaves (%s) at time %d (but time is about to increment to %d)' % (n_to_sample, len(live_nostop_leaves), 'killing each of them' if args.kill_sampled_intermediates else 'leaving them alive', current_time, current_time + 1))
+                print('                  sampled %d (of %d live and stop-free) intermediate leaves (%s) at time %d (but time is about to increment to %d)' % (n_to_sample, len(live_nostop_leaves), 'killing each of them' if args.kill_sampled_intermediates else 'leaving them alive', current_time, current_time + 1))
 
             current_time += 1
 
