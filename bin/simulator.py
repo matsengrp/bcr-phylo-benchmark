@@ -417,31 +417,32 @@ class MutationModel():
                 node.delete(prevent_nondicotomic=False)
                 node.children[0].dist = hamming_distance(node.children[0].sequence, parent.sequence)
 
-        return tree
+        if args.selection:
+            collapsed_tree = CollapsedTree(tree=tree, name='GCsim selection', collapse_syn=False, allow_repeats=True)
+        else:
+            collapsed_tree = CollapsedTree(tree=tree, name='GCsim neutral')  # <-- This will fail if backmutations
+        n_collapsed_seqs = sum(node.frequency > 0 for node in collapsed_tree.tree.traverse())
+        if n_collapsed_seqs < 2:
+            raise RuntimeError('collapsed tree contains only %d observed sequences (we require at least two)' % n_collapsed_seqs)
+
+        tree.ladderize()
+
+        return tree, collapsed_tree
 
 
 # ----------------------------------------------------------------------------------------
 def run_simulation(args):
     mutation_model = MutationModel(args)
-    trials = 1000
-    for trial in range(trials):  # keep trying if we don't get enough leaves, or if there's backmutation
+    tree, collapsed_tree = None, None
+    n_max_tries = 1000
+    for itry in range(n_max_tries):  # keep trying if we don't get enough leaves, or if there's backmutation
         try:
-            tree = mutation_model.simulate(args)
-            if args.selection:
-                collapsed_tree = CollapsedTree(tree=tree, name='GCsim selection', collapse_syn=False, allow_repeats=True)
-            else:
-                collapsed_tree = CollapsedTree(tree=tree, name='GCsim neutral')  # <-- This will fail if backmutations
-            tree.ladderize()
-            n_observed_seqs = sum(node.frequency > 0 for node in collapsed_tree.tree.traverse())
-            if n_observed_seqs < 2:
-                raise RuntimeError('collapsed tree contains {} sampled sequences'.format(n_observed_seqs))
+            tree, collapsed_tree = mutation_model.simulate(args)
             break
         except RuntimeError as e:
             print('      {} {}\n  trying again'.format(selection_utils.color('red', 'error:'), e))
-        else:
-            raise
-    if trial == trials - 1:
-        raise RuntimeError('{} attempts exceeded'.format(trials))
+    if tree is None:
+        raise RuntimeError('{} attempts exceeded'.format(n_max_tries))
 
     # In the case of a sequence pair print them to separate files:
     if args.naive_seq2 is not None:
