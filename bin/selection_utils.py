@@ -25,7 +25,7 @@ def calc_Kd(seqAA, targetAAseqs, hd2affy):
     return(hd2affy(hd))
 
 # ----------------------------------------------------------------------------------------
-def update_lambda_values(tree, targetAAseqs, hd2affy, A_total, B_total, Lp):
+def update_lambda_values(tree, live_leaves, targetAAseqs, hd2affy, A_total, B_total, Lp):
     ''' update the lambda_ feature (parameter for the poisson progeny distribution) for each live leaf in <tree> '''
 
     def calc_BnA(Kd_n, A, B_total):
@@ -64,8 +64,7 @@ def update_lambda_values(tree, targetAAseqs, hd2affy, A_total, B_total, Lp):
         return(lambda_)
 
     # Update the list of affinities for all the live leaves:
-    live_leaves = [l for l in tree.iter_leaves() if not l.terminated]
-    Kd_n = scipy.array([n.Kd for n in live_leaves])
+    Kd_n = scipy.array([l.Kd for l in live_leaves])
     BnA = calc_binding_time(Kd_n, A_total, B_total)
     lambdas = trans_BA(BnA, Lp)
     for lambda_, leaf in zip(lambdas, live_leaves):

@@ -308,7 +308,8 @@ class MutationModel():
             current_time += 1
 
             skip_lambda_n = 0  # index keeping track of how many leaves since we last updated all the lambdas
-            live_leaves = [l for l in tree.iter_leaves() if not l.terminated]  # NOTE this is out of date as soon as we've added any children in the loop
+            live_leaves = [l for l in tree.iter_leaves() if not l.terminated]  # NOTE this is out of date as soon as we've added any children in the loop, or killed anybody with no children
+            updated_live_leaves = [l for l in live_leaves]  # but this one, we keep updating (so we don't have to call iter_leaves() so much, which was taking quite a bit of time)
             random.shuffle(live_leaves)
             if args.verbose:
                 print('      %3d    %3d' % (current_time, len(live_leaves)), end='\n' if len(live_leaves) == 0 else '')  # NOTE these are live leaves *after* the intermediate sampling above
@@ -317,7 +318,7 @@ class MutationModel():
                     lambda_update_dbg_str = ' '
                     if skip_lambda_n == 0:  # time to update the lambdas for every leaf
                         skip_lambda_n = args.skip_update + 1  # reset it so we don't update again until we've done <args.skip_update> more leaves (+ 1 is so that if args.skip_update is 0 we don't skip at all, i.e. args.skip_update is the number of leaves skipped, *not* the number of leaves *between* updates)
-                        tree = selection_utils.update_lambda_values(tree, targetAAseqs, hd2affy, args.A_total, args.B_total, args.Lp)
+                        tree = selection_utils.update_lambda_values(tree, updated_live_leaves, targetAAseqs, hd2affy, args.A_total, args.B_total, args.Lp)
                         lambda_update_dbg_str = selection_utils.color('blue', 'x')
                     this_lambda = max(leaf.lambda_, self.lambda_min)
                     skip_lambda_n -= 1
@@ -337,6 +338,7 @@ class MutationModel():
                 n_unterminated_leaves += n_children - 1  # <-- Getting 1, is equal to staying alive
                 if n_children == 0:
                     leaf.terminated = True
+                    updated_live_leaves.remove(leaf)
                     if len(live_leaves) == 1:
                         print('  terminating only leaf with no children')
 
@@ -359,13 +361,16 @@ class MutationModel():
                         if args.verbose:
                             kd_list.append(child.Kd)
                     leaf.add_child(child)
+                    updated_live_leaves.append(child)
+                    if leaf in updated_live_leaves:  # leaf isn't a leaf any more, since now it has children
+                        updated_live_leaves.remove(leaf)
                 if args.verbose:
                     n_mutation_str_list = [('%d' % n) if n > 0 else '-' for n in n_mutation_list]
                     kd_str_list = ['%.0f' % kd for kd in kd_list]
-                    pre_leaf_str = '' if live_leaves.index(leaf) == 0 else ('%12s %3d' % ('', len([l for l in tree.iter_leaves() if not l.terminated])))
+                    pre_leaf_str = '' if live_leaves.index(leaf) == 0 else ('%12s %3d' % ('', len(updated_live_leaves)))
                     print(('      %s      %4d   %3d  %s          %-14s       %-28s') % (pre_leaf_str, live_leaves.index(leaf), n_children, lambda_update_dbg_str, ' '.join(n_mutation_str_list), ' '.join(kd_str_list)))
             if args.selection:
-                hd_distrib = [min([hamming_distance(tn.AAseq, ta) for ta in targetAAseqs]) for tn in tree.iter_leaves() if not tn.terminated]  # list, for each live leaf, of the smallest distance to any target
+                hd_distrib = [min([hamming_distance(tn.AAseq, ta) for ta in targetAAseqs]) for tn in updated_live_leaves]  # list, for each live leaf, of the smallest distance to any target
                 n_bins = args.target_distance * 10 if args.target_distance > 0 else 10
                 hist = scipy.histogram(hd_distrib, bins=list(range(n_bins)))
                 hd_generation.append(hist)
