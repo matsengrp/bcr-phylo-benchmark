@@ -237,12 +237,15 @@ class MutationModel():
 
         if args.observe_common_ancestors:
             observed_nodes = [n for n in tree.iter_descendants() if n.frequency == 1]
+            n_mrca_nodes_added = 0
             for node_1, node_2 in itertools.combinations(observed_nodes, 2):
                 mrca = node_1.get_common_ancestor(node_2)
                 # print('    %s, %s:  %s' % (node_1.name, node_2.name, mrca.name))
                 mrca.frequency = 1
                 uid, potential_names, used_names = selection_utils.choose_new_uid(potential_names, used_names, initial_length=3)
                 mrca.name = 'mrca-' + uid
+                n_mrca_nodes_added += 1
+            print('    adding %d internal observed common ancestor nodes' % n_mrca_nodes_added)
 
     # ----------------------------------------------------------------------------------------
     def simulate(self, args):
