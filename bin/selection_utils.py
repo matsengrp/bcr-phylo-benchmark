@@ -135,32 +135,34 @@ def find_Lp(f_full, U):
 
 
 # ----------------------------------------------------------------------------------------
-def plot_runstats(runstats, outbase, colors):
-    def make_bounds(runstats):
-        all_counts = runstats[0][0].copy()
-        for l in runstats:
-            all_counts += l[0]
-        i = None
-        ii = None
-        for j, c in enumerate(all_counts):
-            if i is None and c > 0:
-                i = j
-            elif c > 0:
-                ii = j
-        return(i, ii)
-    # Total population size:
-    pop_size = scipy.array([sum(r[0]) for r in runstats])
-    # min:max of the hamming distances to plot:
-    bounds = make_bounds(runstats)
+def plot_runstats(hdist_hists, outbase, colors):
+    def make_bounds(hdist_hists):  # hdist_hists: list (over generations) of scipy.hists of min distance to [any] target over leaves
+        # scipy.hist is two arrays: [0] is bin counts, [1] is bin x values (not sure if low, high, or centers)
+        all_counts = None  # sum over generations of number of leaves in each bin (i.e. at each min distance to target sequence)
+        for hist in hdist_hists:
+            if all_counts is None:
+                all_counts = hist[0].copy()
+            else:
+                all_counts += hist[0]
+        imin, imax = None, None
+        for j, count in enumerate(all_counts):
+            if imin is None and count > 0:
+                imin = j
+            elif count > 0:
+                imax = j
+        return(imin, imax)
+
+    pop_size = scipy.array([sum(r[0]) for r in hdist_hists])  # total population size
+    bounds = make_bounds(hdist_hists)  # bin indices of the min and max hamming distances to plot
 
     fig = plt.figure()
     ax = plt.subplot(111)
     t = scipy.array(list(range(len(pop_size))))  # The x-axis are generations
-    ax.plot(t, pop_size, lw=2, label='All cells')  # Total population size is plotted
+    ax.plot(t, pop_size, lw=2, label='all cells')  # Total population size is plotted
     # Then plot the counts for each hamming distance as a function on generation:
-    for k in list(range(*bounds)):
-        color = colors[k]
-        ax.plot(t, scipy.array([r[0][k] for r in runstats]), lw=2, color=color, label='Dist {}'.format(k))
+    for ibin in list(range(*bounds)):
+        color = colors[ibin]
+        ax.plot(t, scipy.array([r[0][ibin] for r in hdist_hists]), lw=2, color=color, label='distance {}'.format(ibin))
 
     plt.legend(bbox_to_anchor=(1.05, 1), loc=2, borderaxespad=0)
 
@@ -168,9 +170,9 @@ def plot_runstats(runstats, outbase, colors):
     box = ax.get_position()
     ax.set_position([box.x0, box.y0, box.width * 0.8, box.height])
 
-    plt.ylabel('Count')
+    plt.ylabel('count')
     plt.xlabel('GC generation')
-    plt.title('Cell count as function of GC generation')
+    plt.title('population over time of cells grouped by min. distance to target')
     fig.savefig(outbase + '.selection_sim.runstats.pdf')
 
 # ----------------------------------------------------------------------------------------
