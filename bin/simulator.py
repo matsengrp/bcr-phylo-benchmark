@@ -210,7 +210,7 @@ class MutationModel():
                 aa_mut = translate(mut_seq)
                 dist = hamming_distance(aa_naive_seq, aa_mut)
                 if dist == n_muts and '*' not in aa_mut:  # Stop codon cannot be part of the return
-                    return aa_mut
+                    return mut_seq, aa_mut
             itry += 1
 
         raise RuntimeError('fell through after trying %d times to make a target sequence' % n_max_tries)
@@ -237,15 +237,18 @@ class MutationModel():
 
         if args.observe_common_ancestors:
             observed_nodes = [n for n in tree.iter_descendants() if n.frequency == 1]
-            n_mrca_nodes_added = 0
+            mrca_nodes_added = set()
             for node_1, node_2 in itertools.combinations(observed_nodes, 2):
                 mrca = node_1.get_common_ancestor(node_2)
+                if mrca.name in mrca_nodes_added:  # already added it
+                    assert mrca.frequency == 1
+                    continue
                 # print('    %s, %s:  %s' % (node_1.name, node_2.name, mrca.name))
                 mrca.frequency = 1
                 uid, potential_names, used_names = selection_utils.choose_new_uid(potential_names, used_names, initial_length=3)
                 mrca.name = 'mrca-' + uid
-                n_mrca_nodes_added += 1
-            print('    adding %d internal observed common ancestor nodes' % n_mrca_nodes_added)
+                mrca_nodes_added.add(mrca.name)
+            print('    adding %d internal observed common ancestor nodes' % len(mrca_nodes_added))
 
     # ----------------------------------------------------------------------------------------
     def simulate(self, args):
@@ -259,12 +262,15 @@ class MutationModel():
         tree = self.init_node(args.naive_seq, time=0, distance=0, selection=args.selection)
 
         if args.selection:
-            hd_generation = list()  # Collect an array of the counts of each hamming distance (to a target) at each time step
+            hdist_hists = list()  # list (over generations) of histograms of min distance to target over leaves
 
             aa_naive_seq = translate(tree.sequence)
 
             print('    making %d target sequences' % args.target_count)
-            targetAAseqs = [self.make_target_sequence(args.naive_seq, aa_naive_seq, args.target_distance, args.target_sequence_lambda0) for i in range(args.target_count)]
+            target_nuc_seqs, targetAAseqs = zip(*[self.make_target_sequence(args.naive_seq, aa_naive_seq, args.target_distance, args.target_sequence_lambda0) for i in range(args.target_count)])
+            with open(args.outbase + '_targets.fa', 'w') as tfile:
+                for itarget, tseq in enumerate(target_nuc_seqs):
+                    tfile.write('>%s\n%s\n' % ('target-%d' % itarget, tseq))
 
             assert len(set([len(aa_naive_seq)] + [len(t) for t in targetAAseqs])) == 1  # targets and naive seq are same length
             assert len(set([args.target_distance] + [hamming_distance(aa_naive_seq, t) for t in targetAAseqs])) == 1  # all targets are the right distance from the naive
@@ -372,10 +378,10 @@ class MutationModel():
                     pre_leaf_str = '' if live_leaves.index(leaf) == 0 else ('%12s %3d' % ('', len(updated_live_leaves)))
                     print(('      %s      %4d   %3d  %s          %-14s       %-28s') % (pre_leaf_str, live_leaves.index(leaf), n_children, lambda_update_dbg_str, ' '.join(n_mutation_str_list), ' '.join(kd_str_list)))
             if args.selection:
-                hd_distrib = [min([hamming_distance(tn.AAseq, ta) for ta in targetAAseqs]) for tn in updated_live_leaves]  # list, for each live leaf, of the smallest distance to any target
+                hd_distrib = [min([hamming_distance(tn.AAseq, ta) for ta in targetAAseqs]) for tn in updated_live_leaves]  # list, for each live leaf, of the smallest AA distance to any target
                 n_bins = args.target_distance * 10 if args.target_distance > 0 else 10
                 hist = scipy.histogram(hd_distrib, bins=list(range(n_bins)))
-                hd_generation.append(hist)
+                hdist_hists.append(hist)
                 # if args.verbose and hd_distrib:
                 #     print('            total population %-4d    majority distance to target %-3d' % (sum(hist[0]), scipy.argmax(hist[0])))
             # if current_time > 5:
@@ -384,7 +390,7 @@ class MutationModel():
         # write a histogram of the hamming distances to target at each generation
         if args.selection:
             with open(args.outbase + '_selection_runstats.p', 'wb') as f:
-                pickle.dump(hd_generation, f)
+                pickle.dump(hdist_hists, f)
 
         # check some things
         if args.obs_times is not None and max(args.obs_times) != current_time:
@@ -538,8 +544,8 @@ def run_simulation(args):
                               colormap=colormap)
         # Write a file with the selection run stats. These are also plotted:
         with open(args.outbase + '_selection_runstats.p', 'rb') as fh:
-            runstats = pickle.load(fh)
-            selection_utils.plot_runstats(runstats, args.outbase, colors)
+            hdist_hists = pickle.load(fh)
+            selection_utils.plot_runstats(hdist_hists, args.outbase, colors)
 
 
 # ----------------------------------------------------------------------------------------
