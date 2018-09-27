@@ -216,6 +216,10 @@ class MutationModel():
         raise RuntimeError('fell through after trying %d times to make a target sequence' % n_max_tries)
 
     # ----------------------------------------------------------------------------------------
+    def choose_leaves_to_sample(self, leaves, n_to_sample):
+        return random.sample(leaves, n_to_sample)  # TODO bias by affinity
+
+    # ----------------------------------------------------------------------------------------
     def set_observation_frequencies_and_names(self, args, tree, current_time, final_leaves):
         tree.get_tree_root().name = 'naive'  # doesn't seem to get written properly
 
@@ -228,7 +232,7 @@ class MutationModel():
                 node.name = 'int-' + uid
 
         if args.n_to_downsample is not None and len(final_leaves) > args.n_to_downsample[-1]:  # if we were asked to downsample, and if there's enough leaves to do so
-            final_leaves = random.sample(final_leaves, args.n_to_downsample[-1])
+            final_leaves = self.choose_leaves_to_sample(final_leaves, args.n_to_downsample[-1])
 
         for leaf in final_leaves:
             leaf.frequency = 1
@@ -299,14 +303,14 @@ class MutationModel():
             if args.stop_dist is not None and current_time > 0 and args.stop_dist < min(hd_distrib):  # if the leaves have gotten close enough to the target sequences
                 break
 
-            # sample any requested intermediate time points (from *last* generation, since haven't yet incremented current_time)
+            # sample any requested intermediate time points (from *last* generation, since we haven't yet incremented current_time)
             if args.obs_times is not None and len(args.obs_times) > 1 and current_time in args.obs_times:
                 assert len(args.obs_times) == len(args.n_to_downsample)
                 n_to_sample = args.n_to_downsample[args.obs_times.index(current_time)]
                 live_nostop_leaves = [l for l in tree.iter_leaves() if not l.terminated and not has_stop(l.sequence)]
                 if len(live_nostop_leaves) < n_to_sample:
-                    raise RuntimeError('tried to sample %d leaves at intermediate timepoint %d, but tree only has %d live leaves without stops (try a later generation or larger carrying capacity).' % (n_to_sample, current_time, len(live_nostop_leaves)))
-                for leaf in random.sample(live_nostop_leaves, n_to_sample):
+                    raise RuntimeError('tried to sample %d leaves at intermediate timepoint %d, but tree only has %d live leaves without stops (try sampling at a later generation, or use a larger carrying capacity).' % (n_to_sample, current_time, len(live_nostop_leaves)))
+                for leaf in self.choose_leaves_to_sample(live_nostop_leaves, n_to_sample):
                     leaf.intermediate_sampled = True
                     if args.kill_sampled_intermediates:
                         leaf.terminated = True
@@ -317,7 +321,7 @@ class MutationModel():
 
             skip_lambda_n = 0  # index keeping track of how many leaves since we last updated all the lambdas
             live_leaves = [l for l in tree.iter_leaves() if not l.terminated]  # NOTE this is out of date as soon as we've added any children in the loop, or killed anybody with no children
-            updated_live_leaves = [l for l in live_leaves]  # but this one, we keep updating (so we don't have to call iter_leaves() so much, which was taking quite a bit of time)
+            updated_live_leaves = [l for l in live_leaves]  # but this one, we keep updating (so we don't have to call iter_leaves() so much, which was taking quite a bit of time) (matches n_unterminated_leaves)
             random.shuffle(live_leaves)
             if args.verbose:
                 print('      %3d    %3d' % (current_time, len(live_leaves)), end='\n' if len(live_leaves) == 0 else '')  # NOTE these are live leaves *after* the intermediate sampling above
@@ -370,8 +374,8 @@ class MutationModel():
                             kd_list.append(child.Kd)
                     leaf.add_child(child)
                     updated_live_leaves.append(child)
-                    if leaf in updated_live_leaves:  # leaf isn't a leaf any more, since now it has children
-                        updated_live_leaves.remove(leaf)
+                    if leaf in updated_live_leaves:  # <leaf> isn't a leaf any more, since now it has children
+                        updated_live_leaves.remove(leaf)  # now that it's been updated, it matches n_unterminated_leaves
                 if args.verbose:
                     n_mutation_str_list = [('%d' % n) if n > 0 else '-' for n in n_mutation_list]
                     kd_str_list = ['%.0f' % kd for kd in kd_list]
@@ -644,8 +648,8 @@ def main():
             print('  note: expanding --n_to_downsample to match --obs_times length: %s --> %s' % (args.n_to_downsample, [args.n_to_downsample[0] for _ in args.obs_times]))
             args.n_to_downsample = [args.n_to_downsample[0] for _ in args.obs_times]
         else:
-            raise Exception('--n_to_downsample has to either be length one, or has to be the same length as --obs_times')
-    if args.obs_times is not None:  # sort the observation times
+            raise Exception('--n_to_downsample has to either be length one (in which case it is automatically to match --obs_times), or has to be the same length as --obs_times')
+    if args.obs_times is not None:
         if args.obs_times != sorted(args.obs_times):
             raise Exception('--obs_times must be sorted (we could sort them here, but then you might think you didn\'t need to worry about the order of --n_to_downsample being the same)')
             # args.obs_times = sorted(args.obs_times)
