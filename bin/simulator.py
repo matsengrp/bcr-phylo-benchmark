@@ -216,8 +216,15 @@ class MutationModel():
         raise RuntimeError('fell through after trying %d times to make a target sequence' % n_max_tries)
 
     # ----------------------------------------------------------------------------------------
-    def choose_leaves_to_sample(self, leaves, n_to_sample):
-        return random.sample(leaves, n_to_sample)  # TODO bias by affinity
+    def choose_leaves_to_sample(self, args, leaves, n_to_sample):
+        if args.observe_based_on_affinity:
+            raise Exception('needs to be checked')
+            probs = [1. / l.Kd for l in leaves]
+            total = sum(probs)
+            probs = [p / total for p in probs]
+            return numpy.random.choice(leaves, n_to_sample, p=probs, replace=False)
+        else:
+            return random.sample(leaves, n_to_sample)
 
     # ----------------------------------------------------------------------------------------
     def set_observation_frequencies_and_names(self, args, tree, current_time, final_leaves):
@@ -232,7 +239,7 @@ class MutationModel():
                 node.name = 'int-' + uid
 
         if args.n_to_downsample is not None and len(final_leaves) > args.n_to_downsample[-1]:  # if we were asked to downsample, and if there's enough leaves to do so
-            final_leaves = self.choose_leaves_to_sample(final_leaves, args.n_to_downsample[-1])
+            final_leaves = self.choose_leaves_to_sample(args, final_leaves, args.n_to_downsample[-1])
 
         for leaf in final_leaves:
             leaf.frequency = 1
@@ -310,7 +317,7 @@ class MutationModel():
                 live_nostop_leaves = [l for l in tree.iter_leaves() if not l.terminated and not has_stop(l.sequence)]
                 if len(live_nostop_leaves) < n_to_sample:
                     raise RuntimeError('tried to sample %d leaves at intermediate timepoint %d, but tree only has %d live leaves without stops (try sampling at a later generation, or use a larger carrying capacity).' % (n_to_sample, current_time, len(live_nostop_leaves)))
-                for leaf in self.choose_leaves_to_sample(live_nostop_leaves, n_to_sample):
+                for leaf in self.choose_leaves_to_sample(args, live_nostop_leaves, n_to_sample):
                     leaf.intermediate_sampled = True
                     if args.kill_sampled_intermediates:
                         leaf.terminated = True
@@ -347,8 +354,8 @@ class MutationModel():
                             print('too many tries to get at least one child, giving up on tree')
                             break
 
-                n_unterminated_leaves += n_children - 1  # <-- Getting 1, is equal to staying alive
-                if n_children == 0:
+                n_unterminated_leaves += n_children - 1
+                if n_children == 0:  # kill everyone with no children
                     leaf.terminated = True
                     updated_live_leaves.remove(leaf)
                     if len(live_leaves) == 1:
@@ -384,7 +391,7 @@ class MutationModel():
             if args.selection:
                 hd_distrib = [min([hamming_distance(tn.AAseq, ta) for ta in targetAAseqs]) for tn in updated_live_leaves]  # list, for each live leaf, of the smallest AA distance to any target
                 n_bins = args.target_distance * 10 if args.target_distance > 0 else 10
-                hist = scipy.histogram(hd_distrib, bins=list(range(n_bins)))
+                hist = scipy.histogram(hd_distrib, bins=list(range(n_bins)))  # if <bins> is a list, it defines the bin edges, including the rightmost edge
                 hdist_hists.append(hist)
                 # if args.verbose and hd_distrib:
                 #     print('            total population %-4d    majority distance to target %-3d' % (sum(hist[0]), scipy.argmax(hist[0])))
@@ -612,6 +619,7 @@ def main():
     parser.add_argument('--idlabel', action='store_true', help='Flag for labeling the sequence ids of the nodes in the output tree images, also write associated fasta alignment if True')
     parser.add_argument('--random_seed', type=int, help='for random number generator')
     parser.add_argument('--pair_bounds', help='for internal use only')
+    parser.add_argument('--observe_based_on_affinity', action='store_true', help='When selecting sequences to observe, instead of choosing at random (default), weight with 1/kd.')
 
     args = parser.parse_args()
     if args.random_seed is not None:
