@@ -227,7 +227,14 @@ class MutationModel():
             return random.sample(leaves, n_to_sample)
 
     # ----------------------------------------------------------------------------------------
-    def set_observation_frequencies_and_names(self, args, tree, current_time, final_leaves):
+    def get_hdist_hist(self, args, leaves, targetAAseqs):
+        hd_distrib = [min([hamming_distance(tn.AAseq, ta) for ta in targetAAseqs]) for tn in leaves]  # list, for each leaf, of the smallest AA distance to any target
+        n_bins = args.target_distance * 10 if args.target_distance > 0 else 10
+        hist = scipy.histogram(hd_distrib, bins=list(range(n_bins)))  # if <bins> is a list, it defines the bin edges, including the rightmost edge
+        return hist
+
+    # ----------------------------------------------------------------------------------------
+    def set_observation_frequencies_and_names(self, args, tree, current_time, final_leaves, targetAAseqs):
         tree.get_tree_root().name = 'naive'  # doesn't seem to get written properly
 
         potential_names, used_names = None, None
@@ -245,6 +252,8 @@ class MutationModel():
             leaf.frequency = 1
             uid, potential_names, used_names = selection_utils.choose_new_uid(potential_names, used_names, initial_length=3)
             leaf.name = 'leaf-' + uid
+
+        self.sampled_hdist_hists[current_time] = self.get_hdist_hist(args, final_leaves, targetAAseqs)
 
         if args.observe_common_ancestors:
             observed_nodes = [n for n in tree.iter_descendants() if n.frequency == 1]
@@ -273,7 +282,7 @@ class MutationModel():
         tree = self.init_node(args.naive_seq, time=0, distance=0, selection=args.selection)
 
         if args.selection:
-            hdist_hists = list()  # list (over generations) of histograms of min distance to target over leaves
+            self.sampled_hdist_hists, self.hdist_hists = [None for _ in range(max(args.obs_times) + 1)], [None for _ in range(max(args.obs_times) + 1)]  # list (over generations) of histograms of min distance to target over leaves
 
             aa_naive_seq = translate(tree.sequence)
 
@@ -292,6 +301,8 @@ class MutationModel():
             tree.AAseq = str(aa_naive_seq)
             tree.Kd = selection_utils.calc_Kd(tree.AAseq, targetAAseqs, hd2affy)
             tree.target_distance = args.target_distance
+
+            self.hdist_hists[0] = self.get_hdist_hist(args, tree, targetAAseqs)
 
         print('    starting %d generations' % max(args.obs_times))
         if args.verbose:
@@ -317,11 +328,13 @@ class MutationModel():
                 live_nostop_leaves = [l for l in tree.iter_leaves() if not l.terminated and not has_stop(l.sequence)]
                 if len(live_nostop_leaves) < n_to_sample:
                     raise RuntimeError('tried to sample %d leaves at intermediate timepoint %d, but tree only has %d live leaves without stops (try sampling at a later generation, or use a larger carrying capacity).' % (n_to_sample, current_time, len(live_nostop_leaves)))
-                for leaf in self.choose_leaves_to_sample(args, live_nostop_leaves, n_to_sample):
+                inter_sampled_leaves = self.choose_leaves_to_sample(args, live_nostop_leaves, n_to_sample)
+                for leaf in inter_sampled_leaves:
                     leaf.intermediate_sampled = True
                     if args.kill_sampled_intermediates:
                         leaf.terminated = True
                         n_unterminated_leaves -= 1
+                self.sampled_hdist_hists[current_time] = self.get_hdist_hist(args, inter_sampled_leaves, targetAAseqs)
                 print('                  sampled %d (of %d live and stop-free) intermediate leaves (%s) at time %d (but time is about to increment to %d)' % (n_to_sample, len(live_nostop_leaves), 'killing each of them' if args.kill_sampled_intermediates else 'leaving them alive', current_time, current_time + 1))
 
             current_time += 1
@@ -389,10 +402,7 @@ class MutationModel():
                     pre_leaf_str = '' if live_leaves.index(leaf) == 0 else ('%12s %3d' % ('', len(updated_live_leaves)))
                     print(('      %s      %4d   %3d  %s          %-14s       %-28s') % (pre_leaf_str, live_leaves.index(leaf), n_children, lambda_update_dbg_str, ' '.join(n_mutation_str_list), ' '.join(kd_str_list)))
             if args.selection:
-                hd_distrib = [min([hamming_distance(tn.AAseq, ta) for ta in targetAAseqs]) for tn in updated_live_leaves]  # list, for each live leaf, of the smallest AA distance to any target
-                n_bins = args.target_distance * 10 if args.target_distance > 0 else 10
-                hist = scipy.histogram(hd_distrib, bins=list(range(n_bins)))  # if <bins> is a list, it defines the bin edges, including the rightmost edge
-                hdist_hists.append(hist)
+                self.hdist_hists[current_time] = self.get_hdist_hist(args, updated_live_leaves, targetAAseqs)
                 # if args.verbose and hd_distrib:
                 #     print('            total population %-4d    majority distance to target %-3d' % (sum(hist[0]), scipy.argmax(hist[0])))
             # if current_time > 5:
@@ -400,8 +410,8 @@ class MutationModel():
 
         # write a histogram of the hamming distances to target at each generation
         if args.selection:
-            with open(args.outbase + '_selection_runstats.p', 'wb') as f:
-                pickle.dump(hdist_hists, f)
+            with open(args.outbase + '_selection_runstats.p', 'wb') as histfile:
+                pickle.dump(self.hdist_hists, histfile)
 
         # check some things
         if args.obs_times is not None and max(args.obs_times) != current_time:
@@ -421,7 +431,11 @@ class MutationModel():
         if len(stop_leaves) > 0:
             print('    %d / %d leaves at final time point have stop codons' % (len(stop_leaves), len(stop_leaves) + len(non_stop_leaves)))
 
-        self.set_observation_frequencies_and_names(args, tree, current_time, non_stop_leaves)
+        self.set_observation_frequencies_and_names(args, tree, current_time, non_stop_leaves, targetAAseqs)
+
+        if len(self.sampled_hdist_hists) > 0:
+            with open(args.outbase + '_sampled_selection_runstats.p', 'wb') as histfile:
+                pickle.dump(self.sampled_hdist_hists, histfile)
 
         # prune away lineages that have zero total observation frequency
         for node in tree.iter_descendants():
