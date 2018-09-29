@@ -282,7 +282,8 @@ class MutationModel():
         tree = self.init_node(args.naive_seq, time=0, distance=0, selection=args.selection)
 
         if args.selection:
-            self.sampled_hdist_hists, self.hdist_hists = [None for _ in range(max(args.obs_times) + 1)], [None for _ in range(max(args.obs_times) + 1)]  # list (over generations) of histograms of min distance to target over leaves
+            self.sampled_hdist_hists, self.hdist_hists = [None for _ in range(max(args.obs_times) + 1)], [None for _ in range(max(args.obs_times) + 1)]  # list (over generations) of histograms of min AA distance to target over leaves
+            self.n_mutated_hists = [None for _ in range(max(args.obs_times) + 1)]
 
             aa_naive_seq = translate(tree.sequence)
 
@@ -402,7 +403,9 @@ class MutationModel():
                     pre_leaf_str = '' if live_leaves.index(leaf) == 0 else ('%12s %3d' % ('', len(updated_live_leaves)))
                     print(('      %s      %4d   %3d  %s          %-14s       %-28s') % (pre_leaf_str, live_leaves.index(leaf), n_children, lambda_update_dbg_str, ' '.join(n_mutation_str_list), ' '.join(kd_str_list)))
             if args.selection:
-                self.hdist_hists[current_time] = self.get_hdist_hist(args, updated_live_leaves, targetAAseqs)
+                self.hdist_hists[current_time] = self.get_hdist_hist(args, updated_live_leaves, targetAAseqs)  # min AA distance to any target
+                n_mutated_hdists = [hamming_distance(l.sequence, tree.sequence) for l in updated_live_leaves]  # nuc distance to naive sequence
+                self.n_mutated_hists[current_time] = scipy.histogram(n_mutated_hdists, bins=list(range(10 * args.target_distance)))
                 # if args.verbose and hd_distrib:
                 #     print('            total population %-4d    majority distance to target %-3d' % (sum(hist[0]), scipy.argmax(hist[0])))
             # if current_time > 5:
@@ -410,8 +413,10 @@ class MutationModel():
 
         # write a histogram of the hamming distances to target at each generation
         if args.selection:
-            with open(args.outbase + '_selection_runstats.p', 'wb') as histfile:
+            with open(args.outbase + '_min_aa_target_hdists.p', 'wb') as histfile:
                 pickle.dump(self.hdist_hists, histfile)
+            with open(args.outbase + '_n_mutated_nuc_hdists.p', 'wb') as histfile:
+                pickle.dump(self.n_mutated_hists, histfile)
 
         # check some things
         if args.obs_times is not None and max(args.obs_times) != current_time:
@@ -434,7 +439,7 @@ class MutationModel():
         self.set_observation_frequencies_and_names(args, tree, current_time, non_stop_leaves, targetAAseqs)
 
         if len(self.sampled_hdist_hists) > 0:
-            with open(args.outbase + '_sampled_selection_runstats.p', 'wb') as histfile:
+            with open(args.outbase + '_sampled_min_aa_target_hdists.p', 'wb') as histfile:
                 pickle.dump(self.sampled_hdist_hists, histfile)
 
         # prune away lineages that have zero total observation frequency
@@ -568,7 +573,7 @@ def run_simulation(args):
                               idlabel=args.idlabel,
                               colormap=colormap)
         # Write a file with the selection run stats. These are also plotted:
-        with open(args.outbase + '_selection_runstats.p', 'rb') as fh:
+        with open(args.outbase + '_min_aa_target_hdists.p', 'rb') as fh:
             hdist_hists = pickle.load(fh)
             selection_utils.plot_runstats(hdist_hists, args.outbase, colors)
 
