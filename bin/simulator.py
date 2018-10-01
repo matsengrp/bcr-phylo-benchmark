@@ -238,11 +238,12 @@ class MutationModel():
         tree.get_tree_root().name = 'naive'  # doesn't seem to get written properly
 
         potential_names, used_names = None, None
+        _, potential_names, used_names = selection_utils.choose_new_uid(potential_names, used_names, initial_length=3, shuffle=True)  # call once (ignoring the returned <uid>) to get the initial length right, and to shuffle them (shuffling is so if we're running multiple events, they have different leaf names, as long as we set the seeds differently)
 
         if args.obs_times is not None and len(args.obs_times) > 1:  # observe all intermediate sampled nodes
             for node in [l for l in tree.iter_descendants() if l.intermediate_sampled]:
                 node.frequency = 1
-                uid, potential_names, used_names = selection_utils.choose_new_uid(potential_names, used_names, initial_length=3)
+                uid, potential_names, used_names = selection_utils.choose_new_uid(potential_names, used_names)
                 node.name = 'int-' + uid
 
         if args.n_to_downsample is not None and len(final_leaves) > args.n_to_downsample[-1]:  # if we were asked to downsample, and if there's enough leaves to do so
@@ -250,7 +251,7 @@ class MutationModel():
 
         for leaf in final_leaves:
             leaf.frequency = 1
-            uid, potential_names, used_names = selection_utils.choose_new_uid(potential_names, used_names, initial_length=3)
+            uid, potential_names, used_names = selection_utils.choose_new_uid(potential_names, used_names)
             leaf.name = 'leaf-' + uid
 
         self.sampled_hdist_hists[current_time] = self.get_hdist_hist(args, final_leaves, targetAAseqs)
@@ -265,7 +266,7 @@ class MutationModel():
                     continue
                 # print('    %s, %s:  %s' % (node_1.name, node_2.name, mrca.name))
                 mrca.frequency = 1
-                uid, potential_names, used_names = selection_utils.choose_new_uid(potential_names, used_names, initial_length=3)
+                uid, potential_names, used_names = selection_utils.choose_new_uid(potential_names, used_names)
                 mrca.name = 'mrca-' + uid
                 mrca_nodes_added.add(mrca.name)
             print('    adding %d internal observed common ancestor nodes' % len(mrca_nodes_added))
