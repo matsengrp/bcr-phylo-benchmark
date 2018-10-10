@@ -235,10 +235,10 @@ class MutationModel():
 
     # ----------------------------------------------------------------------------------------
     def set_observation_frequencies_and_names(self, args, tree, current_time, final_leaves, targetAAseqs):
-        tree.get_tree_root().name = 'naive'  # doesn't seem to get written properly
+        tree.name = 'naive'  # potentially overwritten below
 
         potential_names, used_names = None, None
-        _, potential_names, used_names = selection_utils.choose_new_uid(potential_names, used_names, initial_length=3, shuffle=True)  # call once (ignoring the returned <uid>) to get the initial length right, and to shuffle them (shuffling is so if we're running multiple events, they have different leaf names, as long as we set the seeds differently)
+        _, potential_names, used_names = selection_utils.choose_new_uid(potential_names, used_names, initial_length=4, shuffle=True)  # call once (ignoring the returned <uid>) to get the initial length right, and to shuffle them (shuffling is so if we're running multiple events, they have different leaf names, as long as we set the seeds differently)
 
         if args.obs_times is not None and len(args.obs_times) > 1:  # observe all intermediate sampled nodes
             for node in [l for l in tree.iter_descendants() if l.intermediate_sampled]:
@@ -269,10 +269,9 @@ class MutationModel():
                 uid, potential_names, used_names = selection_utils.choose_new_uid(potential_names, used_names)
                 mrca.name = 'mrca-' + uid
                 mrca_nodes_added.add(mrca.name)
-            # add root node separately, since it seems to not show up as any pair's mrca
             tree.frequency = 1
             uid, potential_names, used_names = selection_utils.choose_new_uid(potential_names, used_names)
-            tree.name = 'root-' + uid
+            tree.name = 'root-' + uid  # replace name given above. NOTE it's kind of weird to name it differently depending on --observe_common_ancestors, but if it's set, we want to treat the root node just like any other observed node, whereas if it isn't, we want it to be a special sequence that happens to be written
             mrca_nodes_added.add(tree.name)
             print('    adding %d internal observed common ancestor nodes' % len(mrca_nodes_added))
 
@@ -492,14 +491,14 @@ def run_simulation(args):
     if args.naive_seq2 is not None:
         fhandles = [open('%s_seq%d.fasta' % (args.outbase, iseq + 1), 'w') for iseq in range(2)]
         for iseq, fh in enumerate(fhandles):
-            fh.write('>naive\n%s\n' % get_seq_from_pair(args.naive_seq, args.pair_bounds, iseq=iseq))
-        for node in [n for n in tree.iter_descendants() if n.frequency != 0]:
+            fh.write('>%s\n%s\n' % (tree.name, get_seq_from_pair(args.naive_seq, args.pair_bounds, iseq=iseq)))
+        for node in [n for n in tree.iter_descendants() if n.frequency != 0]:  # NOTE doesn't iterate over root node
             for iseq, fh in enumerate(fhandles):
                 fh.write('>%s\n%s\n' % (node.name, get_seq_from_pair(node.sequence, args.pair_bounds, iseq=iseq)))
     else:
         with open('%s.fasta' % args.outbase, 'w') as fh:
-            fh.write('>naive\n%s\n' % args.naive_seq)
-            for node in [n for n in tree.iter_descendants() if n.frequency != 0]:
+            fh.write('>%s\n%s\n' % (tree.name, args.naive_seq))
+            for node in [n for n in tree.iter_descendants() if n.frequency != 0]:  # NOTE doesn't iterate over root node
                 fh.write('>%s\n%s\n' % (node.name, node.sequence))
 
     # write some observable simulation stats
