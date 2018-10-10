@@ -269,6 +269,11 @@ class MutationModel():
                 uid, potential_names, used_names = selection_utils.choose_new_uid(potential_names, used_names)
                 mrca.name = 'mrca-' + uid
                 mrca_nodes_added.add(mrca.name)
+            # add root node separately, since it seems to not show up as any pair's mrca
+            tree.frequency = 1
+            uid, potential_names, used_names = selection_utils.choose_new_uid(potential_names, used_names)
+            tree.name = 'root-' + uid
+            mrca_nodes_added.add(tree.name)
             print('    adding %d internal observed common ancestor nodes' % len(mrca_nodes_added))
 
     # ----------------------------------------------------------------------------------------
