@@ -302,7 +302,7 @@ class MutationModel():
             assert len(set([args.target_distance] + [hamming_distance(aa_naive_seq, t) for t in targetAAseqs])) == 1  # all targets are the right distance from the naive
 
             tree.AAseq = str(aa_naive_seq)
-            tree.Kd = selection_utils.calc_kd(tree.AAseq, targetAAseqs, args.mature_affy, args.naive_affy, args.k_exp, args.target_distance, fuzz_fraction=args.kd_fuzz_fraction)
+            tree.Kd = selection_utils.calc_kd(tree.AAseq, targetAAseqs, args.mature_kd, args.naive_kd, args.k_exp, args.target_distance, fuzz_fraction=args.kd_fuzz_fraction)
             tree.target_distance = args.target_distance
 
             self.hdist_hists[0] = self.get_hdist_hist(args, tree, targetAAseqs)
@@ -391,7 +391,7 @@ class MutationModel():
                     child = self.init_node(mutated_sequence, current_time, distance=sum(x!=y for x,y in zip(mutated_sequence, leaf.sequence)), selection=args.selection)
                     if args.selection:
                         child.AAseq = str(translate(child.sequence))
-                        child.Kd = selection_utils.calc_kd(child.AAseq, targetAAseqs, args.mature_affy, args.naive_affy, args.k_exp, args.target_distance, fuzz_fraction=args.kd_fuzz_fraction)
+                        child.Kd = selection_utils.calc_kd(child.AAseq, targetAAseqs, args.mature_kd, args.naive_kd, args.k_exp, args.target_distance, fuzz_fraction=args.kd_fuzz_fraction)
                         child.target_distance = min([hamming_distance(child.AAseq, taa) for taa in targetAAseqs])
                         if args.verbose:
                             kd_list.append(child.Kd)
@@ -620,9 +620,9 @@ def main():
     parser.add_argument('--target_count', type=int, default=10, help='The number of target sequences to generate.')
     parser.add_argument('--target_distance', type=int, default=10, help='Desired distance (number of non-synonymous mutations) between the naive sequence and the target sequences.')
     parser.add_argument('--naive_seq2', default=None, help='Second seed naive nucleotide sequence. For simulating heavy/light chain co-evolution.')
-    parser.add_argument('--naive_affy', type=float, default=100, help='Affinity of the naive sequence in nano molar.')
-    parser.add_argument('--mature_affy', type=float, default=1, help='Affinity of the mature sequences in nano molar.')
-    parser.add_argument('--kd_fuzz_fraction', type=float, help='If set, when calculating kd for each new sequence, add this amount of random fuzz (expressed as a fraction of the difference between mature and naive affinities, so must be between 0. and 1., which is used as the variance of gaussian). Only real point is so that plots are more realistic (and easier to read), since without this everybody is in one of a few columns of kd (since aa hamming distance is very granular), whereas kd should really be a continuous variable.')
+    parser.add_argument('--naive_kd', type=float, default=100, help='kd of the naive sequence in nano molar.')
+    parser.add_argument('--mature_kd', type=float, default=1, help='kd of the mature sequences in nano molar.')
+    parser.add_argument('--kd_fuzz_fraction', type=float, help='If set, when calculating kd for each new sequence, add this amount of random fuzz (expressed as a fraction of the difference between mature and naive kd values, so must be between 0. and 1., which is used as the variance of gaussian). Only real point is so that plots are more realistic (and easier to read), since without this everybody is in one of a few columns of kd (since aa hamming distance is very granular), whereas kd should really be a continuous variable.')
     parser.add_argument('--skip_update', type=int, default=100, help='Number of leaves/iterations to perform before updating the binding equilibrium (B:A).\n'
                         'The binding equilibrium at any point in time depends, in principle, on the properties of every leaf/cell, and thus would ideally be updated every time any leaf changes.\n'
                         'However, since each individual leaf typically causes only a small change in the overall equilibrium, a substantial speedup with minimal impact on accuracy can be achieved by updating B:A only after modifying every <--skip-update> leaves.\n'
@@ -633,7 +633,7 @@ def main():
                         'It is recommended to keep this as the default.')
     parser.add_argument('--f_full', type=float, default=1, help='The fraction of antigen bound BCRs on a B cell that is needed to elicit close to maximum reponse.'
                         'Cannot be smaller than B_total. It is recommended to keep this as the default.')
-    parser.add_argument('--k_exp', type=float, default=2, help='The exponent in the function to map hamming distance to affinity. '
+    parser.add_argument('--k_exp', type=float, default=2, help='The exponent in the function to map hamming distance to kd. '
                         'It is recommended to keep this as the default.')
     parser.add_argument('--plotAA', action='store_true', help='Plot trees with collapsing and coloring on amino acid level.')
     parser.add_argument('--verbose', action='store_true', help='Print progress during simulation. Mostly useful for simulation with selection since this can take a while.')
@@ -703,7 +703,7 @@ def main():
         assert args.target_distance > 0
         assert args.B_total >= args.f_full  # the fully activating fraction on BA must be possible to reach within B_total
         # find the total amount of A necessary for sustaining the specified carrying capacity
-        args.A_total = selection_utils.find_A_total(args.carry_cap, args.B_total, args.f_full, args.mature_affy, args.U)
+        args.A_total = selection_utils.find_A_total(args.carry_cap, args.B_total, args.f_full, args.mature_kd, args.U)
         # calculate the parameters for the logistic function
         args.Lp = selection_utils.find_Lp(args.f_full, args.U)
 

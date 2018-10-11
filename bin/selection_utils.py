@@ -20,10 +20,10 @@ from GCutils import hamming_distance
 
 # ----------------------------------------------------------------------------------------
 def calc_kd(seqAA, targetAAseqs, kd_min, kd_max, k_exp, target_distance, fuzz_fraction=None):
-    ''' Find the closest target sequence, and apply the transformation function between hamming distance and affinity. '''
+    ''' Find the closest target sequence, and apply the transformation function between hamming distance and kd. '''
     assert kd_min < kd_max
 
-    if '*' in seqAA:  # nonsense sequences have zero affinity/initnite kd
+    if '*' in seqAA:  # nonsense sequences have zero affinity/infinite kd
         return float('inf')
 
     distance = min([hamming_distance(seqAA, t) for t in targetAAseqs])  # aa hamming distance to nearest target sequence
@@ -82,7 +82,7 @@ def update_lambda_values(tree, live_leaves, targetAAseqs, A_total, B_total, Lp):
     return(tree)
 
 # ----------------------------------------------------------------------------------------
-def find_A_total(carry_cap, B_total, f_full, mature_affy, U):
+def find_A_total(carry_cap, B_total, f_full, mature_kd, U):
     def A_total_fun(A, B_total, Kd_n): return(A + scipy.sum(B_total/(1+Kd_n/A)))
 
     def C_A(A, A_total, f_full, U): return(U * (A_total - A) / f_full)
@@ -91,7 +91,7 @@ def find_A_total(carry_cap, B_total, f_full, mature_affy, U):
         def obj(A): return((carry_cap - C_A(A, A_total_fun(A, B_total, Kd_n), f_full, U))**2)
         return(obj)
 
-    Kd_n = scipy.array([mature_affy] * carry_cap)
+    Kd_n = scipy.array([mature_kd] * carry_cap)
     obj = A_obj(carry_cap, B_total, f_full, Kd_n, U)
     # Some funny "zero encountered in true_divide" errors are not affecting results so ignore them:
     old_settings = scipy.seterr(all='ignore')  # Keep old settings
