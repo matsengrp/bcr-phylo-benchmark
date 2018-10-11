@@ -301,11 +301,8 @@ class MutationModel():
             assert len(set([len(aa_naive_seq)] + [len(t) for t in targetAAseqs])) == 1  # targets and naive seq are same length
             assert len(set([args.target_distance] + [hamming_distance(aa_naive_seq, t) for t in targetAAseqs])) == 1  # all targets are the right distance from the naive
 
-            def hd2affy(hd):  # affinity is an exponential function of hamming distance
-                return(args.mature_affy + hd**args.k_exp * (args.naive_affy - args.mature_affy) / args.target_distance**args.k_exp)
-
             tree.AAseq = str(aa_naive_seq)
-            tree.Kd = selection_utils.calc_Kd(tree.AAseq, targetAAseqs, hd2affy)
+            tree.Kd = selection_utils.calc_kd(tree.AAseq, targetAAseqs, args.mature_affy, args.naive_affy, args.k_exp, args.target_distance, fuzz_fraction=args.kd_fuzz_fraction)
             tree.target_distance = args.target_distance
 
             self.hdist_hists[0] = self.get_hdist_hist(args, tree, targetAAseqs)
@@ -356,7 +353,7 @@ class MutationModel():
                     lambda_update_dbg_str = ' '
                     if skip_lambda_n == 0:  # time to update the lambdas for every leaf
                         skip_lambda_n = args.skip_update + 1  # reset it so we don't update again until we've done <args.skip_update> more leaves (+ 1 is so that if args.skip_update is 0 we don't skip at all, i.e. args.skip_update is the number of leaves skipped, *not* the number of leaves *between* updates)
-                        tree = selection_utils.update_lambda_values(tree, updated_live_leaves, targetAAseqs, hd2affy, args.A_total, args.B_total, args.Lp)
+                        tree = selection_utils.update_lambda_values(tree, updated_live_leaves, targetAAseqs, args.A_total, args.B_total, args.Lp)
                         lambda_update_dbg_str = selection_utils.color('blue', 'x')
                     this_lambda = max(leaf.lambda_, self.lambda_min)
                     skip_lambda_n -= 1
@@ -394,7 +391,7 @@ class MutationModel():
                     child = self.init_node(mutated_sequence, current_time, distance=sum(x!=y for x,y in zip(mutated_sequence, leaf.sequence)), selection=args.selection)
                     if args.selection:
                         child.AAseq = str(translate(child.sequence))
-                        child.Kd = selection_utils.calc_Kd(child.AAseq, targetAAseqs, hd2affy)
+                        child.Kd = selection_utils.calc_kd(child.AAseq, targetAAseqs, args.mature_affy, args.naive_affy, args.k_exp, args.target_distance, fuzz_fraction=args.kd_fuzz_fraction)
                         child.target_distance = min([hamming_distance(child.AAseq, taa) for taa in targetAAseqs])
                         if args.verbose:
                             kd_list.append(child.Kd)
@@ -625,6 +622,7 @@ def main():
     parser.add_argument('--naive_seq2', default=None, help='Second seed naive nucleotide sequence. For simulating heavy/light chain co-evolution.')
     parser.add_argument('--naive_affy', type=float, default=100, help='Affinity of the naive sequence in nano molar.')
     parser.add_argument('--mature_affy', type=float, default=1, help='Affinity of the mature sequences in nano molar.')
+    parser.add_argument('--kd_fuzz_fraction', type=float, help='If set, when calculating kd for each new sequence, add this amount of random fuzz (expressed as a fraction of the difference between mature and naive affinities, so must be between 0. and 1., which is used as the variance of gaussian). Only real point is so that plots are more realistic (and easier to read), since without this everybody is in one of a few columns of kd (since aa hamming distance is very granular), whereas kd should really be a continuous variable.')
     parser.add_argument('--skip_update', type=int, default=100, help='Number of leaves/iterations to perform before updating the binding equilibrium (B:A).\n'
                         'The binding equilibrium at any point in time depends, in principle, on the properties of every leaf/cell, and thus would ideally be updated every time any leaf changes.\n'
                         'However, since each individual leaf typically causes only a small change in the overall equilibrium, a substantial speedup with minimal impact on accuracy can be achieved by updating B:A only after modifying every <--skip-update> leaves.\n'
@@ -665,6 +663,9 @@ def main():
         args.naive_seq = args.naive_seq.upper()
     if has_stop(args.naive_seq):
         raise Exception('stop codon in --naive_seq (this isn\'t necessarily otherwise forbidden, but it\'ll quickly end you in a thicket of infinite loops, so should be corrected).')
+    if args.kd_fuzz_fraction is not None:
+         if args.kd_fuzz_fraction < 0. or args.kd_fuzz_fraction > 1.:
+             raise Exception('--kd_fuzz_fraction must be in [0., 1.]')
     if [args.n_final_seqs, args.obs_times].count(None) != 1:
         raise Exception('exactly one of --n_final_seqs and --obs_times must be set')
     if args.selection and args.obs_times is None:

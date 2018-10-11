@@ -9,6 +9,7 @@ from __future__ import division, print_function
 
 import scipy
 import random
+import numpy
 import itertools
 import string
 from scipy.optimize import minimize, fsolve
@@ -18,16 +19,23 @@ from matplotlib import pyplot as plt
 from GCutils import hamming_distance
 
 # ----------------------------------------------------------------------------------------
-def calc_Kd(seqAA, targetAAseqs, hd2affy):
-    ''' Find the closest target sequence, and apply the transformation function (hd2affy) between hamming distance and affinity. '''
-    if '*' in seqAA:  # nonsense sequences have zero affinity (zero affinty meaning infinity Kd)
-        return(float('inf'))
-    else:
-        hd = min([hamming_distance(seqAA, t) for t in targetAAseqs])
-    return(hd2affy(hd))
+def calc_kd(seqAA, targetAAseqs, kd_min, kd_max, k_exp, target_distance, fuzz_fraction=None):
+    ''' Find the closest target sequence, and apply the transformation function between hamming distance and affinity. '''
+    assert kd_min < kd_max
+
+    if '*' in seqAA:  # nonsense sequences have zero affinity/initnite kd
+        return float('inf')
+
+    distance = min([hamming_distance(seqAA, t) for t in targetAAseqs])  # aa hamming distance to nearest target sequence
+    kd = kd_min + (kd_max - kd_min) * (distance / float(target_distance))**k_exp  # apply transformation from distance to kd
+    if fuzz_fraction is not None:  # maybe add some fuzz
+        assert fuzz_fraction > 0. and fuzz_fraction < 1.
+        kd += numpy.random.normal(scale=fuzz_fraction * (kd_max - kd_min))
+
+    return kd
 
 # ----------------------------------------------------------------------------------------
-def update_lambda_values(tree, live_leaves, targetAAseqs, hd2affy, A_total, B_total, Lp):
+def update_lambda_values(tree, live_leaves, targetAAseqs, A_total, B_total, Lp):
     ''' update the lambda_ feature (parameter for the poisson progeny distribution) for each live leaf in <tree> '''
 
     def calc_BnA(Kd_n, A, B_total):
