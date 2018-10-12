@@ -229,8 +229,9 @@ class MutationModel():
     # ----------------------------------------------------------------------------------------
     def get_hdist_hist(self, args, leaves, targetAAseqs):
         hd_distrib = [min([hamming_distance(tn.AAseq, ta) for ta in targetAAseqs]) for tn in leaves]  # list, for each leaf, of the smallest AA distance to any target
-        n_bins = args.target_distance * 10 if args.target_distance > 0 else 10
-        hist = scipy.histogram(hd_distrib, bins=list(range(n_bins)))  # if <bins> is a list, it defines the bin edges, including the rightmost edge
+        # bin_edges = list(numpy.arange(min(hd_distrib) - 1.5, max(hd_distrib) + 1.5))  # this is nice for other reasons, but then you have to handle all the hists having different limits later on
+        bin_edges = list(numpy.arange(-0.5, int(2 * args.target_distance) + 0.5))  # some sequences manage to wander quite far away from their nearest target without getting killed, so multiply by 2
+        hist = scipy.histogram(hd_distrib, bins=bin_edges)  # if <bins> is a list, it defines the bin edges, including the rightmost edge
         return hist
 
     # ----------------------------------------------------------------------------------------
@@ -407,7 +408,7 @@ class MutationModel():
             if args.selection:
                 self.hdist_hists[current_time] = self.get_hdist_hist(args, updated_live_leaves, targetAAseqs)  # min AA distance to any target
                 n_mutated_hdists = [hamming_distance(l.sequence, tree.sequence) for l in updated_live_leaves]  # nuc distance to naive sequence
-                self.n_mutated_hists[current_time] = scipy.histogram(n_mutated_hdists, bins=list(range(10 * args.target_distance)))
+                self.n_mutated_hists[current_time] = scipy.histogram(n_mutated_hdists, bins=list(numpy.arange(-0.5, max(args.obs_times) + 0.5)))  # can't have more than one mutation per generation
                 # if args.verbose and hd_distrib:
                 #     print('            total population %-4d    majority distance to target %-3d' % (sum(hist[0]), scipy.argmax(hist[0])))
             # if current_time > 5:
