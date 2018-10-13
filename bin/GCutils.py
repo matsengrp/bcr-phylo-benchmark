@@ -62,10 +62,13 @@ class CollapsedTree():
 
         self.tree = tree.copy()
         tree.dist = 0  # no branch above root
+
+        # TODO remove this, since it happens to the input tree at the end of MutationModel.simulate()
         # Remove unobserved internal unifurcations:
         for node in self.tree.iter_descendants():
             parent = node.up
             if node.frequency == 0 and len(node.children) == 1:
+                assert False
                 node.delete(prevent_nondicotomic=False)
                 node.children[0].dist = hamming_distance(node.children[0].sequence, parent.sequence)
 
@@ -76,28 +79,28 @@ class CollapsedTree():
             for node in tree.iter_descendants():
                 aa = translate(node.sequence)
                 aa_parent = translate(node.up.sequence)
-                node.dist = hamming_distance(aa, aa_parent)  # NOTE the .dist feature is previously set to be nucleotide distance
+                node.dist = hamming_distance(aa, aa_parent)  # NOTE the .dist feature is previously set to be nucleotide distance (but here's it's set to aa distance)
 
         # iterate over the tree below root and collapse edges of zero length
-        # if the node is a leaf and its parent has nonzero frequency we combine taxa names to a set
-        # this acommodates bootstrap samples that result in repeated genotypes
+        # if the node is a leaf and its parent has nonzero frequency we combine taxa names to a set (this acommodates bootstrap samples that result in repeated genotypes)
         observed_genotypes = set((node.name for node in self.tree.traverse() if node.frequency > 0))
         observed_genotypes.add(self.tree.name)
         for node in self.tree.get_descendants(strategy='postorder'):
-            if node.dist == 0:
-                node.up.frequency += node.frequency
-                node_set = set([node.name]) if isinstance(node.name, str) else set(node.name)
-                node_up_set = set([node.up.name]) if isinstance(node.up.name, str) else set(node.up.name)
-                if node_up_set < observed_genotypes:
-                    if node_set < observed_genotypes:
-                        node.up.name = tuple(node_set | node_up_set)
-                        if len(node.up.name) == 1:
-                            node.up.name = node.up.name[0]
-                elif node_set < observed_genotypes:
-                    node.up.name = tuple(node_set)
+            if node.dist != 0:
+                continue
+            node.up.frequency += node.frequency
+            node_set = set([node.name]) if isinstance(node.name, str) else set(node.name)
+            node_up_set = set([node.up.name]) if isinstance(node.up.name, str) else set(node.up.name)
+            if node_up_set < observed_genotypes:
+                if node_set < observed_genotypes:
+                    node.up.name = tuple(node_set | node_up_set)
                     if len(node.up.name) == 1:
                         node.up.name = node.up.name[0]
-                node.delete(prevent_nondicotomic=False)
+            elif node_set < observed_genotypes:
+                node.up.name = tuple(node_set)
+                if len(node.up.name) == 1:
+                    node.up.name = node.up.name[0]
+            node.delete(prevent_nondicotomic=False)
 
         final_observed_genotypes = set([nam for node in self.tree.traverse() if node.frequency > 0 or node == self.tree for nam in ((node.name,) if isinstance(node.name, str) else node.name)])
         if final_observed_genotypes != observed_genotypes:
@@ -117,7 +120,16 @@ class CollapsedTree():
             # sort children of this node based on partion and sequence
             node.children.sort(key=lambda node: (node.partition, node.sequence))
 
+        if add_selection_metrics:
+            self.add_selection_metrics()
 
+    # ----------------------------------------------------------------------------------------
+    def __str__(self):
+        '''Return a string representation for printing.'''
+        return 'tree:\n' + str(self.tree)
+
+    # ----------------------------------------------------------------------------------------
+    def add_selection_metrics():
         # Add some usefull annotations, including a metric for selection,
         # inspired/adapted from the LONR score: https://academic.oup.com/nar/article/44/5/e46/2464514
         for node in tree.iter_descendants():
@@ -145,7 +157,7 @@ class CollapsedTree():
             except:
                 pass
 
-        # Make a Z-score LONR based of the synonymous mutations:
+        # Make a Z-score LONR based on synonymous mutations
         try:
             LONR_syn = np.array([node.LONR for node in tree.iter_descendants() if hasattr(node, 'LONR') and node.NS_dist == 0])
             LONR_syn_mean = np.mean(LONR_syn)
@@ -156,10 +168,7 @@ class CollapsedTree():
         except:
             pass
 
-    def __str__(self):
-        '''Return a string representation for printing.'''
-        return 'tree:\n' + str(self.tree)
-
+    # ----------------------------------------------------------------------------------------
     def render(self, outfile, idlabel=False, isolabel=False, colormap=None, chain_split=None):
         '''Render to image file, filetype inferred from suffix, svg for color images'''
         def my_layout(node):
