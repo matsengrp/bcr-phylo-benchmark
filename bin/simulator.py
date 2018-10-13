@@ -222,7 +222,7 @@ class MutationModel():
             probs = [1. / l.Kd for l in leaves]
             total = sum(probs)
             probs = [p / total for p in probs]
-            return numpy.random.choice(leaves, n_to_sample, p=probs, replace=False)
+            return list(numpy.random.choice(leaves, n_to_sample, p=probs, replace=False))
         else:
             return random.sample(leaves, n_to_sample)
 
@@ -235,7 +235,7 @@ class MutationModel():
         return hist
 
     # ----------------------------------------------------------------------------------------
-    def set_observation_frequencies_and_names(self, args, tree, current_time, final_leaves, targetAAseqs):
+    def set_observation_frequencies_and_names(self, args, tree, current_time, observed_leaves, targetAAseqs):
         tree.name = 'naive'  # potentially overwritten below
 
         potential_names, used_names = None, None
@@ -247,34 +247,49 @@ class MutationModel():
                 uid, potential_names, used_names = selection_utils.choose_new_uid(potential_names, used_names)
                 node.name = 'int-' + uid
 
-        if args.n_to_downsample is not None and len(final_leaves) > args.n_to_downsample[-1]:  # if we were asked to downsample, and if there's enough leaves to do so
-            final_leaves = self.choose_leaves_to_sample(args, final_leaves, args.n_to_downsample[-1])
+        if args.n_to_downsample is not None and len(observed_leaves) > args.n_to_downsample[-1]:  # if we were asked to downsample, and if there's enough leaves to do so
+            observed_leaves = self.choose_leaves_to_sample(args, observed_leaves, args.n_to_downsample[-1])
 
-        for leaf in final_leaves:
+        for leaf in observed_leaves:
             leaf.frequency = 1
             uid, potential_names, used_names = selection_utils.choose_new_uid(potential_names, used_names)
             leaf.name = 'leaf-' + uid
 
-        self.sampled_hdist_hists[current_time] = self.get_hdist_hist(args, final_leaves, targetAAseqs)
+        # TODO arg, this doesn't get the times right on the ancestors
+        self.sampled_hdist_hists[current_time] = self.get_hdist_hist(args, observed_leaves, targetAAseqs)
 
-        if args.observe_common_ancestors:
-            observed_nodes = [n for n in tree.iter_descendants() if n.frequency == 1]
-            mrca_nodes_added = set()
-            for node_1, node_2 in itertools.combinations(observed_nodes, 2):
-                mrca = node_1.get_common_ancestor(node_2)
-                if mrca.name in mrca_nodes_added:  # already added it
+        observed_ancestors = set()
+        if args.observe_common_ancestors:  # observe the mrca of each observed leaf
+            for node_1, node_2 in itertools.combinations(observed_leaves, 2):
+                mrca = node_1.get_common_ancestor(node_2)  # this is kind of slow, but then again we're asking a lot of it -- we want to observe all the ancestors we would reconstruct as mrca ancestors nodes, but no other ones
+                if mrca in observed_ancestors:  # already added it
                     assert mrca.frequency == 1
                     continue
-                # print('    %s, %s:  %s' % (node_1.name, node_2.name, mrca.name))
                 mrca.frequency = 1
                 uid, potential_names, used_names = selection_utils.choose_new_uid(potential_names, used_names)
                 mrca.name = 'mrca-' + uid
-                mrca_nodes_added.add(mrca.name)
+                observed_ancestors.add(mrca)
             tree.frequency = 1
             uid, potential_names, used_names = selection_utils.choose_new_uid(potential_names, used_names)
             tree.name = 'root-' + uid  # replace name given above. NOTE it's kind of weird to name it differently depending on --observe_common_ancestors, but if it's set, we want to treat the root node just like any other observed node, whereas if it isn't, we want it to be a special sequence that happens to be written
-            mrca_nodes_added.add(tree.name)
-            print('    adding %d internal observed common ancestor nodes' % len(mrca_nodes_added))
+            observed_ancestors.add(tree)
+        elif args.observe_all_ancestors:  # observe *all* ancestors of each leaf
+            for obs_node in observed_leaves:
+                ancestor = obs_node
+                while not ancestor.is_root():  # go up the chain of ancestors, making sure we observe each one
+                    ancestor = ancestor.up
+                    if ancestor in observed_ancestors:  # already added it
+                        assert ancestor.frequency == 1
+                        continue
+                    ancestor.frequency = 1
+                    uid, potential_names, used_names = selection_utils.choose_new_uid(potential_names, used_names)
+                    ancestor.name = ('root-' if ancestor.is_root() else 'mrca-') + uid
+                    observed_ancestors.add(ancestor)
+        if len(observed_ancestors) > 0:
+            print('    added %d ancestor nodes' % len(observed_ancestors))
+
+        # TODO arg, this doesn't get the times right on the ancestors
+        # self.sampled_hdist_hists[current_time] = self.get_hdist_hist(args, observed_leaves + list(observed_ancestors), targetAAseqs)
 
     # ----------------------------------------------------------------------------------------
     def simulate(self, args):
@@ -615,7 +630,8 @@ def main():
     parser.add_argument('--target_sequence_lambda0', type=float, default=0.1, help='baseline mutation rate used for generating target sequences (you shouldn\'t need to change this)')
     parser.add_argument('--n_to_downsample', type=int, nargs='+', default=None, help='Number of cells sampled during each sampling step. If one value is specified, this same value is applied to each time in --obs_times; whereas if more than one value is specified, each is applied to the corresponding value in --obs_times.')
     parser.add_argument('--kill_sampled_intermediates', action='store_true', help='kill intermediate sequences as they are sampled')
-    parser.add_argument('--observe_common_ancestors', action='store_true', help='If set, after deciding which nodes to observe (write to file) according to other options, we then also select the most recent common ancestor for every pair of those nodes.')
+    parser.add_argument('--observe_common_ancestors', action='store_true', help='If set, after deciding which nodes to observe (write to file) according to other options, we then also select the most recent common ancestor for every pair of those nodes (the idea is that this gets you the nodes that you would reconstruct with a phylogenetic program).')
+    parser.add_argument('--observe_all_ancestors', action='store_true', help='Same as --observe_common_ancestors, except instead of taking the most recent common ancestor of each pair of observed leaves, we take *every* ancestor of each leaf (i.e. in addition to getting all the MRCAs, you also get all the intermediate steps between MRCAs).')
     parser.add_argument('--carry_cap', type=int, default=1000, help='The carrying capacity of the simulation with selection. This number affects the fixation time of a new mutation.'
                         'Fixation time is approx. log2(carry_cap), e.g. log2(1000) ~= 10.')
     parser.add_argument('--target_count', type=int, default=10, help='The number of target sequences to generate.')
@@ -667,6 +683,8 @@ def main():
     if args.kd_fuzz_fraction is not None:
          if args.kd_fuzz_fraction < 0. or args.kd_fuzz_fraction > 1.:
              raise Exception('--kd_fuzz_fraction must be in [0., 1.]')
+    if args.observe_common_ancestors and args.observe_all_ancestors:
+        raise Exception('doesn\'t make sense to set both --observe_common_ancestors and --observe_all_ancestors')
     if [args.n_final_seqs, args.obs_times].count(None) != 1:
         raise Exception('exactly one of --n_final_seqs and --obs_times must be set')
     if args.selection and args.obs_times is None:
