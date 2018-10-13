@@ -94,10 +94,10 @@ class MutationModel():
         node = TreeNode()
         node.add_feature('sequence', sequence)
         node.add_feature('time', time)
-        node.dist = distance  # not sure why this isn't using add_feature(), but I don't want to change it
+        node.dist = distance  # doesn't use add_feature() because it's a builtin ete3 feature
         node.add_feature('terminated', False)  # set if it's dead (only set if it draws zero children, or if --kill_sampled_intermediates is set and it's sampled at an intermediate time point)
         node.add_feature('intermediate_sampled', False)  # set if it's sampled at an intermediate time point
-        node.add_feature('frequency', 0)  # observation frequency, seems to always be either 1 or 0 (set in set_observation_frequencies_and_names())
+        node.add_feature('frequency', 0)  # observation frequency, is set to either 1 or 0 in set_observation_frequencies_and_names(), then when the collapsed tree is constructed it can get bigger than 1 when the frequencies of nodes connected by zero-length branches are summed
         if selection:
             node.add_feature('lambda_', None)  # set in selection_utils.update_lambda_values()
             node.add_feature('AAseq', None)  # set in MutationModel.simulate()
@@ -470,13 +470,11 @@ class MutationModel():
         for node in tree.iter_descendants():
             parent = node.up
             if node.frequency == 0 and len(node.children) == 1:
-                node.delete(prevent_nondicotomic=False)
+                node.delete(prevent_nondicotomic=False)  # seems like this should instead use the preserve_branch_length=True option so we don't need the next line, but I don't want to change it
                 node.children[0].dist = hamming_distance(node.children[0].sequence, parent.sequence)
 
-        if args.selection:
-            collapsed_tree = CollapsedTree(tree=tree, name='GCsim selection', collapse_syn=False, allow_repeats=True)
-        else:
-            collapsed_tree = CollapsedTree(tree=tree, name='GCsim neutral')  # <-- This will fail if backmutations
+        # neutral collapse will fail if there's backmutations (?) [preserving old comment]
+        collapsed_tree = CollapsedTree(tree=tree, name='GCsim %s' % ('selection' if args.selection else 'neutral'), allow_repeats=args.selection)
         n_collapsed_seqs = sum(node.frequency > 0 for node in collapsed_tree.tree.traverse())
         if n_collapsed_seqs < 2:
             raise RuntimeError('collapsed tree contains only %d observed sequences (we require at least two)' % n_collapsed_seqs)
@@ -658,7 +656,7 @@ def main():
     parser.add_argument('--idlabel', action='store_true', help='Flag for labeling the sequence ids of the nodes in the output tree images, also write associated fasta alignment if True')
     parser.add_argument('--random_seed', type=int, help='for random number generator')
     parser.add_argument('--pair_bounds', help='for internal use only')
-    parser.add_argument('--observe_based_on_affinity', action='store_true', help='When selecting sequences to observe, instead of choosing at random (default), weight with 1/kd.')
+    parser.add_argument('--observe_based_on_affinity', action='store_true', help='When selecting sequences to observe, instead of choosing at random (default), weight with 1/kd (this weighting is kind of arbitrary, and eventually I should maybe figure out something else, but the point is to allow some configurability as to not just sampling entirely at random).')
 
     args = parser.parse_args()
     if args.random_seed is not None:
