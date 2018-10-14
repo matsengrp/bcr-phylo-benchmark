@@ -47,11 +47,6 @@ class MutationModel():
         self.lambda_min = 10e-10  # small lambdas are causing problems so make a minimum
         self.mutation_order = mutation_order
         self.allow_re_mutation = allow_re_mutation
-
-        # initialize info for choosing observed node names
-        self.potential_names, self.used_names = None, None
-        _, self.potential_names, self.used_names = selection_utils.choose_new_uid(self.potential_names, self.used_names, initial_length=4, shuffle=True)  # call once (ignoring the returned <uid>) to get the initial length right, and to shuffle them (shuffling is so if we're running multiple events, they have different leaf names, as long as we set the seeds differently)
-
         if args.mutability_file is not None and args.substitution_file is not None:
             self.context_model = {}
             with open(args.mutability_file, 'r') as f:
@@ -240,26 +235,6 @@ class MutationModel():
         return hist
 
     # ----------------------------------------------------------------------------------------
-    def set_observation_frequencies_and_names(self, args, tree, current_time, observed_leaves, targetAAseqs):
-        tree.name = 'naive'  # potentially overwritten below
-
-        if args.obs_times is not None and len(args.obs_times) > 1:  # observe all intermediate sampled nodes
-            for node in [l for l in tree.iter_descendants() if l.intermediate_sampled]:
-                node.frequency = 1
-                uid, self.potential_names, self.used_names = selection_utils.choose_new_uid(self.potential_names, self.used_names)
-                node.name = 'int-' + uid
-
-        if args.n_to_downsample is not None and len(observed_leaves) > args.n_to_downsample[-1]:  # if we were asked to downsample, and if there's enough leaves to do so
-            observed_leaves = self.choose_leaves_to_sample(args, observed_leaves, args.n_to_downsample[-1])
-
-        for leaf in observed_leaves:
-            leaf.frequency = 1
-            uid, self.potential_names, self.used_names = selection_utils.choose_new_uid(self.potential_names, self.used_names)
-            leaf.name = 'leaf-' + uid
-
-        self.sampled_hdist_hists[current_time] = self.get_hdist_hist(args, observed_leaves, targetAAseqs)  # NOTE this doesn't nodes added from --observe_common_ancestors or --observe_all_ancestors
-
-    # ----------------------------------------------------------------------------------------
     def simulate(self, args):
         '''
         Simulate a poisson branching process with mutation introduced
@@ -422,7 +397,26 @@ class MutationModel():
         if len(stop_leaves) > 0:
             print('    %d / %d leaves at final time point have stop codons' % (len(stop_leaves), len(stop_leaves) + len(non_stop_leaves)))
 
-        self.set_observation_frequencies_and_names(args, tree, current_time, non_stop_leaves, targetAAseqs)
+        tree.name = 'naive'  # overwritten below if --observe_common_ancestors is set
+        potential_names, used_names = None, None
+        _, potential_names, used_names = selection_utils.choose_new_uid(potential_names, used_names, initial_length=4, shuffle=True)  # call once (ignoring the returned <uid>) to get the initial length right, and to shuffle them (shuffling is so if we're running multiple events, they have different leaf names, as long as we set the seeds differently)
+
+        if args.obs_times is not None and len(args.obs_times) > 1:  # observe all intermediate sampled nodes
+            for node in [l for l in tree.iter_descendants() if l.intermediate_sampled]:
+                node.frequency = 1
+                uid, potential_names, used_names = selection_utils.choose_new_uid(potential_names, used_names)
+                node.name = 'int-' + uid
+
+        observed_leaves = list(non_stop_leaves)  # don't really need a separate list, but it's a little nicer
+        if args.n_to_downsample is not None and len(observed_leaves) > args.n_to_downsample[-1]:  # if we were asked to downsample, and if there's enough leaves to do so
+            observed_leaves = self.choose_leaves_to_sample(args, observed_leaves, args.n_to_downsample[-1])
+
+        for leaf in observed_leaves:
+            leaf.frequency = 1
+            uid, potential_names, used_names = selection_utils.choose_new_uid(potential_names, used_names)
+            leaf.name = 'leaf-' + uid
+
+        self.sampled_hdist_hists[current_time] = self.get_hdist_hist(args, observed_leaves, targetAAseqs)  # NOTE this doesn't nodes added from --observe_common_ancestors or --observe_all_ancestors
 
         if len(self.sampled_hdist_hists) > 0:
             with open(args.outbase + '_sampled_min_aa_target_hdists.p', 'wb') as histfile:
@@ -446,7 +440,7 @@ class MutationModel():
                 if ancestor.is_leaf():
                     continue
                 ancestor.frequency = 1
-                uid, self.potential_names, self.used_names = selection_utils.choose_new_uid(self.potential_names, self.used_names)
+                uid, potential_names, used_names = selection_utils.choose_new_uid(potential_names, used_names)
                 ancestor.name = 'mrca-' + uid
                 n_observed_ancestors += 1
             print('    added %d ancestor nodes' % n_observed_ancestors)
