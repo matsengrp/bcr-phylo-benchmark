@@ -586,26 +586,26 @@ def main():
     parser = argparse.ArgumentParser(description=help_str,
                                      formatter_class=MultiplyInheritedFormatter)
 
-    parser.add_argument('--naive_seq', default='GGACCTAGCCTCGTGAAACCTTCTCAGACTCTGTCCCTCACCTGTTCTGTCACTGGCGACTCCATCACCAGTGGTTACTGGAACTGGATCCGGAAATTCCCAGGGAATAAACTTGAGTACATGGGGTACATAAGCTACAGTGGTAGCACTTACTACAATCCATCTCTCAAAAGTCGAATCTCCATCACTCGAGACACATCCAAGAACCAGTACTACCTGCAGTTGAATTCTGTGACTACTGAGGACACAGCCACATATTACTGT', help='Initial naive nucleotide sequence.')
-    parser.add_argument('--naive_seq_file', default=None, help='Path to fasta file containing initial naive sequences from which do draw at random.')
+    parser.add_argument('--naive_seq', help='Initial naive nucleotide sequence.')
+    parser.add_argument('--naive_seq_file', help='Path to fasta file containing initial naive sequences from which do draw at random.')
     parser.add_argument('--mutability_file', default=file_dir+'/../motifs/Mutability_S5F.csv', help='Path to mutability model file.')
     parser.add_argument('--substitution_file', default=file_dir+'/../motifs/Substitution_S5F.csv', help='Path to substitution model file.')
     parser.add_argument('--no_context', action='store_true', help='Disable context dependence, i.e. use a uniform mutability and substitution.')
     parser.add_argument('--selection', action='store_true', help='If set, simulate with selection (otherwise neutral). Requires that you set --obs_times, and therefore that you *not* set --n_final_seqs.')
-    parser.add_argument('--n_final_seqs', type=int, default=None, help='If set, simulation stops when we\'ve reached this number of sequences (other stopping criteria: --stop_dist and --obs_times). Because sequences with stop codons are subsequently removed, and because more than on sequence is added per iteration, though we don\'t necessarily output this many. (If --n_to_downsample is also set, then we simulate until we have --n_final_seqs, then downsample to --n_to_downsample).')
-    parser.add_argument('--obs_times', type=int, nargs='+', default=None, help='If set, simulation stops when we\'ve reached this many generations. If more than one value is specified, the largest value is the final observation time (and stopping criterion), and earlier values are used as additional, intermediate sampling times (other stopping criteria: --n_final_seqs, --stop_dist)')
-    parser.add_argument('--stop_dist', type=int, default=None, help='If set, simulation stops when any simulated sequence is closer than this hamming distance to any of the target sequences (other stopping criteria: --n_final_seqs, --obs_times).')
+    parser.add_argument('--n_final_seqs', type=int, help='If set, simulation stops when we\'ve reached this number of sequences (other stopping criteria: --stop_dist and --obs_times). Because sequences with stop codons are subsequently removed, and because more than on sequence is added per iteration, though we don\'t necessarily output this many. (If --n_to_downsample is also set, then we simulate until we have --n_final_seqs, then downsample to --n_to_downsample).')
+    parser.add_argument('--obs_times', type=int, nargs='+', help='If set, simulation stops when we\'ve reached this many generations. If more than one value is specified, the largest value is the final observation time (and stopping criterion), and earlier values are used as additional, intermediate sampling times (other stopping criteria: --n_final_seqs, --stop_dist)')
+    parser.add_argument('--stop_dist', type=int, help='If set, simulation stops when any simulated sequence is closer than this hamming distance to any of the target sequences (other stopping criteria: --n_final_seqs, --obs_times).')
     parser.add_argument('--lambda', dest='lambda_', type=float, default=0.9, help='Poisson branching parameter')
-    parser.add_argument('--lambda0', type=float, default=None, nargs='*', help='Baseline sequence mutation rate(s): first value corresponds to --naive_seq, and optionally the second to --naive_seq2. If only one rate is provided for two sequences, this rate is used for both. If not set, the default is set below')
+    parser.add_argument('--lambda0', type=float, nargs='*', help='Baseline sequence mutation rate(s): first value corresponds to --naive_seq, and optionally the second to --naive_seq2. If only one rate is provided for two sequences, this rate is used for both. If not set, the default is set below')
     parser.add_argument('--target_sequence_lambda0', type=float, default=0.1, help='baseline mutation rate used for generating target sequences (you shouldn\'t need to change this)')
-    parser.add_argument('--n_to_downsample', type=int, nargs='+', default=None, help='Number of cells sampled during each sampling step. If one value is specified, this same value is applied to each time in --obs_times; whereas if more than one value is specified, each is applied to the corresponding value in --obs_times.')
+    parser.add_argument('--n_to_downsample', type=int, nargs='+', help='Number of cells sampled during each sampling step. If one value is specified, this same value is applied to each time in --obs_times; whereas if more than one value is specified, each is applied to the corresponding value in --obs_times.')
     parser.add_argument('--kill_sampled_intermediates', action='store_true', help='kill intermediate sequences as they are sampled')
     parser.add_argument('--observe_common_ancestors', action='store_true', help='If set, after deciding which nodes to observe (write to file) according to other options, we then also select the most recent common ancestor for every pair of those nodes (the idea is that this gets you the nodes that you would reconstruct with a phylogenetic program). NOTE histograms written to disk currently don\'t include these.')
     parser.add_argument('--carry_cap', type=int, default=1000, help='The carrying capacity of the simulation with selection. This number affects the fixation time of a new mutation.'
                         'Fixation time is approx. log2(carry_cap), e.g. log2(1000) ~= 10.')
     parser.add_argument('--target_count', type=int, default=10, help='The number of target sequences to generate.')
     parser.add_argument('--target_distance', type=int, default=10, help='Desired distance (number of non-synonymous mutations) between the naive sequence and the target sequences.')
-    parser.add_argument('--naive_seq2', default=None, help='Second seed naive nucleotide sequence. For simulating heavy/light chain co-evolution.')
+    parser.add_argument('--naive_seq2', help='Second seed naive nucleotide sequence. For simulating heavy/light chain co-evolution.')
     parser.add_argument('--naive_kd', type=float, default=100, help='kd of the naive sequence in nano molar.')
     parser.add_argument('--mature_kd', type=float, default=1, help='kd of the mature sequences in nano molar.')
     parser.add_argument('--kd_fuzz_fraction', type=float, help='If set, when calculating kd for each new sequence, add this amount of random fuzz (expressed as a fraction of the difference between mature and naive kd values, so must be between 0. and 1., which is used as the variance of gaussian). Only real point is so that plots are more realistic (and easier to read), since without this everybody is in one of a few columns of kd (since aa hamming distance is very granular), whereas kd should really be a continuous variable.')
@@ -636,8 +636,6 @@ def main():
     if args.no_context:
         args.mutability_file = None
         args.substitution_file = None
-    if args.lambda0 is None:
-        args.lambda0 = [max([1, int(.01*len(args.naive_seq))])]
     if [args.naive_seq, args.naive_seq_file].count(None) != 1:
         raise Exception('exactly one of --naive_seq and --naive_seq_file must be set')
     if args.naive_seq_file is not None:
@@ -647,6 +645,8 @@ def main():
         args.naive_seq = str(records[0].seq).upper()
     if args.naive_seq is not None:
         args.naive_seq = args.naive_seq.upper()
+    if args.lambda0 is None:
+        args.lambda0 = [max([1, int(.01*len(args.naive_seq))])]
     if has_stop(args.naive_seq):
         raise Exception('stop codon in --naive_seq (this isn\'t necessarily otherwise forbidden, but it\'ll quickly end you in a thicket of infinite loops, so should be corrected).')
     if args.kd_fuzz_fraction is not None:
