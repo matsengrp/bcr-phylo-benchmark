@@ -32,7 +32,7 @@ def gc_sim(outdir, c):
     T_arg = ' --obs_times {} '.format(' '.join(map(str, T))) if T else ''
     N_arg = ' --n_final_seqs {} '.format(N) if N is not None else ''
     n_arg = ' --n_to_downsample {} '.format(' '.join(map(str, n))) if n != [] else ''
-    seed_arg = ' --random_seed {} '.format(seed) if seed is not None else ''
+    seed_arg = ' --random_seed {} '.format(seed + c['runs']) if seed is not None else ''
     random_seq = ' --naive_seq_file {} '.format(random_naive) if random_naive is not None else ' --naive_seq {} '.format(naive)
     mut_sub = ' --mutability {} --substitution {} '.format(mutability, substitution) if not uniform_mut else ' --mutability none --substitution none '
     sele_arg = ' --selection --target_distance {} --target_count {} --carry_cap {} --skip_update {} {}'.format(*selection_param) if selection_param is not None else ''
