@@ -90,12 +90,12 @@ class MutationModel():
                     yield sequence_recurse
 
     # ----------------------------------------------------------------------------------------
-    def init_node(self, sequence, naive_seq, time, distance, selection=False):
+    def init_node(self, sequence, naive_seq, time, parent_distance, selection=False):
         node = TreeNode()
         node.add_feature('sequence', sequence)
         node.add_feature('naive_distance', hamming_distance(sequence, naive_seq))
         node.add_feature('time', time)
-        node.dist = distance  # doesn't use add_feature() because it's a builtin ete3 feature
+        node.dist = parent_distance  # distance to parent (doesn't use add_feature() because it's a builtin ete3 feature)
         node.add_feature('terminated', False)  # set if it's dead (only set if it draws zero children, or if --kill_sampled_intermediates is set and it's sampled at an intermediate time point)
         node.add_feature('intermediate_sampled', False)  # set if it's sampled at an intermediate time point
         node.add_feature('frequency', 0)  # observation frequency, is set to either 1 or 0 in set_observation_frequencies_and_names(), then when the collapsed tree is constructed it can get bigger than 1 when the frequencies of nodes connected by zero-length branches are summed
@@ -244,7 +244,7 @@ class MutationModel():
         or using an affinity muturation inspired model for selection.
         '''
 
-        tree = self.init_node(args.naive_seq, args.naive_seq, time=0, distance=0, selection=args.selection)
+        tree = self.init_node(args.naive_seq, args.naive_seq, time=0, parent_distance=0, selection=args.selection)
 
         if args.selection:
             self.sampled_hdist_hists, self.hdist_hists = [None for _ in range(max(args.obs_times) + 1)], [None for _ in range(max(args.obs_times) + 1)]  # list (over generations) of histograms of min AA distance to target over leaves
@@ -348,7 +348,7 @@ class MutationModel():
                         mutated_sequence, n_muts = self.mutate(leaf.sequence, args.lambda0[0], return_n_mutations=True)
                         if args.verbose:
                             n_mutation_list.append(n_muts)
-                    child = self.init_node(mutated_sequence, args.naive_seq, current_time, distance=sum(x!=y for x,y in zip(mutated_sequence, leaf.sequence)), selection=args.selection)
+                    child = self.init_node(mutated_sequence, args.naive_seq, current_time, parent_distance=hamming_distance(mutated_sequence, leaf.sequence), selection=args.selection)
                     if args.selection:
                         child.AAseq = str(translate(child.sequence))
                         child.target_distance = min([hamming_distance(child.AAseq, taa) for taa in targetAAseqs])
