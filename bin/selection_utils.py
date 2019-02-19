@@ -19,15 +19,15 @@ from matplotlib import pyplot as plt
 from GCutils import hamming_distance
 
 # ----------------------------------------------------------------------------------------
-def calc_kd(seqAA, targetAAseqs, kd_min, kd_max, k_exp, target_distance):
+def calc_kd(seqAA, min_target_distance, kd_min, kd_max, k_exp, initial_target_distance):
     ''' Find the closest target sequence, and apply the transformation function between hamming distance and kd. '''
     assert kd_min < kd_max
 
     if '*' in seqAA:  # nonsense sequences have zero affinity/infinite kd
         return float('inf')
 
-    distance = min([hamming_distance(seqAA, t) for t in targetAAseqs])  # aa hamming distance to nearest target sequence
-    kd = kd_min + (kd_max - kd_min) * (distance / float(target_distance))**k_exp  # apply transformation from distance to kd
+    distance = min_target_distance
+    kd = kd_min + (kd_max - kd_min) * (distance / float(initial_target_distance))**k_exp  # apply transformation from distance to kd
 
     return kd
 

@@ -228,7 +228,7 @@ class MutationModel():
 
     # ----------------------------------------------------------------------------------------
     def get_hdist_hist(self, args, leaves, targetAAseqs):
-        hd_distrib = [min([hamming_distance(tn.AAseq, ta) for ta in targetAAseqs]) for tn in leaves]  # list, for each leaf, of the smallest AA distance to any target
+        hd_distrib = [l.target_distance for l in leaves]  # list, for each leaf, of the smallest AA distance to any target
         # bin_edges = list(numpy.arange(min(hd_distrib) - 1.5, max(hd_distrib) + 1.5))  # this is nice for other reasons, but then you have to handle all the hists having different limits later on
         bin_edges = list(numpy.arange(-0.5, int(2 * args.target_distance) + 0.5))  # some sequences manage to wander quite far away from their nearest target without getting killed, so multiply by 2
         hist = scipy.histogram(hd_distrib, bins=bin_edges)  # if <bins> is a list, it defines the bin edges, including the rightmost edge
@@ -261,8 +261,8 @@ class MutationModel():
             assert len(set([args.target_distance] + [hamming_distance(aa_naive_seq, t) for t in targetAAseqs])) == 1  # all targets are the right distance from the naive
 
             tree.AAseq = str(aa_naive_seq)
-            tree.Kd = selection_utils.calc_kd(tree.AAseq, targetAAseqs, args.mature_kd, args.naive_kd, args.k_exp, args.target_distance)
             tree.target_distance = args.target_distance
+            tree.Kd = selection_utils.calc_kd(tree.AAseq, tree.target_distance, args.mature_kd, args.naive_kd, args.k_exp, args.target_distance)
 
             self.hdist_hists[0] = self.get_hdist_hist(args, tree, targetAAseqs)
 
@@ -350,8 +350,8 @@ class MutationModel():
                     child = self.init_node(mutated_sequence, current_time, distance=sum(x!=y for x,y in zip(mutated_sequence, leaf.sequence)), selection=args.selection)
                     if args.selection:
                         child.AAseq = str(translate(child.sequence))
-                        child.Kd = selection_utils.calc_kd(child.AAseq, targetAAseqs, args.mature_kd, args.naive_kd, args.k_exp, args.target_distance)
                         child.target_distance = min([hamming_distance(child.AAseq, taa) for taa in targetAAseqs])
+                        child.Kd = selection_utils.calc_kd(child.AAseq, child.target_distance, args.mature_kd, args.naive_kd, args.k_exp, args.target_distance)
                         if args.verbose:
                             kd_list.append(child.Kd)
                     leaf.add_child(child)
