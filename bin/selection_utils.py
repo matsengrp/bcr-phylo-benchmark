@@ -18,6 +18,9 @@ from matplotlib import pyplot as plt
 
 from GCutils import hamming_distance
 
+# # ----------------------------------------------------------------------------------------
+# def get_target_distance():
+
 # ----------------------------------------------------------------------------------------
 def calc_kd(seqAA, min_target_distance, kd_min, kd_max, k_exp, initial_target_distance):
     ''' Find the closest target sequence, and apply the transformation function between hamming distance and kd. '''

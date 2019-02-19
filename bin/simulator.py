@@ -90,9 +90,10 @@ class MutationModel():
                     yield sequence_recurse
 
     # ----------------------------------------------------------------------------------------
-    def init_node(self, sequence, time, distance, selection=False):
+    def init_node(self, sequence, naive_seq, time, distance, selection=False):
         node = TreeNode()
         node.add_feature('sequence', sequence)
+        node.add_feature('naive_distance', hamming_distance(sequence, naive_seq))
         node.add_feature('time', time)
         node.dist = distance  # doesn't use add_feature() because it's a builtin ete3 feature
         node.add_feature('terminated', False)  # set if it's dead (only set if it draws zero children, or if --kill_sampled_intermediates is set and it's sampled at an intermediate time point)
@@ -243,7 +244,7 @@ class MutationModel():
         or using an affinity muturation inspired model for selection.
         '''
 
-        tree = self.init_node(args.naive_seq, time=0, distance=0, selection=args.selection)
+        tree = self.init_node(args.naive_seq, args.naive_seq, time=0, distance=0, selection=args.selection)
 
         if args.selection:
             self.sampled_hdist_hists, self.hdist_hists = [None for _ in range(max(args.obs_times) + 1)], [None for _ in range(max(args.obs_times) + 1)]  # list (over generations) of histograms of min AA distance to target over leaves
@@ -347,7 +348,7 @@ class MutationModel():
                         mutated_sequence, n_muts = self.mutate(leaf.sequence, args.lambda0[0], return_n_mutations=True)
                         if args.verbose:
                             n_mutation_list.append(n_muts)
-                    child = self.init_node(mutated_sequence, current_time, distance=sum(x!=y for x,y in zip(mutated_sequence, leaf.sequence)), selection=args.selection)
+                    child = self.init_node(mutated_sequence, args.naive_seq, current_time, distance=sum(x!=y for x,y in zip(mutated_sequence, leaf.sequence)), selection=args.selection)
                     if args.selection:
                         child.AAseq = str(translate(child.sequence))
                         child.target_distance = min([hamming_distance(child.AAseq, taa) for taa in targetAAseqs])
@@ -365,7 +366,7 @@ class MutationModel():
                     print(('      %s      %4d   %3d  %s          %-14s       %-28s') % (pre_leaf_str, live_leaves.index(leaf), n_children, lambda_update_dbg_str, ' '.join(n_mutation_str_list), ' '.join(kd_str_list)))
             if args.selection:
                 self.hdist_hists[current_time] = self.get_hdist_hist(args, updated_live_leaves, targetAAseqs)  # min AA distance to any target
-                n_mutated_hdists = [hamming_distance(l.sequence, tree.sequence) for l in updated_live_leaves]  # nuc distance to naive sequence
+                n_mutated_hdists = [l.naive_distance for l in updated_live_leaves]  # nuc distance to naive sequence
                 self.n_mutated_hists[current_time] = scipy.histogram(n_mutated_hdists, bins=list(numpy.arange(-0.5, max(args.obs_times) + 0.5)))  # can't have more than one mutation per generation
                 # if args.verbose and hd_distrib:
                 #     print('            total population %-4d    majority distance to target %-3d' % (sum(hist[0]), scipy.argmax(hist[0])))
@@ -486,7 +487,7 @@ def run_simulation(args):
 
     # write some observable simulation stats
     frequency, distance_from_naive, degree = zip(*[(node.frequency,
-                                                    hamming_distance(node.sequence, args.naive_seq),
+                                                    node.naive_distance,
                                                     sum(hamming_distance(node.sequence, node2.sequence) == 1 for node2 in collapsed_tree.tree.traverse() if node2.frequency and node2 is not node))
                                                    for node in collapsed_tree.tree.traverse() if node.frequency])
     stats = pd.DataFrame({'genotype abundance':frequency,
