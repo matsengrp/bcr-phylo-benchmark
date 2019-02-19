@@ -19,7 +19,7 @@ from matplotlib import pyplot as plt
 from GCutils import hamming_distance
 
 # ----------------------------------------------------------------------------------------
-def calc_kd(seqAA, targetAAseqs, kd_min, kd_max, k_exp, target_distance, fuzz_fraction=None):
+def calc_kd(seqAA, targetAAseqs, kd_min, kd_max, k_exp, target_distance):
     ''' Find the closest target sequence, and apply the transformation function between hamming distance and kd. '''
     assert kd_min < kd_max
 
@@ -28,9 +28,6 @@ def calc_kd(seqAA, targetAAseqs, kd_min, kd_max, k_exp, target_distance, fuzz_fr
 
     distance = min([hamming_distance(seqAA, t) for t in targetAAseqs])  # aa hamming distance to nearest target sequence
     kd = kd_min + (kd_max - kd_min) * (distance / float(target_distance))**k_exp  # apply transformation from distance to kd
-    if fuzz_fraction is not None:  # maybe add some fuzz
-        assert fuzz_fraction > 0. and fuzz_fraction < 1.
-        kd += numpy.random.normal(scale=fuzz_fraction * (kd_max - kd_min))
 
     return kd
 
