@@ -90,20 +90,20 @@ class MutationModel():
                     yield sequence_recurse
 
     # ----------------------------------------------------------------------------------------
-    def init_node(self, sequence, naive_seq, time, parent_distance, selection=False):
+    def init_node(self, args, sequence, time, parent, targetAAseqs):
         node = TreeNode()
         node.add_feature('sequence', sequence)
-        node.add_feature('naive_distance', hamming_distance(sequence, naive_seq))
+        node.add_feature('naive_distance', hamming_distance(sequence, args.naive_seq))
         node.add_feature('time', time)
-        node.dist = parent_distance  # distance to parent (doesn't use add_feature() because it's a builtin ete3 feature)
+        node.dist = 0 if parent is None else hamming_distance(sequence, parent.sequence)  # doesn't use add_feature() because it's a builtin ete3 feature
         node.add_feature('terminated', False)  # set if it's dead (only set if it draws zero children, or if --kill_sampled_intermediates is set and it's sampled at an intermediate time point)
         node.add_feature('intermediate_sampled', False)  # set if it's sampled at an intermediate time point
         node.add_feature('frequency', 0)  # observation frequency, is set to either 1 or 0 in set_observation_frequencies_and_names(), then when the collapsed tree is constructed it can get bigger than 1 when the frequencies of nodes connected by zero-length branches are summed
-        if selection:
+        if args.selection:
             node.add_feature('lambda_', None)  # set in selection_utils.update_lambda_values()
-            node.add_feature('AAseq', None)  # set in MutationModel.simulate()
-            node.add_feature('Kd', None)  # same
-            node.add_feature('target_distance', None)  # same
+            node.add_feature('AAseq', str(translate(sequence)))
+            node.add_feature('target_distance', min([hamming_distance(node.AAseq, taa) for taa in targetAAseqs]))
+            node.add_feature('Kd', selection_utils.calc_kd(node.AAseq, node.target_distance, args.mature_kd, args.naive_kd, args.k_exp, args.target_distance))
         return node
 
     # ----------------------------------------------------------------------------------------
@@ -244,27 +244,21 @@ class MutationModel():
         or using an affinity muturation inspired model for selection.
         '''
 
-        tree = self.init_node(args.naive_seq, args.naive_seq, time=0, parent_distance=0, selection=args.selection)
-
         if args.selection:
             self.sampled_hdist_hists, self.hdist_hists = [None for _ in range(max(args.obs_times) + 1)], [None for _ in range(max(args.obs_times) + 1)]  # list (over generations) of histograms of min AA distance to target over leaves
             self.n_mutated_hists = [None for _ in range(max(args.obs_times) + 1)]
 
-            aa_naive_seq = translate(tree.sequence)
-
             print('    making %d target sequences' % args.target_count)
-            target_nuc_seqs, targetAAseqs = zip(*[self.make_target_sequence(args.naive_seq, aa_naive_seq, args.target_distance, args.target_sequence_lambda0) for i in range(args.target_count)])
+            target_nuc_seqs, targetAAseqs = zip(*[self.make_target_sequence(args.naive_seq, translate(args.naive_seq), args.target_distance, args.target_sequence_lambda0) for i in range(args.target_count)])
             with open(args.outbase + '_targets.fa', 'w') as tfile:
                 for itarget, tseq in enumerate(target_nuc_seqs):
                     tfile.write('>%s\n%s\n' % ('target-%d' % itarget, tseq))
 
-            assert len(set([len(aa_naive_seq)] + [len(t) for t in targetAAseqs])) == 1  # targets and naive seq are same length
-            assert len(set([args.target_distance] + [hamming_distance(aa_naive_seq, t) for t in targetAAseqs])) == 1  # all targets are the right distance from the naive
+            assert len(set([len(translate(args.naive_seq))] + [len(t) for t in targetAAseqs])) == 1  # targets and naive seq are same length
+            assert len(set([args.target_distance] + [hamming_distance(translate(args.naive_seq), t) for t in targetAAseqs])) == 1  # all targets are the right distance from the naive
 
-            tree.AAseq = str(aa_naive_seq)
-            tree.target_distance = args.target_distance
-            tree.Kd = selection_utils.calc_kd(tree.AAseq, tree.target_distance, args.mature_kd, args.naive_kd, args.k_exp, args.target_distance)
-
+        tree = self.init_node(args, args.naive_seq, 0, None, targetAAseqs)
+        if args.selection:
             self.hdist_hists[0] = self.get_hdist_hist(args, tree, targetAAseqs)
 
         print('    starting %d generations' % max(args.obs_times))
@@ -348,13 +342,9 @@ class MutationModel():
                         mutated_sequence, n_muts = self.mutate(leaf.sequence, args.lambda0[0], return_n_mutations=True)
                         if args.verbose:
                             n_mutation_list.append(n_muts)
-                    child = self.init_node(mutated_sequence, args.naive_seq, current_time, parent_distance=hamming_distance(mutated_sequence, leaf.sequence), selection=args.selection)
-                    if args.selection:
-                        child.AAseq = str(translate(child.sequence))
-                        child.target_distance = min([hamming_distance(child.AAseq, taa) for taa in targetAAseqs])
-                        child.Kd = selection_utils.calc_kd(child.AAseq, child.target_distance, args.mature_kd, args.naive_kd, args.k_exp, args.target_distance)
-                        if args.verbose:
-                            kd_list.append(child.Kd)
+                    child = self.init_node(args, mutated_sequence, current_time, leaf, targetAAseqs)
+                    if args.selection and args.verbose:
+                        kd_list.append(child.Kd)
                     leaf.add_child(child)
                     updated_live_leaves.append(child)
                     if leaf in updated_live_leaves:  # <leaf> isn't a leaf any more, since now it has children
