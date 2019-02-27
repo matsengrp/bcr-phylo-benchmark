@@ -436,7 +436,7 @@ class MutationModel():
 
         # neutral collapse will fail if there's backmutations (?) [preserving old comment]
         name = 'GCsim %s' % ('selection' if args.selection else 'neutral')
-        collapsed_tree = CollapsedTree(tree, name, args, allow_repeats=args.selection)
+        collapsed_tree = CollapsedTree(tree, name, allow_repeats=args.selection)
         n_collapsed_seqs = sum(node.frequency > 0 for node in collapsed_tree.tree.traverse())
         if n_collapsed_seqs < 2:
             raise RuntimeError('collapsed tree contains only %d observed sequences (we require at least two)' % n_collapsed_seqs)

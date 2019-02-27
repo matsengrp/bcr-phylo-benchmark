@@ -59,14 +59,13 @@ class CollapsedTree():
     '''
     Collapses an ete3 tree into a genotype collapsed tree based on hamming distance between node seqeunces.
     '''
-    def __init__(self, tree, name, args, meta=None, collapse_syn=False, allow_repeats=False, add_selection_metrics=False):
+    def __init__(self, tree, name, meta=None, collapse_syn=False, allow_repeats=False, add_selection_metrics=False):
         '''
         meta: dictionary with key value pairs e.g. the likelihood of a given tree
         tree: ete tree with frequency node feature. If uncollapsed, it will be collapsed.
         '''
         self.tree = tree
         self.name = name
-        self.args = args
         if meta is None:
             self.meta = dict()
         else:
