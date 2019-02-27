@@ -15,27 +15,31 @@ import string
 from scipy.optimize import minimize, fsolve
 import matplotlib; matplotlib.use('agg')
 from matplotlib import pyplot as plt
+from ete3 import TreeNode
 
-from GCutils import hamming_distance
-
-# # ----------------------------------------------------------------------------------------
-# def get_target_distance():
+from GCutils import has_stop_aa, hamming_distance
 
 # ----------------------------------------------------------------------------------------
-def calc_kd(seqAA, min_target_distance, kd_min, kd_max, k_exp, initial_target_distance):
-    ''' Find the closest target sequence, and apply the transformation function between hamming distance and kd. '''
-    assert kd_min < kd_max
+def target_distance_fcn(args, this_seq, target_seqs):
+    if args.metric_for_target_distance == 'aa':
+        return min([hamming_distance(this_seq.aa, t.aa) for t in target_seqs])
+    elif args.metric_for_target_distance == 'nuc':
+        return min([hamming_distance(this_seq.nuc, t.nuc) for t in target_seqs])
+    else:
+        assert False
 
-    if '*' in seqAA:  # nonsense sequences have zero affinity/infinite kd
+# ----------------------------------------------------------------------------------------
+def calc_kd(node, args):
+    if has_stop_aa(node.tseq.aa):  # nonsense sequences have zero affinity/infinite kd
         return float('inf')
 
-    distance = min_target_distance
-    kd = kd_min + (kd_max - kd_min) * (distance / float(initial_target_distance))**k_exp  # apply transformation from distance to kd
+    assert args.mature_kd < args.naive_kd
+    kd = args.mature_kd + (args.naive_kd - args.mature_kd) * (node.target_distance / float(args.target_distance))**args.k_exp  # transformation from distance to kd
 
     return kd
 
 # ----------------------------------------------------------------------------------------
-def update_lambda_values(tree, live_leaves, targetAAseqs, A_total, B_total, Lp):
+def update_lambda_values(tree, live_leaves, A_total, B_total, Lp):
     ''' update the lambda_ feature (parameter for the poisson progeny distribution) for each live leaf in <tree> '''
 
     def calc_BnA(Kd_n, A, B_total):

@@ -24,8 +24,9 @@ try:
 except:
     import pickle
 
-from GCutils import hamming_distance, has_stop, translate, CollapsedTree
+from GCutils import hamming_distance, has_stop_aa, translate, CollapsedTree, TranslatedSeq
 import selection_utils
+from selection_utils import target_distance_fcn
 
 scipy.seterr(all='raise')
 
@@ -74,6 +75,22 @@ class MutationModel():
             self.context_model = None
 
     # ----------------------------------------------------------------------------------------
+    def init_node(self, args, nuc_seq, time, parent, target_seqs=None):
+        node = TreeNode()
+        node.add_feature('tseq', TranslatedSeq(nuc_seq))
+        node.add_feature('naive_distance', hamming_distance(nuc_seq, args.naive_tseq.nuc))  # always nucleotide distance
+        node.add_feature('time', time)
+        node.dist = 0 if parent is None else hamming_distance(nuc_seq, parent.tseq.nuc)  # always nucleotide distance (doesn't use add_feature() because it's a builtin ete3 feature)
+        node.add_feature('terminated', False)  # set if it's dead (only set if it draws zero children, or if --kill_sampled_intermediates is set and it's sampled at an intermediate time point)
+        node.add_feature('intermediate_sampled', False)  # set if it's sampled at an intermediate time point
+        node.add_feature('frequency', 0)  # observation frequency, is set to either 1 or 0 in set_observation_frequencies_and_names(), then when the collapsed tree is constructed it can get bigger than 1 when the frequencies of nodes connected by zero-length branches are summed
+        if args.selection:
+            node.add_feature('lambda_', None)  # set in selection_utils.update_lambda_values() (i.e. is modified every (few) generations)
+            node.add_feature('target_distance', target_distance_fcn(args, node.tseq, target_seqs))  # nuc or aa distance, depending on args
+            node.add_feature('Kd', selection_utils.calc_kd(node, args))
+        return node
+
+    # ----------------------------------------------------------------------------------------
     @staticmethod
     def disambiguate(sequence):
         '''Generator of all possible nt sequences implied by a sequence containing Ns.'''
@@ -88,23 +105,6 @@ class MutationModel():
                 # NOTE: in python3 we could simply use "yield from..." instead of this loop
                 for sequence_recurse in MutationModel.disambiguate(sequence[:N_index] + n_replace + sequence[N_index+1:]):
                     yield sequence_recurse
-
-    # ----------------------------------------------------------------------------------------
-    def init_node(self, args, sequence, time, parent, targetAAseqs):
-        node = TreeNode()
-        node.add_feature('sequence', sequence)
-        node.add_feature('naive_distance', hamming_distance(sequence, args.naive_seq))
-        node.add_feature('time', time)
-        node.dist = 0 if parent is None else hamming_distance(sequence, parent.sequence)  # doesn't use add_feature() because it's a builtin ete3 feature
-        node.add_feature('terminated', False)  # set if it's dead (only set if it draws zero children, or if --kill_sampled_intermediates is set and it's sampled at an intermediate time point)
-        node.add_feature('intermediate_sampled', False)  # set if it's sampled at an intermediate time point
-        node.add_feature('frequency', 0)  # observation frequency, is set to either 1 or 0 in set_observation_frequencies_and_names(), then when the collapsed tree is constructed it can get bigger than 1 when the frequencies of nodes connected by zero-length branches are summed
-        if args.selection:
-            node.add_feature('lambda_', None)  # set in selection_utils.update_lambda_values()
-            node.add_feature('AAseq', str(translate(sequence)))
-            node.add_feature('target_distance', min([hamming_distance(node.AAseq, taa) for taa in targetAAseqs]))
-            node.add_feature('Kd', selection_utils.calc_kd(node.AAseq, node.target_distance, args.mature_kd, args.naive_kd, args.k_exp, args.target_distance))
-        return node
 
     # ----------------------------------------------------------------------------------------
     def mutability(self, kmer):
@@ -198,20 +198,18 @@ class MutationModel():
             return sequence
 
     # ----------------------------------------------------------------------------------------
-    def make_target_sequence(self, naive_seq, aa_naive_seq, n_muts, lambda0, n_max_tries=100):
-        '''
-        Make a single target sequence with <n_muts> hamming distance from <naive_seq> (in amino acid space)
-        '''
-        assert not has_stop(naive_seq)  # already checked during argumetent parsing, but we really want to make sure since the loop will blow up if there's a stop to start with
+    # Make a single target sequence with <n_muts> hamming distance from <args.naive_tseq> (nuc or aa distance according to args.metric_for_target_distance)
+    def make_target_sequence(self, args, n_max_tries=100):
+        assert not has_stop_aa(args.naive_tseq.aa)  # already checked during argument parsing, but we really want to make sure since the loop will blow up if there's a stop to start with
         itry = 0
         while itry < n_max_tries:
             dist = None
-            while dist is None or dist < n_muts:
-                mut_seq = self.mutate(naive_seq if dist is None else mut_seq, lambda0)
-                aa_mut = translate(mut_seq)
-                dist = hamming_distance(aa_naive_seq, aa_mut)
-                if dist == n_muts and '*' not in aa_mut:  # Stop codon cannot be part of the return
-                    return mut_seq, aa_mut
+            tseq = args.naive_tseq
+            while dist is None or dist < args.target_distance:
+                tseq = TranslatedSeq(self.mutate(tseq.nuc, args.target_sequence_lambda0))
+                dist = target_distance_fcn(args, args.naive_tseq, [tseq])
+                if dist == args.target_distance and not has_stop_aa(tseq.aa):  # Stop codon cannot be part of the return
+                    return tseq
             itry += 1
 
         raise RuntimeError('fell through after trying %d times to make a target sequence' % n_max_tries)
@@ -228,8 +226,8 @@ class MutationModel():
             return random.sample(leaves, n_to_sample)
 
     # ----------------------------------------------------------------------------------------
-    def get_hdist_hist(self, args, leaves, targetAAseqs):
-        hd_distrib = [l.target_distance for l in leaves]  # list, for each leaf, of the smallest AA distance to any target
+    def get_hdist_hist(self, args, leaves):
+        hd_distrib = [l.target_distance for l in leaves]  # list, for each leaf, of the target distance (default: smallest AA distance) to any target
         # bin_edges = list(numpy.arange(min(hd_distrib) - 1.5, max(hd_distrib) + 1.5))  # this is nice for other reasons, but then you have to handle all the hists having different limits later on
         bin_edges = list(numpy.arange(-0.5, int(2 * args.target_distance) + 0.5))  # some sequences manage to wander quite far away from their nearest target without getting killed, so multiply by 2
         hist = scipy.histogram(hd_distrib, bins=bin_edges)  # if <bins> is a list, it defines the bin edges, including the rightmost edge
@@ -249,17 +247,17 @@ class MutationModel():
             self.n_mutated_hists = [None for _ in range(max(args.obs_times) + 1)]
 
             print('    making %d target sequences' % args.target_count)
-            target_nuc_seqs, targetAAseqs = zip(*[self.make_target_sequence(args.naive_seq, translate(args.naive_seq), args.target_distance, args.target_sequence_lambda0) for i in range(args.target_count)])
+            target_seqs = [self.make_target_sequence(args) for i in range(args.target_count)]
             with open(args.outbase + '_targets.fa', 'w') as tfile:
-                for itarget, tseq in enumerate(target_nuc_seqs):
-                    tfile.write('>%s\n%s\n' % ('target-%d' % itarget, tseq))
+                for itarget, tseq in enumerate(target_seqs):
+                    tfile.write('>%s\n%s\n' % ('target-%d' % itarget, tseq.nuc))
 
-            assert len(set([len(translate(args.naive_seq))] + [len(t) for t in targetAAseqs])) == 1  # targets and naive seq are same length
-            assert len(set([args.target_distance] + [hamming_distance(translate(args.naive_seq), t) for t in targetAAseqs])) == 1  # all targets are the right distance from the naive
+            assert len(set([len(args.naive_tseq.aa)] + [len(t.aa) for t in target_seqs])) == 1  # targets and naive seq are same length
+            assert len(set([args.target_distance] + [target_distance_fcn(args, args.naive_tseq, [t]) for t in target_seqs])) == 1  # all targets are the right distance from the naive
 
-        tree = self.init_node(args, args.naive_seq, 0, None, targetAAseqs)
+        tree = self.init_node(args, args.naive_tseq.nuc, 0, None, target_seqs)
         if args.selection:
-            self.hdist_hists[0] = self.get_hdist_hist(args, tree, targetAAseqs)
+            self.hdist_hists[0] = self.get_hdist_hist(args, tree)
 
         print('    starting %d generations' % max(args.obs_times))
         if args.verbose:
@@ -282,7 +280,7 @@ class MutationModel():
             if args.obs_times is not None and len(args.obs_times) > 1 and current_time in args.obs_times:
                 assert len(args.obs_times) == len(args.n_to_downsample)
                 n_to_sample = args.n_to_downsample[args.obs_times.index(current_time)]
-                live_nostop_leaves = [l for l in tree.iter_leaves() if not l.terminated and not has_stop(l.sequence)]
+                live_nostop_leaves = [l for l in tree.iter_leaves() if not l.terminated and not has_stop_aa(l.tseq.aa)]
                 if len(live_nostop_leaves) < n_to_sample:
                     raise RuntimeError('tried to sample %d leaves at intermediate timepoint %d, but tree only has %d live leaves without stops (try sampling at a later generation, or use a larger carrying capacity).' % (n_to_sample, current_time, len(live_nostop_leaves)))
                 inter_sampled_leaves = self.choose_leaves_to_sample(args, live_nostop_leaves, n_to_sample)
@@ -291,7 +289,7 @@ class MutationModel():
                     if args.kill_sampled_intermediates:
                         leaf.terminated = True
                         n_unterminated_leaves -= 1
-                self.sampled_hdist_hists[current_time] = self.get_hdist_hist(args, inter_sampled_leaves, targetAAseqs)
+                self.sampled_hdist_hists[current_time] = self.get_hdist_hist(args, inter_sampled_leaves)
                 print('                  sampled %d (of %d live and stop-free) intermediate leaves (%s) at time %d (but time is about to increment to %d)' % (n_to_sample, len(live_nostop_leaves), 'killing each of them' if args.kill_sampled_intermediates else 'leaving them alive', current_time, current_time + 1))
 
             current_time += 1
@@ -307,7 +305,7 @@ class MutationModel():
                     lambda_update_dbg_str = ' '
                     if skip_lambda_n == 0:  # time to update the lambdas for every leaf
                         skip_lambda_n = args.skip_update + 1  # reset it so we don't update again until we've done <args.skip_update> more leaves (+ 1 is so that if args.skip_update is 0 we don't skip at all, i.e. args.skip_update is the number of leaves skipped, *not* the number of leaves *between* updates)
-                        tree = selection_utils.update_lambda_values(tree, updated_live_leaves, targetAAseqs, args.A_total, args.B_total, args.Lp)
+                        tree = selection_utils.update_lambda_values(tree, updated_live_leaves, args.A_total, args.B_total, args.Lp)
                         lambda_update_dbg_str = selection_utils.color('blue', 'x')
                     this_lambda = max(leaf.lambda_, self.lambda_min)
                     skip_lambda_n -= 1
@@ -335,14 +333,14 @@ class MutationModel():
                     n_mutation_list, kd_list = [], []
                 for _ in range(n_children):
                     if args.naive_seq2 is not None:  # for paired heavy/light we mutate them separately with their own mutation rate
-                        mutated_sequence1 = self.mutate(get_seq_from_pair(leaf.sequence, args.pair_bounds, iseq=0), args.lambda0[0])
-                        mutated_sequence2 = self.mutate(get_seq_from_pair(leaf.sequence, args.pair_bounds, iseq=1), args.lambda0[1])
+                        mutated_sequence1 = self.mutate(get_seq_from_pair(leaf.tseq.nuc, args.pair_bounds, iseq=0), args.lambda0[0])
+                        mutated_sequence2 = self.mutate(get_seq_from_pair(leaf.tseq.nuc, args.pair_bounds, iseq=1), args.lambda0[1])
                         mutated_sequence = mutated_sequence1 + mutated_sequence2
                     else:
-                        mutated_sequence, n_muts = self.mutate(leaf.sequence, args.lambda0[0], return_n_mutations=True)
+                        mutated_sequence, n_muts = self.mutate(leaf.tseq.nuc, args.lambda0[0], return_n_mutations=True)
                         if args.verbose:
                             n_mutation_list.append(n_muts)
-                    child = self.init_node(args, mutated_sequence, current_time, leaf, targetAAseqs)
+                    child = self.init_node(args, mutated_sequence, current_time, leaf, target_seqs)
                     if args.selection and args.verbose:
                         kd_list.append(child.Kd)
                     leaf.add_child(child)
@@ -355,7 +353,7 @@ class MutationModel():
                     pre_leaf_str = '' if live_leaves.index(leaf) == 0 else ('%12s %3d' % ('', len(updated_live_leaves)))
                     print(('      %s      %4d   %3d  %s          %-14s       %-28s') % (pre_leaf_str, live_leaves.index(leaf), n_children, lambda_update_dbg_str, ' '.join(n_mutation_str_list), ' '.join(kd_str_list)))
             if args.selection:
-                self.hdist_hists[current_time] = self.get_hdist_hist(args, updated_live_leaves, targetAAseqs)  # min AA distance to any target
+                self.hdist_hists[current_time] = self.get_hdist_hist(args, updated_live_leaves)
                 n_mutated_hdists = [l.naive_distance for l in updated_live_leaves]  # nuc distance to naive sequence
                 self.n_mutated_hists[current_time] = scipy.histogram(n_mutated_hdists, bins=list(numpy.arange(-0.5, max(args.obs_times) + 0.5)))  # can't have more than one mutation per generation
                 # if args.verbose and hd_distrib:
@@ -383,8 +381,8 @@ class MutationModel():
                 if len(intermediate_sampled_leaves) < n_to_sample:
                     raise RuntimeError('couldn\'t find the correct number of intermediate sampled leaves at time %d (should have sampled %d, but now we only find %d)' % (inter_time, n_to_sample, len(intermediate_sampled_leaves)))
 
-        stop_leaves = [l for l in tree.iter_leaves() if l.time == current_time and has_stop(l.sequence)]
-        non_stop_leaves = [l for l in tree.iter_leaves() if l.time == current_time and not has_stop(l.sequence)]  # non-stop leaves
+        stop_leaves = [l for l in tree.iter_leaves() if l.time == current_time and has_stop_aa(l.tseq.aa)]
+        non_stop_leaves = [l for l in tree.iter_leaves() if l.time == current_time and not has_stop_aa(l.tseq.aa)]  # non-stop leaves
         if len(stop_leaves) > 0:
             print('    %d / %d leaves at final time point have stop codons' % (len(stop_leaves), len(stop_leaves) + len(non_stop_leaves)))
 
@@ -407,7 +405,7 @@ class MutationModel():
             uid, potential_names, used_names = selection_utils.choose_new_uid(potential_names, used_names)
             leaf.name = 'leaf-' + uid
 
-        self.sampled_hdist_hists[current_time] = self.get_hdist_hist(args, observed_leaves, targetAAseqs)  # NOTE this doesn't nodes added from --observe_common_ancestors or --observe_all_ancestors
+        self.sampled_hdist_hists[current_time] = self.get_hdist_hist(args, observed_leaves)  # NOTE this doesn't nodes added from --observe_common_ancestors or --observe_all_ancestors
 
         if len(self.sampled_hdist_hists) > 0:
             with open(args.outbase + '_sampled_min_aa_target_hdists.p', 'wb') as histfile:
@@ -423,7 +421,7 @@ class MutationModel():
             parent = node.up
             if node.frequency == 0 and len(node.children) == 1:
                 node.delete(prevent_nondicotomic=False)  # seems like this should instead use the preserve_branch_length=True option so we don't need the next line, but I don't want to change it
-                node.children[0].dist = hamming_distance(node.children[0].sequence, parent.sequence)
+                node.children[0].dist = hamming_distance(node.children[0].tseq.nuc, parent.tseq.nuc)
 
         if args.observe_common_ancestors:
             n_observed_ancestors = 0
@@ -437,7 +435,8 @@ class MutationModel():
             print('    added %d ancestor nodes' % n_observed_ancestors)
 
         # neutral collapse will fail if there's backmutations (?) [preserving old comment]
-        collapsed_tree = CollapsedTree(tree=tree, name='GCsim %s' % ('selection' if args.selection else 'neutral'), allow_repeats=args.selection)
+        name = 'GCsim %s' % ('selection' if args.selection else 'neutral')
+        collapsed_tree = CollapsedTree(tree, name, args, allow_repeats=args.selection)
         n_collapsed_seqs = sum(node.frequency > 0 for node in collapsed_tree.tree.traverse())
         if n_collapsed_seqs < 2:
             raise RuntimeError('collapsed tree contains only %d observed sequences (we require at least two)' % n_collapsed_seqs)
@@ -465,20 +464,20 @@ def run_simulation(args):
     if args.naive_seq2 is not None:
         fhandles = [open('%s_seq%d.fasta' % (args.outbase, iseq + 1), 'w') for iseq in range(2)]
         for iseq, fh in enumerate(fhandles):
-            fh.write('>%s\n%s\n' % (tree.name, get_seq_from_pair(args.naive_seq, args.pair_bounds, iseq=iseq)))
+            fh.write('>%s\n%s\n' % (tree.name, get_seq_from_pair(args.naive_tseq.nuc, args.pair_bounds, iseq=iseq)))
         for node in [n for n in tree.iter_descendants() if n.frequency != 0]:  # NOTE doesn't iterate over root node
             for iseq, fh in enumerate(fhandles):
-                fh.write('>%s\n%s\n' % (node.name, get_seq_from_pair(node.sequence, args.pair_bounds, iseq=iseq)))
+                fh.write('>%s\n%s\n' % (node.name, get_seq_from_pair(node.tseq.nuc, args.pair_bounds, iseq=iseq)))
     else:
         with open('%s.fasta' % args.outbase, 'w') as fh:
-            fh.write('>%s\n%s\n' % (tree.name, args.naive_seq))
+            fh.write('>%s\n%s\n' % (tree.name, args.naive_tseq.nuc))
             for node in [n for n in tree.iter_descendants() if n.frequency != 0]:  # NOTE doesn't iterate over root node
-                fh.write('>%s\n%s\n' % (node.name, node.sequence))
+                fh.write('>%s\n%s\n' % (node.name, node.tseq.nuc))
 
     # write some observable simulation stats
     frequency, distance_from_naive, degree = zip(*[(node.frequency,
                                                     node.naive_distance,
-                                                    sum(hamming_distance(node.sequence, node2.sequence) == 1 for node2 in collapsed_tree.tree.traverse() if node2.frequency and node2 is not node))
+                                                    sum(hamming_distance(node.tseq.nuc, node2.tseq.nuc) == 1 for node2 in collapsed_tree.tree.traverse() if node2.frequency and node2 is not node))
                                                    for node in collapsed_tree.tree.traverse() if node.frequency])
     stats = pd.DataFrame({'genotype abundance':frequency,
                           'Hamming distance to root genotype':distance_from_naive,
@@ -500,21 +499,21 @@ def run_simulation(args):
 
     # Either plot by DNA sequence or amino acid sequence:
     if args.plotAA and args.selection:
-        colors[tree.AAseq] = 'gray'
+        colors[tree.tseq.aa] = 'gray'
     else:
-        colors[tree.sequence] = 'gray'
+        colors[tree.tseq.nuc] = 'gray'
 
     for n in tree.traverse():
         nstyle = NodeStyle()
         nstyle["size"] = 10
         if args.plotAA:
-            if n.AAseq not in colors:
-                colors[n.AAseq] = next(palette)
-            nstyle['fgcolor'] = colors[n.AAseq]
+            if n.tseq.aa not in colors:
+                colors[n.tseq.aa] = next(palette)
+            nstyle['fgcolor'] = colors[n.tseq.aa]
         else:
-            if n.sequence not in colors:
-                colors[n.sequence] = next(palette)
-            nstyle['fgcolor'] = colors[n.sequence]
+            if n.tseq.nuc not in colors:
+                colors[n.tseq.nuc] = next(palette)
+            nstyle['fgcolor'] = colors[n.tseq.nuc]
         n.set_style(nstyle)
 
     # Render and pickle lineage tree:
@@ -526,9 +525,9 @@ def run_simulation(args):
     # create an id-wise colormap
     # NOTE: node.name can be a set
     if args.plotAA and args.selection:
-        colormap = {node.name:colors[node.AAseq] for node in collapsed_tree.tree.traverse()}
+        colormap = {node.name:colors[node.tseq.aa] for node in collapsed_tree.tree.traverse()}
     else:
-        colormap = {node.name:colors[node.sequence] for node in collapsed_tree.tree.traverse()}
+        colormap = {node.name:colors[node.tseq.nuc] for node in collapsed_tree.tree.traverse()}
     collapsed_tree.write(args.outbase+'_collapsed_tree.p')
     collapsed_tree.render(args.outbase+'_collapsed_tree.svg',
                           idlabel=args.idlabel,
@@ -544,7 +543,7 @@ def run_simulation(args):
         # Define a list a suitable colors that are easy to distinguish:
         palette = ['crimson', 'purple', 'hotpink', 'limegreen', 'darkorange', 'darkkhaki', 'brown', 'lightsalmon', 'darkgreen', 'darkseagreen', 'darkslateblue', 'teal', 'olive', 'wheat', 'magenta', 'lightsteelblue', 'plum', 'gold']
         palette = itertools.cycle(list(palette)) # <-- circular iterator
-        colors = {i: next(palette) for i in range(int(len(args.naive_seq) // 3))}
+        colors = {i: next(palette) for i in range(int(len(args.naive_tseq.nuc) // 3))}
         # The minimum distance to the target is colored:
         colormap = {node.name:colors[node.target_distance] for node in collapsed_tree.tree.traverse()}
         collapsed_tree.write( args.outbase+'_collapsed_runstat_color_tree.p')
@@ -585,7 +584,9 @@ def main():
     parser.add_argument('--selection', action='store_true', help='If set, simulate with selection (otherwise neutral). Requires that you set --obs_times, and therefore that you *not* set --n_final_seqs.')
     parser.add_argument('--n_final_seqs', type=int, help='If set, simulation stops when we\'ve reached this number of sequences (other stopping criteria: --stop_dist and --obs_times). Because sequences with stop codons are subsequently removed, and because more than on sequence is added per iteration, though we don\'t necessarily output this many. (If --n_to_downsample is also set, then we simulate until we have --n_final_seqs, then downsample to --n_to_downsample).')
     parser.add_argument('--obs_times', type=int, nargs='+', help='If set, simulation stops when we\'ve reached this many generations. If more than one value is specified, the largest value is the final observation time (and stopping criterion), and earlier values are used as additional, intermediate sampling times (other stopping criteria: --n_final_seqs, --stop_dist)')
+# ----------------------------------------------------------------------------------------
     parser.add_argument('--stop_dist', type=int, help='If set, simulation stops when any simulated sequence is closer than this hamming distance to any of the target sequences (other stopping criteria: --n_final_seqs, --obs_times).')
+# ----------------------------------------------------------------------------------------
     parser.add_argument('--lambda', dest='lambda_', type=float, default=0.9, help='Poisson branching parameter')
     parser.add_argument('--lambda0', type=float, nargs='*', help='Baseline sequence mutation rate(s): first value corresponds to --naive_seq, and optionally the second to --naive_seq2. If only one rate is provided for two sequences, this rate is used for both. If not set, the default is set below')
     parser.add_argument('--target_sequence_lambda0', type=float, default=0.1, help='baseline mutation rate used for generating target sequences (you shouldn\'t need to change this)')
@@ -595,7 +596,10 @@ def main():
     parser.add_argument('--carry_cap', type=int, default=1000, help='The carrying capacity of the simulation with selection. This number affects the fixation time of a new mutation.'
                         'Fixation time is approx. log2(carry_cap), e.g. log2(1000) ~= 10.')
     parser.add_argument('--target_count', type=int, default=10, help='The number of target sequences to generate.')
-    parser.add_argument('--target_distance', type=int, default=10, help='Desired distance (number of non-synonymous mutations) between the naive sequence and the target sequences.')
+# ----------------------------------------------------------------------------------------
+    parser.add_argument('--target_distance', type=int, default=10, help='Desired distance (using --metric_for_target_distance) between the naive sequence and the target sequences.')
+    parser.add_argument('--metric_for_target_distance', default='aa', choices=['aa', 'nuc'], help='Metric to use to calculate the distance to each target sequence (aa: use amino acid distance, i.e. only non-synonymous mutations count, nuc: use nucleotide distance).')
+# ----------------------------------------------------------------------------------------
     parser.add_argument('--naive_seq2', help='Second seed naive nucleotide sequence. For simulating heavy/light chain co-evolution.')
     parser.add_argument('--naive_kd', type=float, default=100, help='kd of the naive sequence in nano molar.')
     parser.add_argument('--mature_kd', type=float, default=1, help='kd of the mature sequences in nano molar.')
@@ -637,8 +641,11 @@ def main():
         args.naive_seq = args.naive_seq.upper()
     if args.lambda0 is None:
         args.lambda0 = [max([1, int(.01*len(args.naive_seq))])]
-    if has_stop(args.naive_seq):
+    args.naive_tseq = TranslatedSeq(args.naive_seq)
+    args.naive_seq = None  # I think this is the most sensible thing to to
+    if has_stop_aa(args.naive_tseq.aa):
         raise Exception('stop codon in --naive_seq (this isn\'t necessarily otherwise forbidden, but it\'ll quickly end you in a thicket of infinite loops, so should be corrected).')
+
     if [args.n_final_seqs, args.obs_times].count(None) != 1:
         raise Exception('exactly one of --n_final_seqs and --obs_times must be set')
     if args.selection and args.obs_times is None:
@@ -665,11 +672,11 @@ def main():
             args.lambda0 = [args.lambda0[0], args.lambda0[0]]
         elif len(args.lambda0) != 2:
             raise Exception('--lambda0 (set to \'%s\') has to have either two values (if --naive_seq2 is set) or one value (if it isn\'t).' % args.lambda0)
-        if len(args.naive_seq) % 3 != 0:  # have to pad first one out to a full codon so we don't think there's a bunch of stop codons in the second sequence
-            args.naive_seq += 'N' * (3 - len(args.naive_seq) % 3)
-        args.pair_bounds = ((0, len(args.naive_seq)), (len(args.naive_seq), len(args.naive_seq + args.naive_seq2)))  # bounds to allow mashing the two sequences toegether as one string
-        args.naive_seq += args.naive_seq2.upper()  # merge the two seqeunces to simplify future dealing with the pair:
-        if has_stop(args.naive_seq):
+        if len(args.naive_tseq.nuc) % 3 != 0:  # have to pad first one out to a full codon so we don't think there's a bunch of stop codons in the second sequence
+            args.naive_tseq.nuc += 'N' * (3 - len(args.naive_tseq.nuc) % 3)
+        args.pair_bounds = ((0, len(args.naive_tseq.nuc)), (len(args.naive_tseq.nuc), len(args.naive_tseq.nuc + args.naive_seq2)))  # bounds to allow mashing the two sequences toegether as one string
+        args.naive_tseq = TranslatedSeq(args.naive_tseq.nuc + args.naive_seq2.upper())  # merge the two seqeunces to simplify future dealing with the pair:
+        if has_stop(args.naive_tseq.nuc):
             raise Exception('stop codon in --naive_seq2 (this isn\'t necessarily otherwise forbidden, but it\'ll quickly end you in a thicket of infinite loops, so should be corrected).')
 
     if args.selection:
