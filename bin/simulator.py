@@ -227,10 +227,8 @@ class MutationModel():
 
     # ----------------------------------------------------------------------------------------
     def get_hdist_hist(self, args, leaves):
-        hd_distrib = [l.target_distance for l in leaves]  # list, for each leaf, of the target distance (default: smallest AA distance) to any target
-        # bin_edges = list(numpy.arange(min(hd_distrib) - 1.5, max(hd_distrib) + 1.5))  # this is nice for other reasons, but then you have to handle all the hists having different limits later on
         bin_edges = list(numpy.arange(-0.5, int(2 * args.target_distance) + 0.5))  # some sequences manage to wander quite far away from their nearest target without getting killed, so multiply by 2
-        hist = scipy.histogram(hd_distrib, bins=bin_edges)  # if <bins> is a list, it defines the bin edges, including the rightmost edge
+        hist = scipy.histogram([l.target_distance for l in leaves], bins=bin_edges)  # if <bins> is a list, it defines the bin edges, including the rightmost edge
         return hist
 
     # ----------------------------------------------------------------------------------------
@@ -265,7 +263,6 @@ class MutationModel():
             print('             before/after   ileaf   n children     n mutations          Kd   (%s: updated lambdas)' % selection_utils.color('blue', 'x'))
         current_time = 0
         n_unterminated_leaves = 1
-        hd_distrib = []
         while True:
             if n_unterminated_leaves <= 0:  # if everybody's dead (probably can't actually go less than zero, but not sure)
                 break
@@ -273,7 +270,7 @@ class MutationModel():
                 break
             if args.obs_times is not None and current_time >= max(args.obs_times):  # if we've done as many generations as we were told to
                 break
-            if args.stop_dist is not None and current_time > 0 and args.stop_dist < min(hd_distrib):  # if the leaves have gotten close enough to the target sequences
+            if args.stop_dist is not None and current_time > 0 and min([l.target_distance for l in tree.iter_leaves()]) <= args.stop_dist:  # if the leaves have gotten close enough to the target sequences
                 break
 
             # sample any requested intermediate time points (from *last* generation, since we haven't yet incremented current_time)
@@ -356,10 +353,6 @@ class MutationModel():
                 self.hdist_hists[current_time] = self.get_hdist_hist(args, updated_live_leaves)
                 n_mutated_hdists = [l.naive_distance for l in updated_live_leaves]  # nuc distance to naive sequence
                 self.n_mutated_hists[current_time] = scipy.histogram(n_mutated_hdists, bins=list(numpy.arange(-0.5, max(args.obs_times) + 0.5)))  # can't have more than one mutation per generation
-                # if args.verbose and hd_distrib:
-                #     print('            total population %-4d    majority distance to target %-3d' % (sum(hist[0]), scipy.argmax(hist[0])))
-            # if current_time > 5:
-            #     assert False
 
         # write a histogram of the hamming distances to target at each generation
         if args.selection:
@@ -435,8 +428,8 @@ class MutationModel():
             print('    added %d ancestor nodes' % n_observed_ancestors)
 
         # neutral collapse will fail if there's backmutations (?) [preserving old comment]
-        name = 'GCsim %s' % ('selection' if args.selection else 'neutral')
-        collapsed_tree = CollapsedTree(tree, name, allow_repeats=args.selection)
+        treename = 'GCsim %s' % ('selection' if args.selection else 'neutral')
+        collapsed_tree = CollapsedTree(tree, treename, allow_repeats=args.selection)
         n_collapsed_seqs = sum(node.frequency > 0 for node in collapsed_tree.tree.traverse())
         if n_collapsed_seqs < 2:
             raise RuntimeError('collapsed tree contains only %d observed sequences (we require at least two)' % n_collapsed_seqs)
@@ -584,9 +577,7 @@ def main():
     parser.add_argument('--selection', action='store_true', help='If set, simulate with selection (otherwise neutral). Requires that you set --obs_times, and therefore that you *not* set --n_final_seqs.')
     parser.add_argument('--n_final_seqs', type=int, help='If set, simulation stops when we\'ve reached this number of sequences (other stopping criteria: --stop_dist and --obs_times). Because sequences with stop codons are subsequently removed, and because more than on sequence is added per iteration, though we don\'t necessarily output this many. (If --n_to_downsample is also set, then we simulate until we have --n_final_seqs, then downsample to --n_to_downsample).')
     parser.add_argument('--obs_times', type=int, nargs='+', help='If set, simulation stops when we\'ve reached this many generations. If more than one value is specified, the largest value is the final observation time (and stopping criterion), and earlier values are used as additional, intermediate sampling times (other stopping criteria: --n_final_seqs, --stop_dist)')
-# ----------------------------------------------------------------------------------------
-    parser.add_argument('--stop_dist', type=int, help='If set, simulation stops when any simulated sequence is closer than this hamming distance to any of the target sequences (other stopping criteria: --n_final_seqs, --obs_times).')
-# ----------------------------------------------------------------------------------------
+    parser.add_argument('--stop_dist', type=int, help='If set, simulation stops when any simulated sequence is closer than this hamming distance from any of the target sequences, according to --metric_for_target_distance (other stopping criteria: --n_final_seqs, --obs_times).')
     parser.add_argument('--lambda', dest='lambda_', type=float, default=0.9, help='Poisson branching parameter')
     parser.add_argument('--lambda0', type=float, nargs='*', help='Baseline sequence mutation rate(s): first value corresponds to --naive_seq, and optionally the second to --naive_seq2. If only one rate is provided for two sequences, this rate is used for both. If not set, the default is set below')
     parser.add_argument('--target_sequence_lambda0', type=float, default=0.1, help='baseline mutation rate used for generating target sequences (you shouldn\'t need to change this)')
@@ -596,10 +587,8 @@ def main():
     parser.add_argument('--carry_cap', type=int, default=1000, help='The carrying capacity of the simulation with selection. This number affects the fixation time of a new mutation.'
                         'Fixation time is approx. log2(carry_cap), e.g. log2(1000) ~= 10.')
     parser.add_argument('--target_count', type=int, default=10, help='The number of target sequences to generate.')
-# ----------------------------------------------------------------------------------------
     parser.add_argument('--target_distance', type=int, default=10, help='Desired distance (using --metric_for_target_distance) between the naive sequence and the target sequences.')
     parser.add_argument('--metric_for_target_distance', default='aa', choices=['aa', 'nuc'], help='Metric to use to calculate the distance to each target sequence (aa: use amino acid distance, i.e. only non-synonymous mutations count, nuc: use nucleotide distance).')
-# ----------------------------------------------------------------------------------------
     parser.add_argument('--naive_seq2', help='Second seed naive nucleotide sequence. For simulating heavy/light chain co-evolution.')
     parser.add_argument('--naive_kd', type=float, default=100, help='kd of the naive sequence in nano molar.')
     parser.add_argument('--mature_kd', type=float, default=1, help='kd of the mature sequences in nano molar.')

@@ -50,9 +50,9 @@ class TranslatedSeq(object):
 def has_stop_aa(seq):
     return '*' in seq
 
-# ----------------------------------------------------------------------------------------
-def has_stop_nuc(seq):
-    return has_stop_aa(translate(seq))
+# # ----------------------------------------------------------------------------------------
+# def has_stop_nuc(seq):
+#     return has_stop_aa(translate(seq))
 
 # ----------------------------------------------------------------------------------------
 class CollapsedTree():
