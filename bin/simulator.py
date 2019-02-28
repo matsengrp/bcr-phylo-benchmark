@@ -226,7 +226,7 @@ class MutationModel():
             return random.sample(leaves, n_to_sample)
 
     # ----------------------------------------------------------------------------------------
-    def get_hdist_hist(self, args, leaves):
+    def get_target_distance_hist(self, args, leaves):
         bin_edges = list(numpy.arange(-0.5, int(2 * args.target_distance) + 0.5))  # some sequences manage to wander quite far away from their nearest target without getting killed, so multiply by 2
         hist = scipy.histogram([l.target_distance for l in leaves], bins=bin_edges)  # if <bins> is a list, it defines the bin edges, including the rightmost edge
         return hist
@@ -241,7 +241,7 @@ class MutationModel():
         '''
 
         if args.selection:
-            self.sampled_hdist_hists, self.hdist_hists = [None for _ in range(max(args.obs_times) + 1)], [None for _ in range(max(args.obs_times) + 1)]  # list (over generations) of histograms of min AA distance to target over leaves
+            self.sampled_tdist_hists, self.tdist_hists = [None for _ in range(max(args.obs_times) + 1)], [None for _ in range(max(args.obs_times) + 1)]  # list (over generations) of histograms of target distance for each leaf
             self.n_mutated_hists = [None for _ in range(max(args.obs_times) + 1)]
 
             print('    making %d target sequences' % args.target_count)
@@ -255,7 +255,7 @@ class MutationModel():
 
         tree = self.init_node(args, args.naive_tseq.nuc, 0, None, target_seqs)
         if args.selection:
-            self.hdist_hists[0] = self.get_hdist_hist(args, tree)
+            self.tdist_hists[0] = self.get_target_distance_hist(args, tree)
 
         print('    starting %d generations' % max(args.obs_times))
         if args.verbose:
@@ -286,7 +286,7 @@ class MutationModel():
                     if args.kill_sampled_intermediates:
                         leaf.terminated = True
                         n_unterminated_leaves -= 1
-                self.sampled_hdist_hists[current_time] = self.get_hdist_hist(args, inter_sampled_leaves)
+                self.sampled_tdist_hists[current_time] = self.get_target_distance_hist(args, inter_sampled_leaves)
                 print('                  sampled %d (of %d live and stop-free) intermediate leaves (%s) at time %d (but time is about to increment to %d)' % (n_to_sample, len(live_nostop_leaves), 'killing each of them' if args.kill_sampled_intermediates else 'leaving them alive', current_time, current_time + 1))
 
             current_time += 1
@@ -350,14 +350,13 @@ class MutationModel():
                     pre_leaf_str = '' if live_leaves.index(leaf) == 0 else ('%12s %3d' % ('', len(updated_live_leaves)))
                     print(('      %s      %4d   %3d  %s          %-14s       %-28s') % (pre_leaf_str, live_leaves.index(leaf), n_children, lambda_update_dbg_str, ' '.join(n_mutation_str_list), ' '.join(kd_str_list)))
             if args.selection:
-                self.hdist_hists[current_time] = self.get_hdist_hist(args, updated_live_leaves)
-                n_mutated_hdists = [l.naive_distance for l in updated_live_leaves]  # nuc distance to naive sequence
-                self.n_mutated_hists[current_time] = scipy.histogram(n_mutated_hdists, bins=list(numpy.arange(-0.5, max(args.obs_times) + 0.5)))  # can't have more than one mutation per generation
+                self.tdist_hists[current_time] = self.get_target_distance_hist(args, updated_live_leaves)
+                self.n_mutated_hists[current_time] = scipy.histogram([l.naive_distance for l in updated_live_leaves], bins=list(numpy.arange(-0.5, max(args.obs_times) + 0.5)))  # can't have more than one mutation per generation
 
         # write a histogram of the hamming distances to target at each generation
         if args.selection:
             with open(args.outbase + '_min_aa_target_hdists.p', 'wb') as histfile:
-                pickle.dump(self.hdist_hists, histfile)
+                pickle.dump(self.tdist_hists, histfile)
             with open(args.outbase + '_n_mutated_nuc_hdists.p', 'wb') as histfile:
                 pickle.dump(self.n_mutated_hists, histfile)
 
@@ -398,11 +397,11 @@ class MutationModel():
             uid, potential_names, used_names = selection_utils.choose_new_uid(potential_names, used_names)
             leaf.name = 'leaf-' + uid
 
-        self.sampled_hdist_hists[current_time] = self.get_hdist_hist(args, observed_leaves)  # NOTE this doesn't nodes added from --observe_common_ancestors or --observe_all_ancestors
+        self.sampled_tdist_hists[current_time] = self.get_target_distance_hist(args, observed_leaves)  # NOTE this doesn't nodes added from --observe_common_ancestors or --observe_all_ancestors
 
-        if len(self.sampled_hdist_hists) > 0:
+        if len(self.sampled_tdist_hists) > 0:
             with open(args.outbase + '_sampled_min_aa_target_hdists.p', 'wb') as histfile:
-                pickle.dump(self.sampled_hdist_hists, histfile)
+                pickle.dump(self.sampled_tdist_hists, histfile)
 
         # prune away lineages that have zero total observation frequency
         for node in tree.iter_descendants():
@@ -545,8 +544,8 @@ def run_simulation(args):
                               colormap=colormap)
         # Write a file with the selection run stats. These are also plotted:
         with open(args.outbase + '_min_aa_target_hdists.p', 'rb') as fh:
-            hdist_hists = pickle.load(fh)
-            selection_utils.plot_runstats(hdist_hists, args.outbase, colors)
+            tdist_hists = pickle.load(fh)
+            selection_utils.plot_runstats(tdist_hists, args.outbase, colors)
 
 
 # ----------------------------------------------------------------------------------------
