@@ -124,11 +124,10 @@ def build_tree(sequences, parents, counts=None, naive='naive'):
         node = Tree()
         node.name = name
         node.add_feature('sequence', sequences[node.name])
-        if counts is not None:
-            if node.name in counts:
-                node.add_feature('frequency', counts[node.name])
-            else:
-                node.add_feature('frequency', 0)
+        if counts is not None and node.name in counts:
+            node.add_feature('frequency', counts[node.name])
+        else:
+            node.add_feature('frequency', 0)
         nodes[name] = node
     for name in sequences:
         if name in parents:
@@ -172,7 +171,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('name', help="Name of the tree.")
     parser.add_argument('phylip_outfile', type=existing_file, help='dnaml or dnapars outfile (verbose output with inferred ancestral sequences, option 5).')
-    parser.add_argument('countfile', type=existing_file, help="Count file.")
+    parser.add_argument('countfile', nargs='?', type=existing_file, help="Count file.")
     parser.add_argument('--outbase', default='collapsed_forest', help="Output file basename.")
     parser.add_argument('--naive', default='naive', help="Naive sequence id.")
     parser.add_argument('--dump_newick', action='store_true', default=False, help='Dump trees in newick format.')
