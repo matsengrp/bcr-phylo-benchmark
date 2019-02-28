@@ -9,7 +9,7 @@ from ete3 import Tree
 import re, random
 from collections import defaultdict
 from Bio.Data.IUPACData import ambiguous_dna_values
-from GCutils import hamming_distance, CollapsedTree, CollapsedForest
+from GCutils import hamming_distance, CollapsedTree, CollapsedForest, translate
 
 
 # iterate over recognized sections in the phylip output file.
@@ -103,15 +103,15 @@ def parse_outfile(outfile, countfile=None, naive='naive'):
 
 def disambiguate(tree):
     '''make random choices for ambiguous bases, respecting tree inheritance'''
-    sequence_length = len(tree.sequence)
+    sequence_length = len(tree.nuc_seq)
     for node in tree.traverse():
         for site in range(sequence_length):
-            base = node.sequence[site]
+            base = node.nuc_seq[site]
             if base not in 'ACGT':
                 new_base = random.choice(ambiguous_dna_values[base])
-                for node2 in node.traverse(is_leaf_fn=lambda n: False if base in [n2.sequence[site] for n2 in n.children] else True):
-                    if node2.sequence[site] == base:
-                        node2.sequence = node2.sequence[:site] + new_base + node2.sequence[(site+1):]
+                for node2 in node.traverse(is_leaf_fn=lambda n: False if base in [n2.nuc_seq[site] for n2 in n.children] else True):
+                    if node2.nuc_seq[site] == base:
+                        node2.nuc_seq = node2.nuc_seq[:site] + new_base + node2.nuc_seq[(site+1):]
     return tree
 
 
@@ -123,7 +123,8 @@ def build_tree(sequences, parents, counts=None, naive='naive'):
     for name in sequences:
         node = Tree()
         node.name = name
-        node.add_feature('sequence', sequences[node.name])
+        node.add_feature('nuc_seq', sequences[node.name])
+        node.add_feature('aa_seq', translate(sequences[node.name]))
         if counts is not None and node.name in counts:
             node.add_feature('frequency', counts[node.name])
         else:
@@ -144,7 +145,7 @@ def build_tree(sequences, parents, counts=None, naive='naive'):
         # remove possible unecessary unifurcation after rerooting
         if len(naive_parent.children) == 1:
             naive_parent.delete(prevent_nondicotomic=False)
-            naive_parent.children[0].dist = hamming_distance(naive_parent.children[0].sequence, nodes[naive_id].sequence)
+            naive_parent.children[0].dist = hamming_distance(naive_parent.children[0].nuc_seq, nodes[naive_id].nuc_seq)
         tree = nodes[naive_id]
 
     # make random choices for ambiguous bases
@@ -153,7 +154,7 @@ def build_tree(sequences, parents, counts=None, naive='naive'):
     # compute branch lengths
     tree.dist = 0  # no branch above root
     for node in tree.iter_descendants():
-        node.dist = hamming_distance(node.sequence, node.up.sequence)
+        node.dist = hamming_distance(node.nuc_seq, node.up.nuc_seq)
 
     return tree
 
