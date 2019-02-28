@@ -259,7 +259,7 @@ class MutationModel():
             self.tdist_hists[0] = self.get_target_distance_hist(args, tree)
 
         print('    starting %d generations' % max(args.obs_times))
-        if args.verbose:
+        if args.debug > 1:
             print('       gen   live leaves')
             print('             before/after   ileaf   n children     n mutations          Kd   (%s: updated lambdas)' % selection_utils.color('blue', 'x'))
         current_time = 0
@@ -296,7 +296,7 @@ class MutationModel():
             live_leaves = [l for l in tree.iter_leaves() if not l.terminated]  # NOTE this is out of date as soon as we've added any children in the loop, or killed anybody with no children
             updated_live_leaves = [l for l in live_leaves]  # but this one, we keep updating (so we don't have to call iter_leaves() so much, which was taking quite a bit of time) (matches n_unterminated_leaves)
             random.shuffle(live_leaves)
-            if args.verbose:
+            if args.debug > 1:
                 print('      %3d    %3d' % (current_time, len(live_leaves)), end='\n' if len(live_leaves) == 0 else '')  # NOTE these are live leaves *after* the intermediate sampling above
             for leaf in live_leaves:
                 if args.selection:
@@ -327,7 +327,7 @@ class MutationModel():
                     if len(live_leaves) == 1:
                         print('  terminating only leaf with no children')
 
-                if args.verbose:
+                if args.debug > 1:
                     n_mutation_list, kd_list = [], []
                 for _ in range(n_children):
                     if args.naive_seq2 is not None:  # for paired heavy/light we mutate them separately with their own mutation rate
@@ -336,16 +336,16 @@ class MutationModel():
                         mutated_sequence = mutated_sequence1 + mutated_sequence2
                     else:
                         mutated_sequence, n_muts = self.mutate(leaf.nuc_seq, args.lambda0[0], return_n_mutations=True)
-                        if args.verbose:
+                        if args.debug > 1:
                             n_mutation_list.append(n_muts)
                     child = self.init_node(args, mutated_sequence, current_time, leaf, target_seqs)
-                    if args.selection and args.verbose:
+                    if args.selection and args.debug > 1:
                         kd_list.append(child.Kd)
                     leaf.add_child(child)
                     updated_live_leaves.append(child)
                     if leaf in updated_live_leaves:  # <leaf> isn't a leaf any more, since now it has children
                         updated_live_leaves.remove(leaf)  # now that it's been updated, it matches n_unterminated_leaves
-                if args.verbose:
+                if args.debug > 1:
                     n_mutation_str_list = [('%d' % n) if n > 0 else '-' for n in n_mutation_list]
                     kd_str_list = ['%.0f' % kd for kd in kd_list]
                     pre_leaf_str = '' if live_leaves.index(leaf) == 0 else ('%12s %3d' % ('', len(updated_live_leaves)))
@@ -605,7 +605,8 @@ def main():
     parser.add_argument('--k_exp', type=float, default=2, help='The exponent in the function to map hamming distance to kd. '
                         'It is recommended to keep this as the default.')
     parser.add_argument('--plotAA', action='store_true', help='Plot trees with collapsing and coloring on amino acid level.')
-    parser.add_argument('--verbose', action='store_true', help='Print progress during simulation. Mostly useful for simulation with selection since this can take a while.')
+    parser.add_argument('--verbose', action='store_true', help='DEPRECATED use --debug')
+    parser.add_argument('--debug', type=int, default=0, choices=[0, 1, 2], help='Debug verbosity level.')
     parser.add_argument('--outbase', default='GCsimulator_out', help='Output file base name')
     parser.add_argument('--idlabel', action='store_true', help='Flag for labeling the sequence ids of the nodes in the output tree images, also write associated fasta alignment if True')
     parser.add_argument('--random_seed', type=int, help='for random number generator')
@@ -619,6 +620,11 @@ def main():
     if args.no_context:
         args.mutability_file = None
         args.substitution_file = None
+    if args.verbose:
+        print('%s transferring deprecated --verbose option to --debug 1' % selection_utils.color('red', 'note:'))
+        args.debug = 1
+    delattr(args, 'verbose')
+
     if [args.naive_seq, args.naive_seq_file].count(None) != 1:
         raise Exception('exactly one of --naive_seq and --naive_seq_file must be set')
     if args.naive_seq_file is not None:
@@ -631,7 +637,7 @@ def main():
     if args.lambda0 is None:
         args.lambda0 = [max([1, int(.01*len(args.naive_seq))])]
     args.naive_tseq = TranslatedSeq(args.naive_seq)
-    args.naive_seq = None  # I think this is the most sensible thing to to
+    delattr(args, 'naive_seq')  # I think this is the most sensible thing to to
     if has_stop_aa(args.naive_tseq.aa):
         raise Exception('stop codon in --naive_seq (this isn\'t necessarily otherwise forbidden, but it\'ll quickly end you in a thicket of infinite loops, so should be corrected).')
 
