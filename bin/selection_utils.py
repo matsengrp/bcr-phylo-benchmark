@@ -30,7 +30,7 @@ def target_distance_fcn(args, this_seq, target_seqs):
 
 # ----------------------------------------------------------------------------------------
 def calc_kd(node, args):
-    if has_stop_aa(node.tseq.aa):  # nonsense sequences have zero affinity/infinite kd
+    if has_stop_aa(node.aa_seq):  # nonsense sequences have zero affinity/infinite kd
         return float('inf')
 
     assert args.mature_kd < args.naive_kd

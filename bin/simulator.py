@@ -77,16 +77,17 @@ class MutationModel():
     # ----------------------------------------------------------------------------------------
     def init_node(self, args, nuc_seq, time, parent, target_seqs=None):
         node = TreeNode()
-        node.add_feature('tseq', TranslatedSeq(nuc_seq))
+        node.add_feature('nuc_seq', nuc_seq)  # NOTE don't use a TranslatedSeq feature since it gets written to pickle files, which then requires importing the class definition
+        node.add_feature('aa_seq', translate(nuc_seq))
         node.add_feature('naive_distance', hamming_distance(nuc_seq, args.naive_tseq.nuc))  # always nucleotide distance
         node.add_feature('time', time)
-        node.dist = 0 if parent is None else hamming_distance(nuc_seq, parent.tseq.nuc)  # always nucleotide distance (doesn't use add_feature() because it's a builtin ete3 feature)
+        node.dist = 0 if parent is None else hamming_distance(nuc_seq, parent.nuc_seq)  # always nucleotide distance (doesn't use add_feature() because it's a builtin ete3 feature)
         node.add_feature('terminated', False)  # set if it's dead (only set if it draws zero children, or if --kill_sampled_intermediates is set and it's sampled at an intermediate time point)
         node.add_feature('intermediate_sampled', False)  # set if it's sampled at an intermediate time point
         node.add_feature('frequency', 0)  # observation frequency, is set to either 1 or 0 in set_observation_frequencies_and_names(), then when the collapsed tree is constructed it can get bigger than 1 when the frequencies of nodes connected by zero-length branches are summed
         if args.selection:
             node.add_feature('lambda_', None)  # set in selection_utils.update_lambda_values() (i.e. is modified every (few) generations)
-            node.add_feature('target_distance', target_distance_fcn(args, node.tseq, target_seqs))  # nuc or aa distance, depending on args
+            node.add_feature('target_distance', target_distance_fcn(args, TranslatedSeq(nuc_seq, node.aa_seq), target_seqs))  # nuc or aa distance, depending on args
             node.add_feature('Kd', selection_utils.calc_kd(node, args))
         return node
 
@@ -277,7 +278,7 @@ class MutationModel():
             if args.obs_times is not None and len(args.obs_times) > 1 and current_time in args.obs_times:
                 assert len(args.obs_times) == len(args.n_to_downsample)
                 n_to_sample = args.n_to_downsample[args.obs_times.index(current_time)]
-                live_nostop_leaves = [l for l in tree.iter_leaves() if not l.terminated and not has_stop_aa(l.tseq.aa)]
+                live_nostop_leaves = [l for l in tree.iter_leaves() if not l.terminated and not has_stop_aa(l.aa_seq)]
                 if len(live_nostop_leaves) < n_to_sample:
                     raise RuntimeError('tried to sample %d leaves at intermediate timepoint %d, but tree only has %d live leaves without stops (try sampling at a later generation, or use a larger carrying capacity).' % (n_to_sample, current_time, len(live_nostop_leaves)))
                 inter_sampled_leaves = self.choose_leaves_to_sample(args, live_nostop_leaves, n_to_sample)
@@ -330,11 +331,11 @@ class MutationModel():
                     n_mutation_list, kd_list = [], []
                 for _ in range(n_children):
                     if args.naive_seq2 is not None:  # for paired heavy/light we mutate them separately with their own mutation rate
-                        mutated_sequence1 = self.mutate(get_seq_from_pair(leaf.tseq.nuc, args.pair_bounds, iseq=0), args.lambda0[0])
-                        mutated_sequence2 = self.mutate(get_seq_from_pair(leaf.tseq.nuc, args.pair_bounds, iseq=1), args.lambda0[1])
+                        mutated_sequence1 = self.mutate(get_seq_from_pair(leaf.nuc_seq, args.pair_bounds, iseq=0), args.lambda0[0])
+                        mutated_sequence2 = self.mutate(get_seq_from_pair(leaf.nuc_seq, args.pair_bounds, iseq=1), args.lambda0[1])
                         mutated_sequence = mutated_sequence1 + mutated_sequence2
                     else:
-                        mutated_sequence, n_muts = self.mutate(leaf.tseq.nuc, args.lambda0[0], return_n_mutations=True)
+                        mutated_sequence, n_muts = self.mutate(leaf.nuc_seq, args.lambda0[0], return_n_mutations=True)
                         if args.verbose:
                             n_mutation_list.append(n_muts)
                     child = self.init_node(args, mutated_sequence, current_time, leaf, target_seqs)
@@ -373,8 +374,8 @@ class MutationModel():
                 if len(intermediate_sampled_leaves) < n_to_sample:
                     raise RuntimeError('couldn\'t find the correct number of intermediate sampled leaves at time %d (should have sampled %d, but now we only find %d)' % (inter_time, n_to_sample, len(intermediate_sampled_leaves)))
 
-        stop_leaves = [l for l in tree.iter_leaves() if l.time == current_time and has_stop_aa(l.tseq.aa)]
-        non_stop_leaves = [l for l in tree.iter_leaves() if l.time == current_time and not has_stop_aa(l.tseq.aa)]  # non-stop leaves
+        stop_leaves = [l for l in tree.iter_leaves() if l.time == current_time and has_stop_aa(l.aa_seq)]
+        non_stop_leaves = [l for l in tree.iter_leaves() if l.time == current_time and not has_stop_aa(l.aa_seq)]  # non-stop leaves
         if len(stop_leaves) > 0:
             print('    %d / %d leaves at final time point have stop codons' % (len(stop_leaves), len(stop_leaves) + len(non_stop_leaves)))
 
@@ -413,7 +414,7 @@ class MutationModel():
             parent = node.up
             if node.frequency == 0 and len(node.children) == 1:
                 node.delete(prevent_nondicotomic=False)  # seems like this should instead use the preserve_branch_length=True option so we don't need the next line, but I don't want to change it
-                node.children[0].dist = hamming_distance(node.children[0].tseq.nuc, parent.tseq.nuc)
+                node.children[0].dist = hamming_distance(node.children[0].nuc_seq, parent.nuc_seq)
 
         if args.observe_common_ancestors:
             n_observed_ancestors = 0
@@ -459,17 +460,17 @@ def run_simulation(args):
             fh.write('>%s\n%s\n' % (tree.name, get_seq_from_pair(args.naive_tseq.nuc, args.pair_bounds, iseq=iseq)))
         for node in [n for n in tree.iter_descendants() if n.frequency != 0]:  # NOTE doesn't iterate over root node
             for iseq, fh in enumerate(fhandles):
-                fh.write('>%s\n%s\n' % (node.name, get_seq_from_pair(node.tseq.nuc, args.pair_bounds, iseq=iseq)))
+                fh.write('>%s\n%s\n' % (node.name, get_seq_from_pair(node.nuc_seq, args.pair_bounds, iseq=iseq)))
     else:
         with open('%s.fasta' % args.outbase, 'w') as fh:
             fh.write('>%s\n%s\n' % (tree.name, args.naive_tseq.nuc))
             for node in [n for n in tree.iter_descendants() if n.frequency != 0]:  # NOTE doesn't iterate over root node
-                fh.write('>%s\n%s\n' % (node.name, node.tseq.nuc))
+                fh.write('>%s\n%s\n' % (node.name, node.nuc_seq))
 
     # write some observable simulation stats
     frequency, distance_from_naive, degree = zip(*[(node.frequency,
                                                     node.naive_distance,
-                                                    sum(hamming_distance(node.tseq.nuc, node2.tseq.nuc) == 1 for node2 in collapsed_tree.tree.traverse() if node2.frequency and node2 is not node))
+                                                    sum(hamming_distance(node.nuc_seq, node2.nuc_seq) == 1 for node2 in collapsed_tree.tree.traverse() if node2.frequency and node2 is not node))
                                                    for node in collapsed_tree.tree.traverse() if node.frequency])
     stats = pd.DataFrame({'genotype abundance':frequency,
                           'Hamming distance to root genotype':distance_from_naive,
@@ -491,21 +492,21 @@ def run_simulation(args):
 
     # Either plot by DNA sequence or amino acid sequence:
     if args.plotAA and args.selection:
-        colors[tree.tseq.aa] = 'gray'
+        colors[tree.aa_seq] = 'gray'
     else:
-        colors[tree.tseq.nuc] = 'gray'
+        colors[tree.nuc_seq] = 'gray'
 
     for n in tree.traverse():
         nstyle = NodeStyle()
         nstyle["size"] = 10
         if args.plotAA:
-            if n.tseq.aa not in colors:
-                colors[n.tseq.aa] = next(palette)
-            nstyle['fgcolor'] = colors[n.tseq.aa]
+            if n.aa_seq not in colors:
+                colors[n.aa_seq] = next(palette)
+            nstyle['fgcolor'] = colors[n.aa_seq]
         else:
-            if n.tseq.nuc not in colors:
-                colors[n.tseq.nuc] = next(palette)
-            nstyle['fgcolor'] = colors[n.tseq.nuc]
+            if n.nuc_seq not in colors:
+                colors[n.nuc_seq] = next(palette)
+            nstyle['fgcolor'] = colors[n.nuc_seq]
         n.set_style(nstyle)
 
     # Render and pickle lineage tree:
@@ -517,9 +518,9 @@ def run_simulation(args):
     # create an id-wise colormap
     # NOTE: node.name can be a set
     if args.plotAA and args.selection:
-        colormap = {node.name:colors[node.tseq.aa] for node in collapsed_tree.tree.traverse()}
+        colormap = {node.name:colors[node.aa_seq] for node in collapsed_tree.tree.traverse()}
     else:
-        colormap = {node.name:colors[node.tseq.nuc] for node in collapsed_tree.tree.traverse()}
+        colormap = {node.name:colors[node.nuc_seq] for node in collapsed_tree.tree.traverse()}
     collapsed_tree.write(args.outbase+'_collapsed_tree.p')
     collapsed_tree.render(args.outbase+'_collapsed_tree.svg',
                           idlabel=args.idlabel,
