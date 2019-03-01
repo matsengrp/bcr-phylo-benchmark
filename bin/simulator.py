@@ -48,6 +48,7 @@ class MutationModel():
         self.lambda_min = 10e-10  # small lambdas are causing problems so make a minimum
         self.mutation_order = mutation_order
         self.allow_re_mutation = allow_re_mutation
+        self.translation_cache = {}
         if args.mutability_file is not None and args.substitution_file is not None:
             self.context_model = {}
             with open(args.mutability_file, 'r') as f:
@@ -75,10 +76,16 @@ class MutationModel():
             self.context_model = None
 
     # ----------------------------------------------------------------------------------------
+    def get_translation(self, nuc_seq):
+        if nuc_seq not in self.translation_cache:
+            self.translation_cache[nuc_seq] = translate(nuc_seq)
+        return self.translation_cache[nuc_seq]
+
+    # ----------------------------------------------------------------------------------------
     def init_node(self, args, nuc_seq, time, parent, target_seqs=None):
         node = TreeNode()
         node.add_feature('nuc_seq', nuc_seq)  # NOTE don't use a TranslatedSeq feature since it gets written to pickle files, which then requires importing the class definition
-        node.add_feature('aa_seq', translate(nuc_seq))
+        node.add_feature('aa_seq', self.get_translation(nuc_seq))
         node.add_feature('naive_distance', hamming_distance(nuc_seq, args.naive_tseq.nuc))  # always nucleotide distance
         node.add_feature('time', time)
         node.dist = 0 if parent is None else hamming_distance(nuc_seq, parent.nuc_seq)  # always nucleotide distance (doesn't use add_feature() because it's a builtin ete3 feature)
@@ -450,9 +457,14 @@ class MutationModel():
                     pickle.dump(self.sampled_tdist_hists, histfile)
 
         # prune away lineages that have zero total observation frequency
-        for node in tree.iter_descendants():
-            if sum(child.frequency for child in node.traverse()) == 0:  # if all children of <node> have zero observation frequency, detach <node> (only difference between traverse() and iter_descendants() seems to be that traverse() includes the node on which you're calling it, while iter_descendants() doesn't)
-                node.detach()
+        n_pruned = 0
+        start = time.time()
+        for node in tree.iter_descendants():  # NOTE this takes quite a bit of time
+            if any(child.frequency > 0 for child in node.traverse()):  # if all children of <node> have zero observation frequency, detach <node> (only difference between traverse() and iter_descendants() seems to be that traverse() includes the node on which you're calling it, while iter_descendants() doesn't)
+                continue
+            node.detach()
+            n_pruned += 1
+        print('    pruned %d lineages with zero observation frequency (%.1fs)' % (n_pruned, time.time()-start))
 
         # remove unobserved unifurcations
         for node in tree.iter_descendants():
