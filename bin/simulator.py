@@ -238,6 +238,9 @@ class MutationModel():
     def check_termination(self, args, n_unterminated_leaves, current_time, tree):
         finished = False
         dbgstr, termstr = [], []
+        if n_unterminated_leaves <= 0:  # if everybody's dead (probably can't actually go less than zero, but not sure)
+            termstr += ['  stopping: no unterminated leaves']
+            finished = True
         if args.n_final_seqs is not None:
             dbgstr += ['n leaves %d' % n_unterminated_leaves]
             if n_unterminated_leaves >= args.n_final_seqs:  # if we've got as many sequences as we were asked for
@@ -267,8 +270,7 @@ class MutationModel():
 
         target_seqs = None
         if args.selection:
-            self.sampled_tdist_hists, self.tdist_hists = [None for _ in range(max(args.obs_times) + 1)], [None for _ in range(max(args.obs_times) + 1)]  # list (over generations) of histograms of target distance for each leaf
-            self.n_mutated_hists = [None for _ in range(max(args.obs_times) + 1)]
+            self.sampled_tdist_hists, self.tdist_hists, self.n_mutated_hists = [None], [None], [None]
 
             print('    making %d target sequences' % args.target_count)
             target_seqs = [self.make_target_sequence(args) for i in range(args.target_count)]
@@ -284,17 +286,14 @@ class MutationModel():
             self.tdist_hists[0] = self.get_target_distance_hist(args, tree)
 
         if args.debug == 1:
-            print('   (end of)     live          kd          termination')
-            print('  generation   leaves     min    mean       check')
+            print('    end of      live     target dist (%s)          kd           termination' % args.metric_for_target_distance)
+            print('  generation   leaves      min  mean           min    mean         checks')
         if args.debug > 1:
             print('       gen   live leaves')
             print('             before/after   ileaf   n children     n mutations          Kd   (%s: updated lambdas)' % selection_utils.color('blue', 'x'))
         current_time = 0
         n_unterminated_leaves = 1
         while True:
-            if n_unterminated_leaves <= 0:  # if everybody's dead (probably can't actually go less than zero, but not sure)
-                break
-
             # sample any requested intermediate time points (from *last* generation, since we haven't yet incremented current_time)
             if args.obs_times is not None and len(args.obs_times) > 1 and current_time in args.obs_times:
                 assert len(args.obs_times) == len(args.n_to_sample)
@@ -312,6 +311,10 @@ class MutationModel():
                 print('                  sampled %d (of %d live and stop-free) intermediate leaves (%s) at time %d (but time is about to increment to %d)' % (n_to_sample, len(live_nostop_leaves), 'killing each of them' if args.kill_sampled_intermediates else 'leaving them alive', current_time, current_time + 1))
 
             current_time += 1
+
+            self.sampled_tdist_hists.append(None)
+            self.tdist_hists.append(None)
+            self.n_mutated_hists.append(None)
 
             skip_lambda_n = 0  # index keeping track of how many leaves since we last updated all the lambdas
             live_leaves = [l for l in tree.iter_leaves() if not l.terminated]  # NOTE this is out of date as soon as we've added any children in the loop, or killed anybody with no children
@@ -374,16 +377,19 @@ class MutationModel():
 
             if args.selection:
                 self.tdist_hists[current_time] = self.get_target_distance_hist(args, updated_live_leaves)
-                self.n_mutated_hists[current_time] = scipy.histogram([l.naive_distance for l in updated_live_leaves], bins=list(numpy.arange(-0.5, max(args.obs_times) + 0.5)))  # can't have more than one mutation per generation
+                self.n_mutated_hists[current_time] = scipy.histogram([l.naive_distance for l in updated_live_leaves], bins=list(numpy.arange(-0.5, (max(args.obs_times) if args.obs_times is not None else current_time) + 0.5)))  # can't have more than one mutation per generation
 
             finished, dbgstr, termstr = self.check_termination(args, n_unterminated_leaves, current_time, tree)
 
             if args.debug == 1:
-                minstr, meanstr = '-', '-'
+                mintd, meantd = '-', '-'
+                minkd, meankd = '-', '-'
                 if args.selection:
-                    tmpkdvals = [l.Kd for l in live_leaves if l.Kd != float('inf')]
-                    minstr, meanstr = '%5.1f' % min(tmpkdvals), '%5.1f' % numpy.mean(tmpkdvals)
-                print('    %3d       %4d      %5s  %5s       %s' % (current_time, len(updated_live_leaves), minstr, meanstr, dbgstr))
+                    tmptdvals = [l.target_distance for l in updated_live_leaves]
+                    mintd, meantd = '%2d' % min(tmptdvals), '%3.1f' % numpy.mean(tmptdvals)
+                    tmpkdvals = [l.Kd for l in updated_live_leaves if l.Kd != float('inf')]
+                    minkd, meankd = [('%5.1f' % v) for v in (min(tmpkdvals), numpy.mean(tmpkdvals))]
+                print('    %3d       %5d         %s  %s          %s  %s       %s' % (current_time, len(updated_live_leaves), mintd, meantd, minkd, meankd, dbgstr))
 
             if finished:
                 print(termstr)
@@ -397,8 +403,6 @@ class MutationModel():
                 pickle.dump(self.n_mutated_hists, histfile)
 
         # check some things
-        if args.obs_times is not None and max(args.obs_times) != current_time:
-            raise RuntimeError('tree terminated at time %d, but we were supposed to sample at time %d' % (current_time, max(args.obs_times)))
         if args.n_final_seqs is not None and n_unterminated_leaves < args.n_final_seqs:
             raise RuntimeError('tree terminated with %d leaves, but --n_final_seqs was set to %d' % (n_unterminated_leaves, args.n_final_seqs))
         if args.n_to_sample is not None and n_unterminated_leaves < args.n_to_sample[-1]:
@@ -434,7 +438,7 @@ class MutationModel():
             leaf.name = 'leaf-' + uid
 
         if args.selection:
-            self.sampled_tdist_hists[current_time] = self.get_target_distance_hist(args, observed_leaves)  # NOTE this doesn't nodes added from --observe_common_ancestors or --observe_all_ancestors
+            self.sampled_tdist_hists[current_time] = self.get_target_distance_hist(args, observed_leaves)  # NOTE this doesn't include nodes added from --observe_common_ancestors or --observe_all_ancestors
             if len(self.sampled_tdist_hists) > 0:
                 with open(args.outbase + '_sampled_min_aa_target_hdists.p', 'wb') as histfile:
                     pickle.dump(self.sampled_tdist_hists, histfile)

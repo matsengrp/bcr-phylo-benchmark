@@ -149,11 +149,11 @@ def find_Lp(f_full, U):
 
 
 # ----------------------------------------------------------------------------------------
-def plot_runstats(hdist_hists, outbase, colors):
-    def make_bounds(hdist_hists):  # hdist_hists: list (over generations) of scipy.hists of min distance to [any] target over leaves
+def plot_runstats(tdist_hists, outbase, colors):
+    def make_bounds(tdist_hists):  # tdist_hists: list (over generations) of scipy.hists of min distance to [any] target over leaves
         # scipy.hist is two arrays: [0] is bin counts, [1] is bin x values (not sure if low, high, or centers)
         all_counts = None  # sum over generations of number of leaves in each bin (i.e. at each min distance to target sequence)
-        for hist in hdist_hists:
+        for hist in tdist_hists:
             if all_counts is None:
                 all_counts = hist[0].copy()
             else:
@@ -166,8 +166,9 @@ def plot_runstats(hdist_hists, outbase, colors):
                 imax = j
         return(imin, imax)
 
-    pop_size = scipy.array([sum(r[0]) for r in hdist_hists])  # total population size
-    bounds = make_bounds(hdist_hists)  # bin indices of the min and max hamming distances to plot
+    tdist_hists = [h for h in tdist_hists if h is not None]  # the initial list of hist is filled with none values to length max(args.obs_times), but then if we stop because of another criterion some of the nones are still there, so i guess just remove them here for plotting
+    pop_size = scipy.array([sum(r[0]) for r in tdist_hists])  # total population size
+    bounds = make_bounds(tdist_hists)  # bin indices of the min and max hamming distances to plot
     if None in bounds:
         print('  note: couldn\'t get bounds for runstat hists, so not writing')
         return
@@ -179,7 +180,7 @@ def plot_runstats(hdist_hists, outbase, colors):
     # Then plot the counts for each hamming distance as a function on generation:
     for ibin in list(range(*bounds)):
         color = colors[ibin]
-        ax.plot(t, scipy.array([r[0][ibin] for r in hdist_hists]), lw=2, color=color, label='distance {}'.format(ibin))
+        ax.plot(t, scipy.array([r[0][ibin] for r in tdist_hists]), lw=2, color=color, label='distance {}'.format(ibin))
 
     plt.legend(bbox_to_anchor=(1.05, 1), loc=2, borderaxespad=0)
 
