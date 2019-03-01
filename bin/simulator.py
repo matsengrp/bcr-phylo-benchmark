@@ -259,6 +259,9 @@ class MutationModel():
             self.tdist_hists[0] = self.get_target_distance_hist(args, tree)
 
         print('    starting %d generations' % max(args.obs_times))
+        if args.debug == 1:
+            print('  generation    live         kd          termination')
+            print('               leaves    min    mean       check')
         if args.debug > 1:
             print('       gen   live leaves')
             print('             before/after   ileaf   n children     n mutations          Kd   (%s: updated lambdas)' % selection_utils.color('blue', 'x'))
@@ -267,12 +270,23 @@ class MutationModel():
         while True:
             if n_unterminated_leaves <= 0:  # if everybody's dead (probably can't actually go less than zero, but not sure)
                 break
-            if args.n_final_seqs is not None and n_unterminated_leaves >= args.n_final_seqs:  # if we've got as many sequences as we were asked for
-                break
-            if args.obs_times is not None and current_time >= max(args.obs_times):  # if we've done as many generations as we were told to
-                break
-            if args.stop_dist is not None and current_time > 0 and min([l.target_distance for l in tree.iter_leaves()]) <= args.stop_dist:  # if the leaves have gotten close enough to the target sequences
-                break
+            termstr = []
+            if args.n_final_seqs is not None:
+                termstr += ['n leaves %d' % n_unterminated_leaves]
+                if n_unterminated_leaves >= args.n_final_seqs:  # if we've got as many sequences as we were asked for
+                    print('  --n_final_seqs: breaking with %d >= %d unterminated leaves' % (n_unterminated_leaves, args.n_final_seqs))
+                    break
+            if args.obs_times is not None:
+                termstr += ['time %d' % current_time]
+                if current_time >= max(args.obs_times):  # if we've done as many generations as we were told to
+                    print('  --obs_times: breaking at generation %d >= %d' % (current_time, max(args.obs_times)))
+                    break
+            if args.stop_dist is not None and current_time > 0:
+                min_tdist = min([l.target_distance for l in tree.iter_leaves()])
+                termstr += ['min tdist %d' % min_tdist]
+                if min_tdist <= args.stop_dist:  # if the leaves have gotten close enough to the target sequences
+                    print('  --stop_dist: breaking with min target distance %d <= %d' % (min_tdist, args.stop_dist))
+                    break
 
             # sample any requested intermediate time points (from *last* generation, since we haven't yet incremented current_time)
             if args.obs_times is not None and len(args.obs_times) > 1 and current_time in args.obs_times:
@@ -296,6 +310,9 @@ class MutationModel():
             live_leaves = [l for l in tree.iter_leaves() if not l.terminated]  # NOTE this is out of date as soon as we've added any children in the loop, or killed anybody with no children
             updated_live_leaves = [l for l in live_leaves]  # but this one, we keep updating (so we don't have to call iter_leaves() so much, which was taking quite a bit of time) (matches n_unterminated_leaves)
             random.shuffle(live_leaves)
+            if args.debug == 1:
+                tmpkdvals = [l.Kd for l in live_leaves if l.Kd != float('inf')]
+                print('    %3d       %4d      %5.1f  %5.1f       %s' % (current_time, len(live_leaves), min(tmpkdvals), numpy.mean(tmpkdvals), ','.join(termstr)))
             if args.debug > 1:
                 print('      %3d    %3d' % (current_time, len(live_leaves)), end='\n' if len(live_leaves) == 0 else '')  # NOTE these are live leaves *after* the intermediate sampling above
             for leaf in live_leaves:
