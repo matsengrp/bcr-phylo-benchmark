@@ -228,9 +228,33 @@ class MutationModel():
 
     # ----------------------------------------------------------------------------------------
     def get_target_distance_hist(self, args, leaves):
+        if not args.selection:
+            return scipy.histogram([0])
         bin_edges = list(numpy.arange(-0.5, int(2 * args.target_distance) + 0.5))  # some sequences manage to wander quite far away from their nearest target without getting killed, so multiply by 2
         hist = scipy.histogram([l.target_distance for l in leaves], bins=bin_edges)  # if <bins> is a list, it defines the bin edges, including the rightmost edge
         return hist
+
+    # ----------------------------------------------------------------------------------------
+    def check_termination(self, args, n_unterminated_leaves, current_time, tree):
+        finished = False
+        dbgstr, termstr = [], []
+        if args.n_final_seqs is not None:
+            dbgstr += ['n leaves %d' % n_unterminated_leaves]
+            if n_unterminated_leaves >= args.n_final_seqs:  # if we've got as many sequences as we were asked for
+                termstr += ['  --n_final_seqs: breaking with %d >= %d unterminated leaves' % (n_unterminated_leaves, args.n_final_seqs)]
+                finished = True
+        if args.obs_times is not None:
+            dbgstr += ['time %d' % current_time]
+            if current_time >= max(args.obs_times):  # if we've done as many generations as we were told to
+                termstr += ['  --obs_times: breaking at generation %d >= %d' % (current_time, max(args.obs_times))]
+                finished = True
+        if args.stop_dist is not None and current_time > 0:
+            min_tdist = min([l.target_distance for l in tree.iter_leaves()])
+            dbgstr += ['min tdist %d' % min_tdist]
+            if min_tdist <= args.stop_dist:  # if the leaves have gotten close enough to the target sequences
+                termstr += ['  --stop_dist: breaking with min target distance %d <= %d' % (min_tdist, args.stop_dist)]
+                finished = True
+        return finished, ', '.join(dbgstr), '\n'.join(termstr)
 
     # ----------------------------------------------------------------------------------------
     def simulate(self, args):
@@ -241,6 +265,7 @@ class MutationModel():
         or using an affinity muturation inspired model for selection.
         '''
 
+        target_seqs = None
         if args.selection:
             self.sampled_tdist_hists, self.tdist_hists = [None for _ in range(max(args.obs_times) + 1)], [None for _ in range(max(args.obs_times) + 1)]  # list (over generations) of histograms of target distance for each leaf
             self.n_mutated_hists = [None for _ in range(max(args.obs_times) + 1)]
@@ -258,10 +283,9 @@ class MutationModel():
         if args.selection:
             self.tdist_hists[0] = self.get_target_distance_hist(args, tree)
 
-        print('    starting %d generations' % max(args.obs_times))
         if args.debug == 1:
-            print('  generation    live         kd          termination')
-            print('               leaves    min    mean       check')
+            print('   (end of)     live          kd          termination')
+            print('  generation   leaves     min    mean       check')
         if args.debug > 1:
             print('       gen   live leaves')
             print('             before/after   ileaf   n children     n mutations          Kd   (%s: updated lambdas)' % selection_utils.color('blue', 'x'))
@@ -270,23 +294,6 @@ class MutationModel():
         while True:
             if n_unterminated_leaves <= 0:  # if everybody's dead (probably can't actually go less than zero, but not sure)
                 break
-            termstr = []  # just for dbg
-            if args.n_final_seqs is not None:
-                termstr += ['n leaves %d' % n_unterminated_leaves]
-                if n_unterminated_leaves >= args.n_final_seqs:  # if we've got as many sequences as we were asked for
-                    print('  --n_final_seqs: breaking with %d >= %d unterminated leaves' % (n_unterminated_leaves, args.n_final_seqs))
-                    break
-            if args.obs_times is not None:
-                termstr += ['time %d' % current_time]
-                if current_time >= max(args.obs_times):  # if we've done as many generations as we were told to
-                    print('  --obs_times: breaking at generation %d >= %d' % (current_time, max(args.obs_times)))
-                    break
-            if args.stop_dist is not None and current_time > 0:
-                min_tdist = min([l.target_distance for l in tree.iter_leaves()])
-                termstr += ['min tdist %d' % min_tdist]
-                if min_tdist <= args.stop_dist:  # if the leaves have gotten close enough to the target sequences
-                    print('  --stop_dist: breaking with min target distance %d <= %d' % (min_tdist, args.stop_dist))
-                    break
 
             # sample any requested intermediate time points (from *last* generation, since we haven't yet incremented current_time)
             if args.obs_times is not None and len(args.obs_times) > 1 and current_time in args.obs_times:
@@ -310,9 +317,6 @@ class MutationModel():
             live_leaves = [l for l in tree.iter_leaves() if not l.terminated]  # NOTE this is out of date as soon as we've added any children in the loop, or killed anybody with no children
             updated_live_leaves = [l for l in live_leaves]  # but this one, we keep updating (so we don't have to call iter_leaves() so much, which was taking quite a bit of time) (matches n_unterminated_leaves)
             random.shuffle(live_leaves)
-            if args.debug == 1:
-                tmpkdvals = [l.Kd for l in live_leaves if l.Kd != float('inf')]
-                print('    %3d       %4d      %5.1f  %5.1f       %s' % (current_time, len(live_leaves), min(tmpkdvals), numpy.mean(tmpkdvals), ','.join(termstr)))
             if args.debug > 1:
                 print('      %3d    %3d' % (current_time, len(live_leaves)), end='\n' if len(live_leaves) == 0 else '')  # NOTE these are live leaves *after* the intermediate sampling above
             for leaf in live_leaves:
@@ -367,9 +371,23 @@ class MutationModel():
                     kd_str_list = ['%.0f' % kd for kd in kd_list]
                     pre_leaf_str = '' if live_leaves.index(leaf) == 0 else ('%12s %3d' % ('', len(updated_live_leaves)))
                     print(('      %s      %4d   %3d  %s          %-14s       %-28s') % (pre_leaf_str, live_leaves.index(leaf), n_children, lambda_update_dbg_str, ' '.join(n_mutation_str_list), ' '.join(kd_str_list)))
+
             if args.selection:
                 self.tdist_hists[current_time] = self.get_target_distance_hist(args, updated_live_leaves)
                 self.n_mutated_hists[current_time] = scipy.histogram([l.naive_distance for l in updated_live_leaves], bins=list(numpy.arange(-0.5, max(args.obs_times) + 0.5)))  # can't have more than one mutation per generation
+
+            finished, dbgstr, termstr = self.check_termination(args, n_unterminated_leaves, current_time, tree)
+
+            if args.debug == 1:
+                minstr, meanstr = '-', '-'
+                if args.selection:
+                    tmpkdvals = [l.Kd for l in live_leaves if l.Kd != float('inf')]
+                    minstr, meanstr = '%5.1f' % min(tmpkdvals), '%5.1f' % numpy.mean(tmpkdvals)
+                print('    %3d       %4d      %5s  %5s       %s' % (current_time, len(updated_live_leaves), minstr, meanstr, dbgstr))
+
+            if finished:
+                print(termstr)
+                break
 
         # write a histogram of the hamming distances to target at each generation
         if args.selection:
@@ -415,11 +433,11 @@ class MutationModel():
             uid, potential_names, used_names = selection_utils.choose_new_uid(potential_names, used_names)
             leaf.name = 'leaf-' + uid
 
-        self.sampled_tdist_hists[current_time] = self.get_target_distance_hist(args, observed_leaves)  # NOTE this doesn't nodes added from --observe_common_ancestors or --observe_all_ancestors
-
-        if len(self.sampled_tdist_hists) > 0:
-            with open(args.outbase + '_sampled_min_aa_target_hdists.p', 'wb') as histfile:
-                pickle.dump(self.sampled_tdist_hists, histfile)
+        if args.selection:
+            self.sampled_tdist_hists[current_time] = self.get_target_distance_hist(args, observed_leaves)  # NOTE this doesn't nodes added from --observe_common_ancestors or --observe_all_ancestors
+            if len(self.sampled_tdist_hists) > 0:
+                with open(args.outbase + '_sampled_min_aa_target_hdists.p', 'wb') as histfile:
+                    pickle.dump(self.sampled_tdist_hists, histfile)
 
         # prune away lineages that have zero total observation frequency
         for node in tree.iter_descendants():
@@ -632,9 +650,11 @@ def main():
     parser.add_argument('--n_to_downsample', type=int, nargs='+', help='DEPRECATED use --n_to_sample')
 
     args = parser.parse_args()
+
     if args.random_seed is not None:
         numpy.random.seed(args.random_seed)
         random.seed(args.random_seed)
+
     if args.no_context:
         args.mutability_file = None
         args.substitution_file = None
@@ -673,7 +693,7 @@ def main():
         if len(args.n_to_sample) != 1:  # wtf?
             raise Exception('--n_to_sample must a single value when specifying --n_final_seqs')
     if args.obs_times is not None and len(args.obs_times) > 1 and args.n_to_sample is None:
-        raise Exception('--n_to_sample must be specified when using intermediate sampling')
+        raise Exception('--n_to_sample must be set if more than one obs time is specified using (i.e. for intermediate sampling)')
     if args.n_to_sample is not None and args.obs_times is not None and len(args.n_to_sample) != len(args.obs_times):
         if len(args.n_to_sample) == 1:
             print('  note: expanding --n_to_sample to match --obs_times length: %s --> %s' % (args.n_to_sample, [args.n_to_sample[0] for _ in args.obs_times]))
