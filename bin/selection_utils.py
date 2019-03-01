@@ -168,6 +168,9 @@ def plot_runstats(hdist_hists, outbase, colors):
 
     pop_size = scipy.array([sum(r[0]) for r in hdist_hists])  # total population size
     bounds = make_bounds(hdist_hists)  # bin indices of the min and max hamming distances to plot
+    if None in bounds:
+        print('  note: couldn\'t get bounds for runstat hists, so not writing')
+        return
 
     fig = plt.figure()
     ax = plt.subplot(111)
