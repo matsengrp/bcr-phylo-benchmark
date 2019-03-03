@@ -24,7 +24,7 @@ try:
 except:
     import pickle
 
-from GCutils import hamming_distance, has_stop_aa, translate, CollapsedTree, TranslatedSeq
+from GCutils import hamming_distance, has_stop_aa, translate, replace_codon_in_aa_seq, CollapsedTree, TranslatedSeq
 import selection_utils
 from selection_utils import target_distance_fcn
 
@@ -32,22 +32,20 @@ scipy.seterr(all='raise')
 
 # ----------------------------------------------------------------------------------------
 # For paired heavy/light, the sequences are stored sequentially in one string. This fcn is for extracting them.
-def get_seq_from_pair(joint_seq, pair_bounds, iseq):
+def get_pair_seq(joint_seq, pair_bounds, iseq):
     return joint_seq[pair_bounds[iseq][0] : pair_bounds[iseq][1]]
 
 # ----------------------------------------------------------------------------------------
 class MutationModel():
     # ----------------------------------------------------------------------------------------
-    def __init__(self, args, mutation_order=True, allow_re_mutation=True):
+    def __init__(self, args, mutation_order=True):
         """
         initialized with input files of the S5F format
         @param mutation_order: whether or not to mutate sequences using a context sensitive manner
                                where mutation order matters
-        @param allow_re_mutation: allow the same position to mutate multiple times on a single branch
         """
         self.lambda_min = 10e-10  # small lambdas are causing problems so make a minimum
         self.mutation_order = mutation_order
-        self.allow_re_mutation = allow_re_mutation
         self.translation_cache = {}
         if args.mutability_file is not None and args.substitution_file is not None:
             self.context_model = {}
@@ -76,16 +74,20 @@ class MutationModel():
             self.context_model = None
 
     # ----------------------------------------------------------------------------------------
+    def add_translation(self, nuc_seq, aa_seq):
+        self.translation_cache[nuc_seq] = aa_seq
+
+    # ----------------------------------------------------------------------------------------
     def get_translation(self, nuc_seq):
         if nuc_seq not in self.translation_cache:
             self.translation_cache[nuc_seq] = translate(nuc_seq)
         return self.translation_cache[nuc_seq]
 
     # ----------------------------------------------------------------------------------------
-    def init_node(self, args, nuc_seq, time, parent, target_seqs=None):
+    def init_node(self, args, nuc_seq, time, parent, target_seqs=None, aa_seq=None):
         node = TreeNode()
         node.add_feature('nuc_seq', nuc_seq)  # NOTE don't use a TranslatedSeq feature since it gets written to pickle files, which then requires importing the class definition
-        node.add_feature('aa_seq', self.get_translation(nuc_seq))
+        node.add_feature('aa_seq', aa_seq if aa_seq is not None else self.get_translation(nuc_seq))
         node.add_feature('naive_distance', hamming_distance(nuc_seq, args.naive_tseq.nuc))  # always nucleotide distance
         node.add_feature('time', time)
         node.dist = 0 if parent is None else hamming_distance(nuc_seq, parent.nuc_seq)  # always nucleotide distance (doesn't use add_feature() because it's a builtin ete3 feature)
@@ -143,34 +145,23 @@ class MutationModel():
         return [self.mutability(sequence[(i-self.k//2):(i+self.k//2+1)]) for i in range(self.k//2, len(sequence) - self.k//2)]
 
     # ----------------------------------------------------------------------------------------
-    def mutate(self, sequence, lambda0, return_n_mutations=False, debug=False):
+    def mutate(self, nuc_seq, lambda0, aa_seq=None, debug=False):
         """
-        Mutate a sequence, with lamdba0 the baseline mutability.
-        Cannot mutate the same position multiple times.
-        @param sequence: the original sequence to mutate
-        @param lambda0: a "baseline" mutation rate
+        Mutate a sequence, with lamdba0 the baseline mutability. Cannot mutate the same position multiple times.
+        If <aa_seq> is set, then we update it and return the aa_seq for the final nucleotide sequence.
         """
 
         mutabilities = None
         sequence_mutability = 1.
         if self.context_model is not None:
-            mutabilities = self.mutabilities(sequence)
-            sequence_mutability = sum(mty[0] for mty in mutabilities) / len(sequence)
+            mutabilities = self.mutabilities(nuc_seq)
+            sequence_mutability = sum(mty[0] for mty in mutabilities) / len(nuc_seq)
         lambda_sequence = sequence_mutability * lambda0  # Poisson rate for this sequence (given its relative mutability):
 
-        # decide how many mutations we'll apply
         n_mutations = numpy.random.poisson(lambda_sequence)
-        if not self.allow_re_mutation:
-            trials = 20
-            for trial in range(1, trials+1):
-                n_mutations = numpy.random.poisson(lambda_sequence)
-                if n_mutations <= len(sequence):
-                    break
-                if trial == trials:
-                    raise RuntimeError('mutations saturating, consider reducing lambda0')
 
         # Introduce mutations (note: we very commonly just return, i.e. if the poisson kicks up zero mutations)
-        unmutated_positions = range(len(sequence))
+        unmutated_positions = range(len(nuc_seq))
         if debug:
             dbg_str = []
             print('     adding %d mutations:  ' % n_mutations, end='')
@@ -184,26 +175,24 @@ class MutationModel():
             mut_pos = scipy.random.choice(unmutated_positions, p=mutability_p)
 
             # Now draw the target nucleotide using the substitution matrix
-            nucs = [n for n in 'ACGT' if n != sequence[mut_pos]]
+            nucs = [n for n in 'ACGT' if n != nuc_seq[mut_pos]]
             substitution_p = None
             if self.context_model is not None:
                 substitution_p = [mutabilities[mut_pos][1][n] for n in nucs]
                 assert 0 <= abs(sum(substitution_p) - 1.) < 1e-10
             new_nuc = scipy.random.choice(nucs, p=substitution_p)
             if debug:
-                dbg_str += ['%s%d%s' % (sequence[mut_pos], mut_pos, new_nuc)]
-            sequence = sequence[ : mut_pos] + new_nuc + sequence[mut_pos + 1 :]
+                dbg_str += ['%s%d%s' % (nuc_seq[mut_pos], mut_pos, new_nuc)]
+            nuc_seq = nuc_seq[ : mut_pos] + new_nuc + nuc_seq[mut_pos + 1 :]
+            if aa_seq is not None:
+                aa_seq = replace_codon_in_aa_seq(nuc_seq, aa_seq, mut_pos)
+                self.add_translation(nuc_seq, aa_seq)
             if self.context_model is not None and self.mutation_order:  # If mutation order matters, the mutabilities of the sequence need to be updated
-                mutabilities = self.mutabilities(sequence)
-            if not self.allow_re_mutation:  # Remove this position so we don't mutate it again
-                unmutated_positions.remove(mut_pos)
+                mutabilities = self.mutabilities(nuc_seq)
 
         if debug:
             print('  '.join(dbg_str))
-        if return_n_mutations:
-            return sequence, n_mutations
-        else:
-            return sequence
+        return {'nuc_seq' : nuc_seq, 'aa_seq' : aa_seq, 'n_muts' : n_mutations}
 
     # ----------------------------------------------------------------------------------------
     # Make a single target sequence with <n_muts> hamming distance from <args.naive_tseq> (nuc or aa distance according to args.metric_for_target_distance)
@@ -214,7 +203,8 @@ class MutationModel():
             dist = None
             tseq = args.naive_tseq
             while dist is None or dist < args.target_distance:
-                tseq = TranslatedSeq(self.mutate(tseq.nuc, args.target_sequence_lambda0))
+                mfo = self.mutate(tseq.nuc, args.target_sequence_lambda0, aa_seq=tseq.aa)
+                tseq = TranslatedSeq(mfo['nuc_seq'], aa_seq=mfo['aa_seq'])
                 dist = target_distance_fcn(args, args.naive_tseq, [tseq])
                 if dist == args.target_distance and not has_stop_aa(tseq.aa):  # Stop codon cannot be part of the return
                     return tseq
@@ -370,14 +360,13 @@ class MutationModel():
                     n_mutation_list, kd_list = [], []
                 for _ in range(n_children):
                     if args.naive_seq2 is not None:  # for paired heavy/light we mutate them separately with their own mutation rate
-                        mutated_sequence1 = self.mutate(get_seq_from_pair(leaf.nuc_seq, args.pair_bounds, iseq=0), args.lambda0[0])
-                        mutated_sequence2 = self.mutate(get_seq_from_pair(leaf.nuc_seq, args.pair_bounds, iseq=1), args.lambda0[1])
-                        mutated_sequence = mutated_sequence1 + mutated_sequence2
+                        mfos = [self.mutate(get_pair_seq(leaf.nuc_seq, args.pair_bounds, iseq), args.lambda0[iseq]) for iseq in range(len(args.lambda0))]  # NOTE doesn't pass or get aa_seq, but only result of that should be that self.init_node() has to calculate it
+                        mutated_sequence = ''.join(m['nuc_seq'] for m in mfos)
                     else:
-                        mutated_sequence, n_muts = self.mutate(leaf.nuc_seq, args.lambda0[0], return_n_mutations=True)
+                        mfo = self.mutate(leaf.nuc_seq, args.lambda0[0], aa_seq=leaf.aa_seq)
                         if args.debug > 1:
-                            n_mutation_list.append(n_muts)
-                    child = self.init_node(args, mutated_sequence, current_time, leaf, target_seqs)
+                            n_mutation_list.append(mfo['n_muts'])
+                    child = self.init_node(args, mfo['nuc_seq'], current_time, leaf, target_seqs, aa_seq=mfo['aa_seq'])
                     if args.selection and args.debug > 1:
                         kd_list.append(child.Kd)
                     leaf.add_child(child)
@@ -517,10 +506,10 @@ def run_simulation(args):
     if args.naive_seq2 is not None:
         fhandles = [open('%s_seq%d.fasta' % (args.outbase, iseq + 1), 'w') for iseq in range(2)]
         for iseq, fh in enumerate(fhandles):
-            fh.write('>%s\n%s\n' % (tree.name, get_seq_from_pair(args.naive_tseq.nuc, args.pair_bounds, iseq=iseq)))
+            fh.write('>%s\n%s\n' % (tree.name, get_pair_seq(args.naive_tseq.nuc, args.pair_bounds, iseq)))
         for node in [n for n in tree.iter_descendants() if n.frequency != 0]:  # NOTE doesn't iterate over root node
             for iseq, fh in enumerate(fhandles):
-                fh.write('>%s\n%s\n' % (node.name, get_seq_from_pair(node.nuc_seq, args.pair_bounds, iseq=iseq)))
+                fh.write('>%s\n%s\n' % (node.name, get_pair_seq(node.nuc_seq, args.pair_bounds, iseq)))
     else:
         with open('%s.fasta' % args.outbase, 'w') as fh:
             fh.write('>%s\n%s\n' % (tree.name, args.naive_tseq.nuc))
@@ -704,6 +693,9 @@ def main():
         args.naive_seq = args.naive_seq.upper()
     if args.lambda0 is None:
         args.lambda0 = [max([1, int(.01*len(args.naive_seq))])]
+    if len(args.naive_seq) % 3 != 0:
+        print('  note: padding right side of --naive_seq to multiple of three')
+        args.naive_seq += 'N' * (3 - (len(args.naive_seq) % 3))
     args.naive_tseq = TranslatedSeq(args.naive_seq)
     delattr(args, 'naive_seq')  # I think this is the most sensible thing to to
     if has_stop_aa(args.naive_tseq.aa):
@@ -729,6 +721,9 @@ def main():
             raise Exception('--obs_times must be sorted (we could sort them here, but then you might think you didn\'t need to worry about the order of --n_to_sample being the same)')
 
     if args.naive_seq2 is not None:
+        if len(args.naive_seq2) % 3 != 0:
+            print('  note: padding right side of --naive_seq2 to multiple of three')
+            args.naive_seq2 += 'N' * (3 - (len(args.naive_seq2) % 3))
         if len(args.lambda0) == 1:  # Use the same mutation rate on both sequences
             args.lambda0 = [args.lambda0[0], args.lambda0[0]]
         elif len(args.lambda0) != 2:
