@@ -17,6 +17,7 @@ from scipy import stats
 import numpy
 from colored_traceback import always
 import sys
+from Bio.Seq import translate as bio_translate
 from ete3 import TreeNode, TreeStyle, NodeStyle, SVG_COLORS
 import matplotlib; matplotlib.use('agg')
 try:
@@ -24,7 +25,7 @@ try:
 except:
     import pickle
 
-from GCutils import hamming_distance, has_stop_aa, translate, replace_codon_in_aa_seq, CollapsedTree, TranslatedSeq
+from GCutils import hamming_distance, has_stop_aa, replace_codon_in_aa_seq, CollapsedTree, TranslatedSeq
 import selection_utils
 from selection_utils import target_distance_fcn
 
@@ -80,7 +81,7 @@ class MutationModel():
     # ----------------------------------------------------------------------------------------
     def get_translation(self, nuc_seq):
         if nuc_seq not in self.translation_cache:
-            self.translation_cache[nuc_seq] = translate(nuc_seq)
+            self.translation_cache[nuc_seq] = bio_translate(nuc_seq)
         return self.translation_cache[nuc_seq]
 
     # ----------------------------------------------------------------------------------------
