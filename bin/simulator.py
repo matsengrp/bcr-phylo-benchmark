@@ -320,6 +320,7 @@ class MutationModel():
         if args.debug > 1:
             print('       gen   live leaves')
             print('             before/after   ileaf   n children     n mutations          Kd   (%s: updated lambdas)' % selection_utils.color('blue', 'x'))
+        static_live_leaves, updated_live_leaves = None, None
         while True:
             current_time += 1
 
@@ -328,12 +329,15 @@ class MutationModel():
             self.n_mutated_hists.append(None)
 
             skip_lambda_n = 0  # index keeping track of how many leaves since we last updated all the lambdas
-            live_leaves = [l for l in tree.iter_leaves() if not l.terminated]  # NOTE this is out of date as soon as we've added any children in the loop, or killed anybody with no children
-            updated_live_leaves = [l for l in live_leaves]  # but this one, we keep updating (so we don't have to call iter_leaves() so much, which was taking quite a bit of time) (matches self.n_unterminated_leaves)
-            random.shuffle(live_leaves)
+            if static_live_leaves is None:
+                static_live_leaves = [l for l in tree.iter_leaves() if not l.terminated]  # NOTE this is out of date as soon as we've added any children in the loop, or killed anybody with no children (but we need it to iterate over, at least as currently set up)
+            else:
+                static_live_leaves = updated_live_leaves
+            updated_live_leaves = [l for l in static_live_leaves]  # but this one, we keep updating (so we don't have to call iter_leaves() so much, which was taking quite a bit of time) (matches self.n_unterminated_leaves)
+            random.shuffle(static_live_leaves)
             if args.debug > 1:
-                print('      %3d    %3d' % (current_time, len(live_leaves)), end='\n' if len(live_leaves) == 0 else '')  # NOTE these are live leaves *after* the intermediate sampling above
-            for leaf in live_leaves:
+                print('      %3d    %3d' % (current_time, len(static_live_leaves)), end='\n' if len(static_live_leaves) == 0 else '')  # NOTE these are live leaves *after* the intermediate sampling above
+            for leaf in static_live_leaves:
                 if args.selection:
                     lambda_update_dbg_str = ' '
                     if skip_lambda_n == 0:  # time to update the lambdas for every leaf
@@ -346,7 +350,7 @@ class MutationModel():
                     this_lambda = args.lambda_
 
                 n_children = numpy.random.poisson(this_lambda)
-                if current_time == 1 and len(live_leaves) == 1:  # if the first leaf draws zero children, keep trying so we don't have to throw out the whole tree and start over
+                if current_time == 1 and len(static_live_leaves) == 1:  # if the first leaf draws zero children, keep trying so we don't have to throw out the whole tree and start over
                     itry = 0
                     while n_children == 0:
                         n_children = numpy.random.poisson(this_lambda)
@@ -359,8 +363,8 @@ class MutationModel():
                 if n_children == 0:  # kill everyone with no children
                     leaf.terminated = True
                     updated_live_leaves.remove(leaf)
-                    if len(live_leaves) == 1:
-                        print('  terminating only leaf with no children')
+                    if len(static_live_leaves) == 1:
+                        print('  terminating only leaf in tree because it has no children')
 
                 if args.debug > 1:
                     n_mutation_list, kd_list = [], []
@@ -383,8 +387,8 @@ class MutationModel():
                 if args.debug > 1:
                     n_mutation_str_list = [('%d' % n) if n > 0 else '-' for n in n_mutation_list]
                     kd_str_list = ['%.0f' % kd for kd in kd_list]
-                    pre_leaf_str = '' if live_leaves.index(leaf) == 0 else ('%12s %3d' % ('', len(updated_live_leaves)))
-                    print(('      %s      %4d   %3d  %s          %-14s       %-28s') % (pre_leaf_str, live_leaves.index(leaf), n_children, lambda_update_dbg_str, ' '.join(n_mutation_str_list), ' '.join(kd_str_list)))
+                    pre_leaf_str = '' if static_live_leaves.index(leaf) == 0 else ('%12s %3d' % ('', len(updated_live_leaves)))
+                    print(('      %s      %4d   %3d  %s          %-14s       %-28s') % (pre_leaf_str, static_live_leaves.index(leaf), n_children, lambda_update_dbg_str, ' '.join(n_mutation_str_list), ' '.join(kd_str_list)))
 
             if args.selection:
                 self.tdist_hists[current_time] = self.get_target_distance_hist(args, updated_live_leaves)
