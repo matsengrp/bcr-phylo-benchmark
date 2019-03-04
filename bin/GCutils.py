@@ -37,16 +37,22 @@ ISO_TYPE_charORDER = {'M': 1, 'D': 2, 'G': 3, 'E': 4, 'A': 5}
 ISO_SHORT = {'IgM': 'M', 'IgD': 'D', 'IgG': 'G', 'IgGA': 'G', 'IgGb': 'G', 'IgE': 'E', 'IgA': 'A'}
 
 # ----------------------------------------------------------------------------------------
+def local_translate(seq):
+    if len(seq) % 3 != 0:
+        seq += 'N' * (3 - (len(seq) % 3))
+    return bio_translate(seq)
+
+# ----------------------------------------------------------------------------------------
 def replace_codon_in_aa_seq(new_nuc_seq, old_aa_seq, inuc):  # <inuc>: single nucleotide position that was mutated from old nuc seq (which corresponds to old_aa_seq) to new_nuc_seq
     istart = 3 * int(math.floor(inuc / 3.))  # nucleotide position of start of mutated codon
-    new_codon = bio_translate(new_nuc_seq[istart : istart + 3])
+    new_codon = local_translate(new_nuc_seq[istart : istart + 3])
     return old_aa_seq[:inuc / 3] + new_codon + old_aa_seq[inuc / 3 + 1:]  # would be nice to check for synonymity and not do any translation unless we need to
 
 # ----------------------------------------------------------------------------------------
 class TranslatedSeq(object):
     def __init__(self, nuc_seq, aa_seq=None):
         self.nuc = nuc_seq
-        self.aa = bio_translate(nuc_seq) if aa_seq is None else aa_seq
+        self.aa = local_translate(nuc_seq) if aa_seq is None else aa_seq
 
 # ----------------------------------------------------------------------------------------
 def has_stop_aa(seq):
@@ -54,7 +60,7 @@ def has_stop_aa(seq):
 
 # # ----------------------------------------------------------------------------------------
 # def has_stop_nuc(seq):  # huh, turns out we don't need this anywhere, but don't feel like deleting, since it makes more clear that the other fcn needs to be passed an aa sequence
-#     return has_stop_aa(bio_translate(seq))
+#     return has_stop_aa(local_translate(seq))
 
 # ----------------------------------------------------------------------------------------
 class CollapsedTree():

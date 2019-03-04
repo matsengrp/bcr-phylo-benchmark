@@ -17,7 +17,6 @@ from scipy import stats
 import numpy
 from colored_traceback import always
 import sys
-from Bio.Seq import translate as bio_translate
 from ete3 import TreeNode, TreeStyle, NodeStyle, SVG_COLORS
 import matplotlib; matplotlib.use('agg')
 try:
@@ -25,7 +24,7 @@ try:
 except:
     import pickle
 
-from GCutils import hamming_distance, has_stop_aa, replace_codon_in_aa_seq, CollapsedTree, TranslatedSeq
+from GCutils import hamming_distance, has_stop_aa, local_translate, replace_codon_in_aa_seq, CollapsedTree, TranslatedSeq
 import selection_utils
 from selection_utils import target_distance_fcn
 
@@ -81,7 +80,7 @@ class MutationModel():
     # ----------------------------------------------------------------------------------------
     def get_translation(self, nuc_seq):
         if nuc_seq not in self.translation_cache:
-            self.translation_cache[nuc_seq] = bio_translate(nuc_seq)
+            self.translation_cache[nuc_seq] = local_translate(nuc_seq)
         return self.translation_cache[nuc_seq]
 
     # ----------------------------------------------------------------------------------------
@@ -219,7 +218,7 @@ class MutationModel():
         target_seqs = [self.make_target_sequence(args) for i in range(args.target_count)]
         with open(args.outbase + '_targets.fa', 'w') as tfile:
             for itarget, tseq in enumerate(target_seqs):
-                tfile.write('>%s\n%s\n' % ('target-%d' % itarget, tseq.nuc))
+                tfile.write('>%s\n%s\n' % ('target-%d' % itarget, tseq.nuc))  # [:len(tseq.nuc) - args.n_pads_added]))
         assert len(set([len(args.naive_tseq.aa)] + [len(t.aa) for t in target_seqs])) == 1  # targets and naive seq are same length
         assert len(set([args.target_distance] + [target_distance_fcn(args, args.naive_tseq, [t]) for t in target_seqs])) == 1  # all targets are the right distance from the naive
         return target_seqs
@@ -355,7 +354,7 @@ class MutationModel():
                     leaf.terminated = True
                     updated_live_leaves.remove(leaf)
                     if len(static_live_leaves) == 1:
-                        print('  terminating only leaf in tree because it has no children')
+                        print('  terminating only leaf in tree (it has no children)')
 
                 if args.debug > 1:
                     n_mutation_list, kd_list = [], []
@@ -507,15 +506,15 @@ def run_simulation(args):
     if args.naive_seq2 is not None:
         fhandles = [open('%s_seq%d.fasta' % (args.outbase, iseq + 1), 'w') for iseq in range(2)]
         for iseq, fh in enumerate(fhandles):
-            fh.write('>%s\n%s\n' % (tree.name, get_pair_seq(args.naive_tseq.nuc, args.pair_bounds, iseq)))
+            fh.write('>%s\n%s\n' % (tree.name, get_pair_seq(args.naive_tseq.nuc, args.pair_bounds, iseq)))  # NOTE not trimming off the n_pads_added stuff, it's too hard with the multiple sequences concatenated
         for node in [n for n in tree.iter_descendants() if n.frequency != 0]:  # NOTE doesn't iterate over root node
             for iseq, fh in enumerate(fhandles):
                 fh.write('>%s\n%s\n' % (node.name, get_pair_seq(node.nuc_seq, args.pair_bounds, iseq)))
     else:
         with open('%s.fasta' % args.outbase, 'w') as fh:
-            fh.write('>%s\n%s\n' % (tree.name, args.naive_tseq.nuc))
+            fh.write('>%s\n%s\n' % (tree.name, args.naive_tseq.nuc))  # [:len(args.naive_tseq.nuc) - args.n_pads_added]))
             for node in [n for n in tree.iter_descendants() if n.frequency != 0]:  # NOTE doesn't iterate over root node
-                fh.write('>%s\n%s\n' % (node.name, node.nuc_seq))
+                fh.write('>%s\n%s\n' % (node.name, node.nuc_seq))  # [:len(node.nuc_seq) - args.n_pads_added]))
 
     # write some observable simulation stats
     frequency, distance_from_naive, degree = zip(*[(node.frequency,
@@ -664,6 +663,7 @@ def main():
     parser.add_argument('--observe_based_on_affinity', action='store_true', help='When selecting sequences to observe, instead of choosing at random (default), weight with 1/kd (this weighting is kind of arbitrary, and eventually I should maybe figure out something else, but the point is to allow some configurability as to not just sampling entirely at random).')
     parser.add_argument('--verbose', action='store_true', help='DEPRECATED use --debug')
     parser.add_argument('--n_to_downsample', type=int, nargs='+', help='DEPRECATED use --n_to_sample')
+    # parser.add_argument('--n_pads_added', type=int, default=0, help='INTERNAL USE ONLY')
 
     args = parser.parse_args()
 
@@ -694,9 +694,11 @@ def main():
         args.naive_seq = args.naive_seq.upper()
     if args.lambda0 is None:
         args.lambda0 = [max([1, int(.01*len(args.naive_seq))])]
-    if len(args.naive_seq) % 3 != 0:
-        print('  note: padding right side of --naive_seq to multiple of three')
-        args.naive_seq += 'N' * (3 - (len(args.naive_seq) % 3))
+    # if len(args.naive_seq) % 3 != 0:  # this lets you remove the extra lines in GCutils.local_translte(), which is faster, but then the N pads get passed to partis, which confuses things (especially since they can get mutated)
+    #     print('  note: padding right side of --naive_seq to multiple of three')
+    #     n_pads_added = 3 - (len(args.naive_seq) % 3)
+    #     args.naive_seq += 'N' * n_pads_added
+    #     args.n_pads_added = n_pads_added
     args.naive_tseq = TranslatedSeq(args.naive_seq)
     delattr(args, 'naive_seq')  # I think this is the most sensible thing to to
     if has_stop_aa(args.naive_tseq.aa):
@@ -722,9 +724,7 @@ def main():
             raise Exception('--obs_times must be sorted (we could sort them here, but then you might think you didn\'t need to worry about the order of --n_to_sample being the same)')
 
     if args.naive_seq2 is not None:
-        if len(args.naive_seq2) % 3 != 0:
-            print('  note: padding right side of --naive_seq2 to multiple of three')
-            args.naive_seq2 += 'N' * (3 - (len(args.naive_seq2) % 3))
+        # print('%s not padding naive_seq2 to length multiple of 3' % selection_utils.color('red', 'warning:'))
         if len(args.lambda0) == 1:  # Use the same mutation rate on both sequences
             args.lambda0 = [args.lambda0[0], args.lambda0[0]]
         elif len(args.lambda0) != 2:
