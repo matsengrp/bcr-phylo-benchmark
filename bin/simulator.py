@@ -92,7 +92,6 @@ class MutationModel():
         node.add_feature('time', time)
         node.dist = 0 if parent is None else hamming_distance(nuc_seq, parent.nuc_seq)  # always nucleotide distance (doesn't use add_feature() because it's a builtin ete3 feature)
         node.add_feature('terminated', False)  # set if it's dead (only set if it draws zero children, or if --kill_sampled_intermediates is set and it's sampled at an intermediate time point)
-        node.add_feature('intermediate_sampled', False)  # set if it's sampled at an intermediate time point
         node.add_feature('frequency', 0)  # observation frequency, is set to either 1 or 0 in set_observation_frequencies_and_names(), then when the collapsed tree is constructed it can get bigger than 1 when the frequencies of nodes connected by zero-length branches are summed
         if args.selection:
             node.add_feature('lambda_', None)  # set in selection_utils.update_lambda_values() (i.e. is modified every (few) generations)
@@ -266,7 +265,7 @@ class MutationModel():
             n_to_sample = len(live_nostop_leaves)
         inter_sampled_leaves = self.choose_leaves_to_sample(args, live_nostop_leaves, n_to_sample)
         for leaf in inter_sampled_leaves:
-            leaf.intermediate_sampled = True
+            self.intermediate_sampled_nodes.append(leaf)
             parent = leaf
             while not parent.is_root():
                 self.intermediate_sampled_lineage_nodes.add(parent)
@@ -279,7 +278,7 @@ class MutationModel():
         print('                  sampled %d (of %d live and stop-free) intermediate leaves (%s) at end of generation %d' % (n_to_sample, len(live_nostop_leaves), 'killing each of them' if args.kill_sampled_intermediates else 'leaving them alive', current_time))
 
     # ----------------------------------------------------------------------------------------
-    def check_termination(self, args, current_time, tree):
+    def check_termination(self, args, current_time, updated_live_leaves):
         finished = False
         dbgstr, termstr = [], []
         if self.n_unterminated_leaves <= 0:  # if everybody's dead (probably can't actually go less than zero, but not sure)
@@ -296,7 +295,7 @@ class MutationModel():
                 termstr += ['    --obs_times: breaking at generation %d >= %d' % (current_time, max(args.obs_times))]
                 finished = True
         if args.stop_dist is not None and current_time > 0:
-            min_tdist = min([l.target_distance for l in tree.iter_leaves()])
+            min_tdist = min([l.target_distance for l in updated_live_leaves])
             dbgstr += ['min tdist %d' % min_tdist]
             if min_tdist <= args.stop_dist:  # if the leaves have gotten close enough to the target sequences
                 termstr += ['    --stop_dist: breaking with min target distance %d <= %d' % (min_tdist, args.stop_dist)]
@@ -319,6 +318,7 @@ class MutationModel():
 
         current_time = 0
         self.n_unterminated_leaves = 1
+        self.intermediate_sampled_nodes = []  # actual intermediate-sampled nodes
         self.intermediate_sampled_lineage_nodes = set()  # any nodes ancestral to intermediate-sampled nodes (we keep track of these so we know not to prune them)
         self.nodes_to_detach = set()
         tree = self.init_node(args, args.naive_tseq.nuc, 0, None, target_seqs)
@@ -405,7 +405,7 @@ class MutationModel():
                 self.tdist_hists[current_time] = self.get_target_distance_hist(args, updated_live_leaves)
                 self.n_mutated_hists[current_time] = scipy.histogram([l.naive_distance for l in updated_live_leaves], bins=list(numpy.arange(-0.5, (max(args.obs_times) if args.obs_times is not None else current_time) + 0.5)))  # can't have more than one mutation per generation
 
-            finished, dbgstr, termstr = self.check_termination(args, current_time, tree)
+            finished, dbgstr, termstr = self.check_termination(args, current_time, updated_live_leaves)
 
             if args.debug == 1:
                 mintd, meantd = '-', '-'
@@ -432,8 +432,8 @@ class MutationModel():
                 pickle.dump(self.n_mutated_hists, histfile)
 
         all_leaves = list(tree.iter_leaves())
-        stop_leaves = [l for l in tree.iter_leaves() if l.time == current_time and has_stop_aa(l.aa_seq)]
-        non_stop_leaves = [l for l in tree.iter_leaves() if l.time == current_time and not has_stop_aa(l.aa_seq)]
+        stop_leaves = [l for l in all_leaves if l.time == current_time and has_stop_aa(l.aa_seq)]
+        non_stop_leaves = [l for l in all_leaves if l.time == current_time and not has_stop_aa(l.aa_seq)]
         if len(stop_leaves) > 0:
             print('    %d / %d leaves at final time point have stop codons' % (len(stop_leaves), len(stop_leaves) + len(non_stop_leaves)))
 
@@ -442,7 +442,8 @@ class MutationModel():
         _, potential_names, used_names = selection_utils.choose_new_uid(potential_names, used_names, initial_length=4, shuffle=True)  # call once (ignoring the returned <uid>) to get the initial length right, and to shuffle them (shuffling is so if we're running multiple events, they have different leaf names, as long as we set the seeds differently)
 
         if args.obs_times is not None and len(args.obs_times) > 1:  # observe all intermediate sampled nodes
-            for node in [l for l in tree.iter_descendants() if l.intermediate_sampled]:
+            print('    labeling/observing %d intermediates ' % len(self.intermediate_sampled_nodes))
+            for node in self.intermediate_sampled_nodes:
                 node.frequency = 1
                 uid, potential_names, used_names = selection_utils.choose_new_uid(potential_names, used_names)
                 node.name = 'int-' + uid
