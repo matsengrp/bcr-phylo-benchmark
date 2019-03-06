@@ -243,6 +243,20 @@ class MutationModel():
         return hist
 
     # ----------------------------------------------------------------------------------------
+    def get_ancestor_above_leaf_to_detach(self, dead_leaf):  # this is kind of a lot of infrastructure, but it avoids the old way of finding all these lineages afterward, when the tree is huuuuge, which gets really slow as the tree gets large (e.g. for larger times)
+        parent, last_parent = dead_leaf, None
+        while parent.time != 0:  # propagate the termination information up the tree, so we don't have to do so much descendent iteration after the loop when we remove dead lineages
+            if parent in self.intermediate_sampled_lineage_nodes:
+                break
+            if any(not s.terminated for s in parent.children):  # stop if any siblings are unterminated (will be the first branching, except if we've already killed off the sibling lineage in a previous generation)
+                break
+            parent.terminated = True  # this is necessary to avoid cases where we follow two parallel lineages up, and both return the same <last_parent> (since the second on we do doesn't know that we already did the first one unless we set terminated here)
+            last_parent = parent
+            parent = parent.up
+        if last_parent is not None:
+            self.nodes_to_detach.add(last_parent)  # wait to actually detach them til we've finished some other stuff
+
+    # ----------------------------------------------------------------------------------------
     def sample_intermediates(self, args, current_time, tree):
         assert len(args.obs_times) == len(args.n_to_sample)
         n_to_sample = args.n_to_sample[args.obs_times.index(current_time)]
@@ -253,9 +267,14 @@ class MutationModel():
         inter_sampled_leaves = self.choose_leaves_to_sample(args, live_nostop_leaves, n_to_sample)
         for leaf in inter_sampled_leaves:
             leaf.intermediate_sampled = True
+            parent = leaf
+            while not parent.is_root():
+                self.intermediate_sampled_lineage_nodes.add(parent)
+                parent = parent.up
             if args.kill_sampled_intermediates:
                 leaf.terminated = True
                 self.n_unterminated_leaves -= 1
+                self.get_ancestor_above_leaf_to_detach(leaf)
         self.sampled_tdist_hists[current_time] = self.get_target_distance_hist(args, inter_sampled_leaves)
         print('                  sampled %d (of %d live and stop-free) intermediate leaves (%s) at end of generation %d' % (n_to_sample, len(live_nostop_leaves), 'killing each of them' if args.kill_sampled_intermediates else 'leaving them alive', current_time))
 
@@ -300,6 +319,8 @@ class MutationModel():
 
         current_time = 0
         self.n_unterminated_leaves = 1
+        self.intermediate_sampled_lineage_nodes = set()  # any nodes ancestral to intermediate-sampled nodes (we keep track of these so we know not to prune them)
+        self.nodes_to_detach = set()
         tree = self.init_node(args, args.naive_tseq.nuc, 0, None, target_seqs)
         if args.selection:
             self.tdist_hists[0] = self.get_target_distance_hist(args, tree)  # i guess the first entry in the other two just stays None
@@ -353,6 +374,7 @@ class MutationModel():
                 if n_children == 0:  # kill everyone with no children
                     leaf.terminated = True
                     updated_live_leaves.remove(leaf)
+                    self.get_ancestor_above_leaf_to_detach(leaf)
                     if len(static_live_leaves) == 1:
                         print('  terminating only leaf in tree (it has no children)')
 
@@ -400,7 +422,7 @@ class MutationModel():
                 break
 
             if args.obs_times is not None and len(args.obs_times) > 1 and current_time in args.obs_times:
-                self.sample_intermediates(args, current_time, tree)
+                self.sample_intermediates(args, current_time, tree)  # note that we don't need to update <updated_live_leaves> in this fcn
 
         # write a histogram of the hamming distances to target at each generation
         if args.selection:
@@ -409,8 +431,9 @@ class MutationModel():
             with open(args.outbase + '_n_mutated_nuc_hdists.p', 'wb') as histfile:
                 pickle.dump(self.n_mutated_hists, histfile)
 
+        all_leaves = list(tree.iter_leaves())
         stop_leaves = [l for l in tree.iter_leaves() if l.time == current_time and has_stop_aa(l.aa_seq)]
-        non_stop_leaves = [l for l in tree.iter_leaves() if l.time == current_time and not has_stop_aa(l.aa_seq)]  # non-stop leaves
+        non_stop_leaves = [l for l in tree.iter_leaves() if l.time == current_time and not has_stop_aa(l.aa_seq)]
         if len(stop_leaves) > 0:
             print('    %d / %d leaves at final time point have stop codons' % (len(stop_leaves), len(stop_leaves) + len(non_stop_leaves)))
 
@@ -434,28 +457,36 @@ class MutationModel():
             uid, potential_names, used_names = selection_utils.choose_new_uid(potential_names, used_names)
             leaf.name = 'leaf-' + uid
 
+        for leaf in set(all_leaves) - set(observed_leaves):
+            self.get_ancestor_above_leaf_to_detach(leaf)
+
         if args.selection:
             self.sampled_tdist_hists[current_time] = self.get_target_distance_hist(args, observed_leaves)  # NOTE this doesn't include nodes added from --observe_common_ancestors or --observe_all_ancestors
             if len(self.sampled_tdist_hists) > 0:
                 with open(args.outbase + '_sampled_min_aa_target_hdists.p', 'wb') as histfile:
                     pickle.dump(self.sampled_tdist_hists, histfile)
 
-        # prune away lineages that have zero total observation frequency
-        n_pruned_lineages, n_pruned_nodes = 0, 0
-        start = time.time()
-        detached_descendents = set()
-        for node in tree.iter_descendants():  # NOTE this is kinda slow, and it might (might!) be faster to propagate the information upward when we set the observed nodes to start with (rather than looping over descendents here)), but it's quite a bit faster than it used to be already so not going to mess around further a.t.m.
-            if node in detached_descendents:
-                # detached_descendents.remove(node)  # don't need it in there any more, but it isn't any faster to remove it
-                continue
-            if any(child.frequency > 0 for child in node.traverse()):  # if all children of <node> have zero observation frequency, detach <node> (only difference between traverse() and iter_descendants() seems to be that traverse() includes the node on which you're calling it, while iter_descendants() doesn't)
-                continue
+        print('    detaching %d nodes' % len(self.nodes_to_detach))
+        for node in self.nodes_to_detach:
             node.detach()
-            for child in node.iter_descendants():  # avoid checking <node>'s children
-                detached_descendents.add(child)
-                n_pruned_nodes += 1
-            n_pruned_lineages += 1
-        print('    removed %d nodes in %d unobserved lineages (%.1fs)' % (n_pruned_nodes, n_pruned_lineages, time.time()-start))
+
+        # note: don't need this anymore now that we have get_ancestor_above_leaf_to_detach(), but I don't want to delete it yet
+        # # prune away lineages that have zero total observation frequency
+        # n_pruned_lineages, n_pruned_nodes = 0, 0
+        # start = time.time()
+        # detached_descendents = set()
+        # for node in tree.iter_descendants():  # NOTE this is kinda slow, and it might (might!) be faster (UPDATE: is definitely faster) to propagate the information upward when we set the observed nodes to start with (rather than looping over descendents here)), but it's quite a bit faster than it used to be already so not going to mess around further a.t.m.
+        #     if node in detached_descendents:
+        #         # detached_descendents.remove(node)  # don't need it in there any more, but it isn't any faster to remove it
+        #         continue
+        #     if any(child.frequency > 0 for child in node.traverse()):  # if all children of <node> have zero observation frequency, detach <node> (only difference between traverse() and iter_descendants() seems to be that traverse() includes the node on which you're calling it, while iter_descendants() doesn't)
+        #         continue
+        #     node.detach()
+        #     for child in node.iter_descendants():  # avoid checking <node>'s children
+        #         detached_descendents.add(child)
+        #         n_pruned_nodes += 1
+        #     n_pruned_lineages += 1
+        # print('    removed %d nodes in %d unobserved lineages (%.1fs)' % (n_pruned_nodes, n_pruned_lineages, time.time()-start))
 
         # remove unobserved unifurcations
         for node in tree.iter_descendants():
