@@ -506,7 +506,7 @@ class MutationModel():
                 uid, potential_names, used_names = selection_utils.choose_new_uid(potential_names, used_names)
                 ancestor.name = 'mrca-' + uid
                 n_observed_ancestors += 1
-            print('    added %d ancestor nodes (%.1fs)' % (n_observed_ancestors, time.time()-start))  # oh, wait, maybe this doesn't take any real time any more? i thought it used to involve more iteration/traversing
+            print('    added %d common ancestor nodes (%.1fs)' % (n_observed_ancestors, time.time()-start))  # oh, wait, maybe this doesn't take any real time any more? i thought it used to involve more iteration/traversing
 
         # neutral collapse will fail if there's backmutations (?) [preserving old comment]
         treename = 'GCsim %s' % ('selection' if args.selection else 'neutral')
