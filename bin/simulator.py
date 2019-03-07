@@ -519,47 +519,8 @@ class MutationModel():
 
         return tree, collapsed_tree
 
-
 # ----------------------------------------------------------------------------------------
-def run_simulation(args):
-    mutation_model = MutationModel(args)
-    tree, collapsed_tree = None, None
-    n_max_tries = 1000
-    for itry in range(n_max_tries):  # keep trying if we don't get enough leaves, or if there's backmutation
-        try:
-            tree, collapsed_tree = mutation_model.simulate(args)
-            break
-        except RuntimeError as e:
-            print('      {} {}\n  trying again'.format(selection_utils.color('red', 'error:'), e))
-    if tree is None:
-        raise RuntimeError('{} attempts exceeded'.format(n_max_tries))
-
-    # In the case of a sequence pair print them to separate files:
-    if args.naive_seq2 is not None:
-        fhandles = [open('%s_seq%d.fasta' % (args.outbase, iseq + 1), 'w') for iseq in range(2)]
-        for iseq, fh in enumerate(fhandles):
-            fh.write('>%s\n%s\n' % (tree.name, get_pair_seq(args.naive_tseq.nuc, args.pair_bounds, iseq)))  # NOTE not trimming off the n_pads_added stuff, it's too hard with the multiple sequences concatenated
-        for node in [n for n in tree.iter_descendants() if n.frequency != 0]:  # NOTE doesn't iterate over root node
-            for iseq, fh in enumerate(fhandles):
-                fh.write('>%s\n%s\n' % (node.name, get_pair_seq(node.nuc_seq, args.pair_bounds, iseq)))
-    else:
-        with open('%s.fasta' % args.outbase, 'w') as fh:
-            fh.write('>%s\n%s\n' % (tree.name, args.naive_tseq.nuc))  # [:len(args.naive_tseq.nuc) - args.n_pads_added]))
-            for node in [n for n in tree.iter_descendants() if n.frequency != 0]:  # NOTE doesn't iterate over root node
-                fh.write('>%s\n%s\n' % (node.name, node.nuc_seq))  # [:len(node.nuc_seq) - args.n_pads_added]))
-
-    # write some observable simulation stats
-    frequency, distance_from_naive, degree = zip(*[(node.frequency,
-                                                    node.naive_distance,
-                                                    sum(hamming_distance(node.nuc_seq, node2.nuc_seq) == 1 for node2 in collapsed_tree.tree.traverse() if node2.frequency and node2 is not node))
-                                                   for node in collapsed_tree.tree.traverse() if node.frequency])
-    stats = pd.DataFrame({'genotype abundance':frequency,
-                          'Hamming distance to root genotype':distance_from_naive,
-                          'Hamming neighbor genotypes':degree})
-    stats.to_csv(args.outbase+'_stats.tsv', sep='\t', index=False)
-
-    print('{} simulated observed sequences'.format(sum(node.frequency for node in collapsed_tree.tree.traverse())))
-
+def make_plots(args, tree, collapsed_tree):
     # Render the full lineage tree:
     ts = TreeStyle()
     ts.rotation = 90
@@ -590,10 +551,7 @@ def run_simulation(args):
             nstyle['fgcolor'] = colors[n.nuc_seq]
         n.set_style(nstyle)
 
-    # Render and pickle lineage tree:
-    tree.render(args.outbase+'_lineage_tree.svg', tree_style=ts)
-    with open(args.outbase+'_lineage_tree.p', 'wb') as f:
-        pickle.dump(tree, f)
+    tree.render(args.outbase + '_lineage_tree.svg', tree_style=ts)
 
     # Render collapsed tree,
     # create an id-wise colormap
@@ -602,10 +560,7 @@ def run_simulation(args):
         colormap = {node.name:colors[node.aa_seq] for node in collapsed_tree.tree.traverse()}
     else:
         colormap = {node.name:colors[node.nuc_seq] for node in collapsed_tree.tree.traverse()}
-    collapsed_tree.write(args.outbase+'_collapsed_tree.p')
-    collapsed_tree.render(args.outbase+'_collapsed_tree.svg',
-                          idlabel=args.idlabel,
-                          colormap=colormap)
+    collapsed_tree.render(args.outbase+'_collapsed_tree.svg', idlabel=args.idlabel, colormap=colormap)
     # Print colormap to file:
     with open(args.outbase+'_collapsed_tree_colormap.tsv', 'w') as f:
         for name, color in colormap.items():
@@ -620,15 +575,58 @@ def run_simulation(args):
         colors = {i: next(palette) for i in range(int(len(args.naive_tseq.nuc) // 3))}
         # The minimum distance to the target is colored:
         colormap = {node.name:colors[node.target_distance] for node in collapsed_tree.tree.traverse()}
-        collapsed_tree.write( args.outbase+'_collapsed_runstat_color_tree.p')
-        collapsed_tree.render(args.outbase+'_collapsed_runstat_color_tree.svg',
-                              idlabel=args.idlabel,
-                              colormap=colormap)
-        # Write a file with the selection run stats. These are also plotted:
+        collapsed_tree.render(args.outbase+'_collapsed_runstat_color_tree.svg', idlabel=args.idlabel, colormap=colormap)
         with open(args.outbase + '_min_aa_target_hdists.p', 'rb') as fh:
             tdist_hists = pickle.load(fh)
             selection_utils.plot_runstats(tdist_hists, args.outbase, colors)
 
+# ----------------------------------------------------------------------------------------
+def run_simulation(args):
+    mutation_model = MutationModel(args)
+    tree, collapsed_tree = None, None
+    n_max_tries = 1000
+    for itry in range(n_max_tries):  # keep trying if we don't get enough leaves, or if there's backmutation
+        try:
+            tree, collapsed_tree = mutation_model.simulate(args)
+            break
+        except RuntimeError as e:
+            print('      {} {}\n  trying again'.format(selection_utils.color('red', 'error:'), e))
+    if tree is None:
+        raise RuntimeError('{} attempts exceeded'.format(n_max_tries))
+
+    # write observed sequences to fasta file(s)
+    if args.naive_seq2 is not None:
+        fhandles = [open('%s_seq%d.fasta' % (args.outbase, iseq + 1), 'w') for iseq in range(2)]
+        for iseq, fh in enumerate(fhandles):
+            fh.write('>%s\n%s\n' % (tree.name, get_pair_seq(args.naive_tseq.nuc, args.pair_bounds, iseq)))  # NOTE not trimming off the n_pads_added stuff, it's too hard with the multiple sequences concatenated
+        for node in [n for n in tree.iter_descendants() if n.frequency != 0]:  # NOTE doesn't iterate over root node
+            for iseq, fh in enumerate(fhandles):
+                fh.write('>%s\n%s\n' % (node.name, get_pair_seq(node.nuc_seq, args.pair_bounds, iseq)))
+    else:
+        with open('%s.fasta' % args.outbase, 'w') as fh:
+            fh.write('>%s\n%s\n' % (tree.name, args.naive_tseq.nuc))  # [:len(args.naive_tseq.nuc) - args.n_pads_added]))
+            for node in [n for n in tree.iter_descendants() if n.frequency != 0]:  # NOTE doesn't iterate over root node
+                fh.write('>%s\n%s\n' % (node.name, node.nuc_seq))  # [:len(node.nuc_seq) - args.n_pads_added]))
+
+    # write some summary statistics
+    frequency, distance_from_naive, degree = zip(*[(node.frequency,
+                                                    node.naive_distance,
+                                                    sum(hamming_distance(node.nuc_seq, node2.nuc_seq) == 1 for node2 in collapsed_tree.tree.traverse() if node2.frequency and node2 is not node))
+                                                   for node in collapsed_tree.tree.traverse() if node.frequency])
+    stats = pd.DataFrame({'genotype abundance':frequency,
+                          'Hamming distance to root genotype':distance_from_naive,
+                          'Hamming neighbor genotypes':degree})
+    stats.to_csv(args.outbase+'_stats.tsv', sep='\t', index=False)
+
+    print('  observed %d simulated sequences' % sum(node.frequency for node in collapsed_tree.tree.traverse()))
+
+    if not args.no_plot:  # put this before we pickledump them, so the style gets written to the pickle files
+        make_plots(args, tree, collapsed_tree)
+    with open(args.outbase+'_lineage_tree.p', 'wb') as f:
+        pickle.dump(tree, f)
+    collapsed_tree.write(args.outbase + '_collapsed_tree.p')
+    if args.selection:
+        collapsed_tree.write( args.outbase+'_collapsed_runstat_color_tree.p')
 
 # ----------------------------------------------------------------------------------------
 def main():
@@ -687,6 +685,7 @@ def main():
     parser.add_argument('--k_exp', type=float, default=2, help='The exponent in the function to map hamming distance to kd. '
                         'It is recommended to keep this as the default.')
     parser.add_argument('--plotAA', action='store_true', help='Plot trees with collapsing and coloring on amino acid level.')
+    parser.add_argument('--no_plot', action='store_true', help='don\'t write any plots (they\'re pretty slow)')
     parser.add_argument('--debug', type=int, default=0, choices=[0, 1, 2], help='Debug verbosity level.')
     parser.add_argument('--outbase', default='GCsimulator_out', help='Output file base name')
     parser.add_argument('--idlabel', action='store_true', help='Flag for labeling the sequence ids of the nodes in the output tree images, also write associated fasta alignment if True')
