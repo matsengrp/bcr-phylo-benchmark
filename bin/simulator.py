@@ -243,6 +243,7 @@ class MutationModel():
 
     # ----------------------------------------------------------------------------------------
     def get_ancestor_above_leaf_to_detach(self, dead_leaf):  # this is kind of a lot of infrastructure, but it avoids the old way of finding all these lineages afterward, when the tree is huuuuge, which gets really slow as the tree gets large (e.g. for larger times)
+        # note, also, that we could do the actual pruning/detaching here, but for now I think it's better to have the entire tree available at the end of the main loop, in case we want to do something with it, rather than removing bits of it as we go
         parent, last_parent = dead_leaf, None
         while parent.time != 0:  # propagate the termination information up the tree, so we don't have to do so much descendent iteration after the loop when we remove dead lineages
             if parent in self.intermediate_sampled_lineage_nodes:
@@ -431,9 +432,8 @@ class MutationModel():
             with open(args.outbase + '_n_mutated_nuc_hdists.p', 'wb') as histfile:
                 pickle.dump(self.n_mutated_hists, histfile)
 
-        all_leaves = list(tree.iter_leaves())
-        stop_leaves = [l for l in all_leaves if l.time == current_time and has_stop_aa(l.aa_seq)]
-        non_stop_leaves = [l for l in all_leaves if l.time == current_time and not has_stop_aa(l.aa_seq)]
+        stop_leaves = [l for l in updated_live_leaves if has_stop_aa(l.aa_seq)]
+        non_stop_leaves = [l for l in updated_live_leaves if not has_stop_aa(l.aa_seq)]
         if len(stop_leaves) > 0:
             print('    %d / %d leaves at final time point have stop codons' % (len(stop_leaves), len(stop_leaves) + len(non_stop_leaves)))
 
@@ -458,7 +458,7 @@ class MutationModel():
             uid, potential_names, used_names = selection_utils.choose_new_uid(potential_names, used_names)
             leaf.name = 'leaf-' + uid
 
-        for leaf in set(all_leaves) - set(observed_leaves):
+        for leaf in set(updated_live_leaves) - set(observed_leaves):
             self.get_ancestor_above_leaf_to_detach(leaf)
 
         if args.selection:
