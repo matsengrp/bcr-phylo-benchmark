@@ -9,7 +9,7 @@ from ete3 import Tree
 import re, random
 from collections import defaultdict
 from Bio.Data.IUPACData import ambiguous_dna_values
-from GCutils import hamming_distance, CollapsedTree, CollapsedForest, translate
+from GCutils import hamming_distance, CollapsedTree, CollapsedForest, local_translate
 
 
 # iterate over recognized sections in the phylip output file.
@@ -124,7 +124,7 @@ def build_tree(sequences, parents, counts=None, naive='naive'):
         node = Tree()
         node.name = name
         node.add_feature('nuc_seq', sequences[node.name])
-        node.add_feature('aa_seq', translate(sequences[node.name]))
+        node.add_feature('aa_seq', local_translate(sequences[node.name]))
         if counts is not None and node.name in counts:
             node.add_feature('frequency', counts[node.name])
         else:
@@ -178,6 +178,7 @@ def main():
     parser.add_argument('--dump_newick', action='store_true', default=False, help='Dump trees in newick format.')
     parser.add_argument('--colormap', required=False, help='Colormap for ETE3.')
     parser.add_argument('--idmap', required=False, help='Id mapping from simulation to Phylip file sequence names.')
+    parser.add_argument('--no-plot', action='store_true', default=False, help='don\'t write any plots.')
     args = parser.parse_args()
 
     # Parse dnaml/dnapars trees into a collapsed trees and pack them into a forest:
@@ -212,7 +213,8 @@ def main():
     else:
         colormap = None
     # Render svg:
-    trees[0].render(args.outbase + '.svg', colormap=colormap)
+    if not args.no_plot:
+        trees[0].render(args.outbase + '.svg', colormap=colormap)
     print('Done')
 
 if __name__ == "__main__":
