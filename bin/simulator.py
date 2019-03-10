@@ -195,17 +195,17 @@ class MutationModel():
 
     # ----------------------------------------------------------------------------------------
     # Make a single target sequence with <n_muts> hamming distance from <args.naive_tseq> (nuc or aa distance according to args.metric_for_target_distance)
-    def make_target_sequence(self, args, n_max_tries=100):
-        assert not has_stop_aa(args.naive_tseq.aa)  # already checked during argument parsing, but we really want to make sure since the loop will blow up if there's a stop to start with
+    def make_target_sequence(self, args, initial_tseq, tdist, lambda0, n_max_tries=100):
+        assert not has_stop_aa(initial_tseq.aa)  # already checked during argument parsing, but we really want to make sure since the loop will blow up if there's a stop to start with
         itry = 0
         while itry < n_max_tries:
             dist = None
-            tseq = args.naive_tseq
-            while dist is None or dist < args.target_distance:
-                mfo = self.mutate(tseq.nuc, args.target_sequence_lambda0, aa_seq=tseq.aa)
+            tseq = initial_tseq
+            while dist is None or dist < tdist:
+                mfo = self.mutate(tseq.nuc, lambda0, aa_seq=tseq.aa)
                 tseq = TranslatedSeq(mfo['nuc_seq'], aa_seq=mfo['aa_seq'])
-                dist = target_distance_fcn(args, args.naive_tseq, [tseq])
-                if dist == args.target_distance and not has_stop_aa(tseq.aa):  # Stop codon cannot be part of the return
+                dist = target_distance_fcn(args, initial_tseq, [tseq])
+                if dist == tdist and not has_stop_aa(tseq.aa):  # Stop codon cannot be part of the return
                     return tseq
             itry += 1
 
@@ -213,13 +213,36 @@ class MutationModel():
 
     # ----------------------------------------------------------------------------------------
     def get_targets(self, args):
-        print('    making %d target sequences' % args.target_count)
-        target_seqs = [self.make_target_sequence(args) for i in range(args.target_count)]
+        start = time.time()
+
+        main_target_count = args.target_count if args.n_target_clusters is None else args.n_target_clusters
+        if args.n_target_clusters is not None:
+            print('      making %d main target sequences' % main_target_count)
+        target_seqs = [self.make_target_sequence(args, args.naive_tseq, args.target_distance, args.target_sequence_lambda0) for i in range(main_target_count)]
+        assert len(set([len(args.naive_tseq.aa)] + [len(t.aa) for t in target_seqs])) == 1  # targets and naive seq are same length
+        assert len(set([args.target_distance] + [target_distance_fcn(args, args.naive_tseq, [t]) for t in target_seqs])) == 1  # all targets are the right distance from the naive
+
+        if args.n_target_clusters is not None:
+            tmp_n_per_cluster = max(1, int(args.target_count / float(args.n_target_clusters)))  # you should really set them so they are nicely divisible integers, but if you don't, you'll still get at least one, and some kind of rounding (the goal here is to have --target_count always be the total number of target sequences)
+            cluster_sizes = [tmp_n_per_cluster for _ in target_seqs]
+            if sum(cluster_sizes) > args.target_count:
+                raise Exception('inconsistent --n_target_clusters %d and --target_count %d' % (args.n_target_clusters, args.target_count))
+            if sum(cluster_sizes) < args.target_count:
+                cluster_sizes[-1] += args.target_count - sum(cluster_sizes)
+            assert sum(cluster_sizes) == args.target_count
+            final_target_seqs = []
+            for tseq, csize in zip(target_seqs, cluster_sizes):
+                cluster_targets = [self.make_target_sequence(args, tseq, args.target_cluster_distance, args.target_sequence_lambda0) for i in range(csize - 1)]
+                assert len(set([args.target_cluster_distance] + [target_distance_fcn(args, tseq, [t]) for t in cluster_targets])) == 1  # all targets are the right distance from the naive
+                final_target_seqs += [tseq] + cluster_targets
+            target_seqs = final_target_seqs
+            print('      added clusters around each main target for %d total targets: %s' % (len(target_seqs), ' '.join(str(cs) for cs in cluster_sizes)))
+
         with open(args.outbase + '_targets.fa', 'w') as tfile:
             for itarget, tseq in enumerate(target_seqs):
                 tfile.write('>%s\n%s\n' % ('target-%d' % itarget, tseq.nuc))  # [:len(tseq.nuc) - args.n_pads_added]))
-        assert len(set([len(args.naive_tseq.aa)] + [len(t.aa) for t in target_seqs])) == 1  # targets and naive seq are same length
-        assert len(set([args.target_distance] + [target_distance_fcn(args, args.naive_tseq, [t]) for t in target_seqs])) == 1  # all targets are the right distance from the naive
+
+        print('    made %d total target seqs (%.1fs)' % (len(target_seqs), time.time()-start))  # oh, wait, maybe this doesn't take any real time any more? i thought it used to involve more iteration/traversing
         return target_seqs
 
     # ----------------------------------------------------------------------------------------
@@ -668,6 +691,8 @@ def main():
                         'Fixation time is approx. log2(carry_cap), e.g. log2(1000) ~= 10.')
     parser.add_argument('--target_count', type=int, default=10, help='The number of target sequences to generate.')
     parser.add_argument('--target_distance', type=int, default=10, help='Desired distance (using --metric_for_target_distance) between the naive sequence and the target sequences.')
+    parser.add_argument('--n_target_clusters', type=int, help='If set, divide the --target_count target sequences into --target_count / --n_target_clusters "clusters" of target sequences, where each cluster consists of one "main" sequence separated from the naive by --target_distance, surrounded by the others in the cluster at radius --target_cluster_distance. If you set numbers that aren\'t evenly divisible, then the clusters won\'t all be the same size, but the total number of targets will always be --target_count')
+    parser.add_argument('--target_cluster_distance', type=int, default=1, help='See --target_cluster_count')
     parser.add_argument('--metric_for_target_distance', default='aa', choices=['aa', 'nuc'], help='Metric to use to calculate the distance to each target sequence (aa: use amino acid distance, i.e. only non-synonymous mutations count, nuc: use nucleotide distance).')
     parser.add_argument('--naive_seq2', help='Second seed naive nucleotide sequence. For simulating heavy/light chain co-evolution.')
     parser.add_argument('--naive_kd', type=float, default=100, help='kd of the naive sequence in nano molar.')
