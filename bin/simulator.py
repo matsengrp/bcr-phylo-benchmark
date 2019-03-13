@@ -205,11 +205,11 @@ class MutationModel():
                 mfo = self.mutate(tseq.nuc, lambda0, aa_seq=tseq.aa)
                 tseq = TranslatedSeq(mfo['nuc_seq'], aa_seq=mfo['aa_seq'])
                 dist = target_distance_fcn(args, initial_tseq, [tseq])
-                if dist == tdist and not has_stop_aa(tseq.aa):  # Stop codon cannot be part of the return
+                if dist >= tdist and not has_stop_aa(tseq.aa):  # TODO wouldn't it make more sense (or at least be faster) to give up as soon as you get a stop codon?
                     return tseq
             itry += 1
 
-        raise RuntimeError('fell through after trying %d times to make a target sequence' % n_max_tries)
+        raise Exception('couldn\'t make a target sequence in %d tries (didn\'t make it to requested target distance %d, and/or had stops)' % (n_max_tries, tdist))
 
     # ----------------------------------------------------------------------------------------
     def get_targets(self, args):
@@ -220,7 +220,8 @@ class MutationModel():
             print('      making %d main target sequences' % main_target_count)
         target_seqs = [self.make_target_sequence(args, args.naive_tseq, args.target_distance, args.target_sequence_lambda0) for i in range(main_target_count)]
         assert len(set([len(args.naive_tseq.aa)] + [len(t.aa) for t in target_seqs])) == 1  # targets and naive seq are same length
-        assert len(set([args.target_distance] + [target_distance_fcn(args, args.naive_tseq, [t]) for t in target_seqs])) == 1  # all targets are the right distance from the naive
+        if args.metric_for_target_distance != 'aa-sim':  # can't really require it to be exactly equal, since the distance between difference various amino acids varies close to continuously
+            assert len(set([args.target_distance] + [target_distance_fcn(args, args.naive_tseq, [t]) for t in target_seqs])) == 1  # all targets are the right distance from the naive
 
         if args.n_target_clusters is not None:
             tmp_n_per_cluster = max(1, int(args.target_count / float(args.n_target_clusters)))  # you should really set them so they are nicely divisible integers, but if you don't, you'll still get at least one, and some kind of rounding (the goal here is to have --target_count always be the total number of target sequences)
@@ -606,16 +607,9 @@ def make_plots(args, tree, collapsed_tree):
 # ----------------------------------------------------------------------------------------
 def run_simulation(args):
     mutation_model = MutationModel(args)
-    tree, collapsed_tree = None, None
-    n_max_tries = 1000
-    for itry in range(n_max_tries):  # keep trying if we don't get enough leaves, or if there's backmutation
-        try:
-            tree, collapsed_tree = mutation_model.simulate(args)
-            break
-        except RuntimeError as e:
-            print('      {} {}\n  trying again'.format(selection_utils.color('red', 'error:'), e))
+    tree, collapsed_tree = mutation_model.simulate(args)
     if tree is None:
-        raise RuntimeError('{} attempts exceeded'.format(n_max_tries))
+        raise Exception('simulation failed')  # not sure if this can actually happen any more
 
     # write observed sequences to fasta file(s)
     if args.naive_seq2 is not None:
@@ -693,7 +687,7 @@ def main():
     parser.add_argument('--target_distance', type=int, default=10, help='Desired distance (using --metric_for_target_distance) between the naive sequence and the target sequences.')
     parser.add_argument('--n_target_clusters', type=int, help='If set, divide the --target_count target sequences into --target_count / --n_target_clusters "clusters" of target sequences, where each cluster consists of one "main" sequence separated from the naive by --target_distance, surrounded by the others in the cluster at radius --target_cluster_distance. If you set numbers that aren\'t evenly divisible, then the clusters won\'t all be the same size, but the total number of targets will always be --target_count')
     parser.add_argument('--target_cluster_distance', type=int, default=1, help='See --target_cluster_count')
-    parser.add_argument('--metric_for_target_distance', default='aa', choices=['aa', 'nuc'], help='Metric to use to calculate the distance to each target sequence (aa: use amino acid distance, i.e. only non-synonymous mutations count, nuc: use nucleotide distance).')
+    parser.add_argument('--metric_for_target_distance', default='aa', choices=['aa', 'nuc', 'aa-sim'], help='Metric to use to calculate the distance to each target sequence (aa: use amino acid distance, i.e. only non-synonymous mutations count, nuc: use nucleotide distance).')
     parser.add_argument('--naive_seq2', help='Second seed naive nucleotide sequence. For simulating heavy/light chain co-evolution.')
     parser.add_argument('--naive_kd', type=float, default=100, help='kd of the naive sequence in nano molar.')
     parser.add_argument('--mature_kd', type=float, default=1, help='kd of the mature sequences in nano molar.')
@@ -750,7 +744,7 @@ def main():
         args.naive_seq = args.naive_seq.upper()
     if args.lambda0 is None:
         args.lambda0 = [max([1, int(.01*len(args.naive_seq))])]
-    # if len(args.naive_seq) % 3 != 0:  # this lets you remove the extra lines in GCutils.local_translte(), which is faster, but then the N pads get passed to partis, which confuses things (especially since they can get mutated)
+    # if len(args.naive_seq) % 3 != 0:  # this lets you remove the extra lines in GCutils.local_translate(), which is faster, but then the N pads get passed to partis, which confuses things (especially since they can get mutated)
     #     print('  note: padding right side of --naive_seq to multiple of three')
     #     n_pads_added = 3 - (len(args.naive_seq) % 3)
     #     args.naive_seq += 'N' * n_pads_added

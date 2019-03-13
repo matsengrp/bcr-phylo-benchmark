@@ -17,7 +17,29 @@ import matplotlib; matplotlib.use('agg')
 from matplotlib import pyplot as plt
 from ete3 import TreeNode
 
-from GCutils import has_stop_aa, hamming_distance
+from GCutils import has_stop_aa, hamming_distance, local_translate
+
+# ----------------------------------------------------------------------------------------
+def aa_ascii_code_distance(aa1, aa2):  # super arbitrary, but at least for the moment we just want some arbitrary spread in distances
+    return abs(ord(aa2) - ord(aa1))
+
+# ----------------------------------------------------------------------------------------
+all_codons = [''.join(c) for c in itertools.product('ACGT', repeat=3)]
+all_amino_acids = set(local_translate(c) for c in all_codons)  # note: includes stop codons (*)
+all_sdists = [aa_ascii_code_distance(aa1, aa2) for aa1, aa2 in itertools.combinations(all_amino_acids, 2)]
+min_sdist, max_sdist = min(all_sdists), max(all_sdists)
+scale_min, scale_max = 0.7, 1.5  # you want the mean to be kinda sorta around 1, so the --target_dist ends up being comparable. This gives around 0.9 (averaging with the uniform ditribution [below], which is a very arbitrary choice)
+
+# ----------------------------------------------------------------------------------------
+def rescaled_sdist(sval):  # rescale the differences in ascii codes for the aa letters to the range [scale_min, scale_max] (so the mean is around one, so it's similar to the hamming distance)
+    return scale_min + (sval - min_sdist) * (scale_max - scale_min) / float(max_sdist - min_sdist)
+
+# ----------------------------------------------------------------------------------------
+def aa_inverse_similarity(aa1, aa2):
+    return rescaled_sdist(aa_ascii_code_distance(aa1, aa2))
+
+# all_rescaled_vals = [aa_inverse_similarity(aa1, aa2) for aa1, aa2 in itertools.combinations(all_amino_acids, 2)]
+# print(' mean %.3f  min %.1f  max %.1f' % (numpy.mean(all_rescaled_vals), min(all_rescaled_vals), max(all_rescaled_vals)))
 
 # ----------------------------------------------------------------------------------------
 def target_distance_fcn(args, this_seq, target_seqs):
@@ -25,6 +47,8 @@ def target_distance_fcn(args, this_seq, target_seqs):
         return min([hamming_distance(this_seq.aa, t.aa) for t in target_seqs])
     elif args.metric_for_target_distance == 'nuc':
         return min([hamming_distance(this_seq.nuc, t.nuc) for t in target_seqs])
+    elif args.metric_for_target_distance == 'aa-sim':
+        return min(sum(aa_inverse_similarity(aa1, aa2) for aa1, aa2 in zip(this_seq.aa, t.aa) if aa1 != aa2) for t in target_seqs)
     else:
         assert False
 
