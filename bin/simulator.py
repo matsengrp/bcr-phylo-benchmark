@@ -205,7 +205,8 @@ class MutationModel():
                 mfo = self.mutate(tseq.nuc, lambda0, aa_seq=tseq.aa)
                 tseq = TranslatedSeq(mfo['nuc_seq'], aa_seq=mfo['aa_seq'])
                 dist = target_distance_fcn(args, initial_tseq, [tseq])
-                if dist >= tdist and not has_stop_aa(tseq.aa):  # TODO wouldn't it make more sense (or at least be faster) to give up as soon as you get a stop codon?
+                # TODO wouldn't it make more sense (or at least be faster) to give up as soon as you get a stop codon?
+                if dist >= tdist and not has_stop_aa(tseq.aa):  # greater-than is for aa-sim metric, since it's almost continuous
                     return tseq
             itry += 1
 
@@ -606,6 +607,7 @@ def make_plots(args, tree, collapsed_tree):
 
 # ----------------------------------------------------------------------------------------
 def run_simulation(args):
+    start = time.time()
     mutation_model = MutationModel(args)
     tree, collapsed_tree = mutation_model.simulate(args)
     if tree is None:
@@ -644,6 +646,8 @@ def run_simulation(args):
     collapsed_tree.write(args.outbase + '_collapsed_tree.p')
     if args.selection:
         collapsed_tree.write( args.outbase+'_collapsed_runstat_color_tree.p')
+
+    print('  total time %.1fs' % (time.time() - start))
 
 # ----------------------------------------------------------------------------------------
 def main():
@@ -687,7 +691,7 @@ def main():
     parser.add_argument('--target_distance', type=int, default=10, help='Desired distance (using --metric_for_target_distance) between the naive sequence and the target sequences.')
     parser.add_argument('--n_target_clusters', type=int, help='If set, divide the --target_count target sequences into --target_count / --n_target_clusters "clusters" of target sequences, where each cluster consists of one "main" sequence separated from the naive by --target_distance, surrounded by the others in the cluster at radius --target_cluster_distance. If you set numbers that aren\'t evenly divisible, then the clusters won\'t all be the same size, but the total number of targets will always be --target_count')
     parser.add_argument('--target_cluster_distance', type=int, default=1, help='See --target_cluster_count')
-    parser.add_argument('--metric_for_target_distance', default='aa', choices=['aa', 'nuc', 'aa-sim'], help='Metric to use to calculate the distance to each target sequence (aa: use amino acid distance, i.e. only non-synonymous mutations count, nuc: use nucleotide distance).')
+    parser.add_argument('--metric_for_target_distance', default='aa', choices=['aa', 'nuc', 'aa-sim'], help='Metric to use to calculate the distance to each target sequence (aa: use amino acid distance, i.e. only non-synonymous mutations count, nuc: use nucleotide distance, aa-sim: amino acid distance, but where different pairs of amino acids are different distances apart).')
     parser.add_argument('--naive_seq2', help='Second seed naive nucleotide sequence. For simulating heavy/light chain co-evolution.')
     parser.add_argument('--naive_kd', type=float, default=100, help='kd of the naive sequence in nano molar.')
     parser.add_argument('--mature_kd', type=float, default=1, help='kd of the mature sequences in nano molar.')

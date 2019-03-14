@@ -24,6 +24,7 @@ def aa_ascii_code_distance(aa1, aa2):  # super arbitrary, but at least for the m
     return abs(ord(aa2) - ord(aa1))
 
 # ----------------------------------------------------------------------------------------
+# it might make replace_codon_in_aa_seq() faster to use a table here of precached translations, but translation just isn't taking that much time a.t.m.
 all_codons = [''.join(c) for c in itertools.product('ACGT', repeat=3)]
 all_amino_acids = set(local_translate(c) for c in all_codons)  # note: includes stop codons (*)
 all_sdists = [aa_ascii_code_distance(aa1, aa2) for aa1, aa2 in itertools.combinations(all_amino_acids, 2)]
