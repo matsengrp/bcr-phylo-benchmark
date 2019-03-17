@@ -84,7 +84,7 @@ class MutationModel():
         return self.translation_cache[nuc_seq]
 
     # ----------------------------------------------------------------------------------------
-    def init_node(self, args, nuc_seq, time, parent, target_seqs=None, aa_seq=None):
+    def init_node(self, args, nuc_seq, time, parent, target_seqs=None, aa_seq=None, mean_kd=None):
         node = TreeNode()
         node.add_feature('nuc_seq', nuc_seq)  # NOTE don't use a TranslatedSeq feature since it gets written to pickle files, which then requires importing the class definition
         node.add_feature('aa_seq', aa_seq if aa_seq is not None else self.get_translation(nuc_seq))
@@ -97,6 +97,7 @@ class MutationModel():
             node.add_feature('lambda_', None)  # set in selection_utils.update_lambda_values() (i.e. is modified every (few) generations)
             node.add_feature('target_distance', target_distance_fcn(args, TranslatedSeq(nuc_seq, node.aa_seq), target_seqs))  # nuc or aa distance, depending on args
             node.add_feature('Kd', selection_utils.calc_kd(node, args))
+            node.add_feature('relative_Kd', node.Kd / float(mean_kd) if mean_kd is not None else None)  # kd relative to mean of the current leaves
         return node
 
     # ----------------------------------------------------------------------------------------
@@ -347,7 +348,7 @@ class MutationModel():
         self.intermediate_sampled_nodes = []  # actual intermediate-sampled nodes
         self.intermediate_sampled_lineage_nodes = set()  # any nodes ancestral to intermediate-sampled nodes (we keep track of these so we know not to prune them)
         self.nodes_to_detach = set()
-        tree = self.init_node(args, args.naive_tseq.nuc, 0, None, target_seqs)
+        tree = self.init_node(args, args.naive_tseq.nuc, 0, None, target_seqs, mean_kd=args.naive_kd)
         if args.selection:
             self.tdist_hists[0] = self.get_target_distance_hist(args, tree)  # i guess the first entry in the other two just stays None
 
@@ -355,8 +356,8 @@ class MutationModel():
             print('        end of      live     target dist (%s)          kd           termination' % args.metric_for_target_distance)
             print('      generation   leaves      min  mean           min    mean        checks')
         if args.debug > 1:
-            print('       gen   live leaves')
-            print('             before/after   ileaf   n children     n mutations          Kd   (%s: updated lambdas)' % selection_utils.color('blue', 'x'))
+            print('       gen   live leaves   (%s: terminated/no children)' % selection_utils.color('red', 'x'))
+            print('             before/after   ileaf   lambda  n children     n mutations            Kd   (%s: updated lambdas)' % selection_utils.color('blue', 'x'))
         static_live_leaves, updated_live_leaves = None, None
         while True:
             current_time += 1
@@ -371,6 +372,7 @@ class MutationModel():
             else:
                 static_live_leaves = updated_live_leaves
             updated_live_leaves = [l for l in static_live_leaves]  # but this one, we keep updating (so we don't have to call iter_leaves() so much, which was taking quite a bit of time) (matches self.n_unterminated_leaves)
+            updated_mean_kd = None  # keep track of mean kd over current leaves, so on initialization we can set each leaf's relative_kd
             random.shuffle(static_live_leaves)
             if args.debug > 1:
                 print('      %3d    %3d' % (current_time, len(static_live_leaves)), end='\n' if len(static_live_leaves) == 0 else '')  # NOTE these are live leaves *after* the intermediate sampling above
@@ -380,6 +382,7 @@ class MutationModel():
                     if skip_lambda_n == 0:  # time to update the lambdas for every leaf
                         skip_lambda_n = args.skip_update + 1  # reset it so we don't update again until we've done <args.skip_update> more leaves (+ 1 is so that if args.skip_update is 0 we don't skip at all, i.e. args.skip_update is the number of leaves skipped, *not* the number of leaves *between* updates)
                         tree = selection_utils.update_lambda_values(tree, updated_live_leaves, args.A_total, args.B_total, args.Lp)
+                        updated_mean_kd = numpy.mean([l.Kd for l in updated_live_leaves if l.Kd != float('inf')])
                         lambda_update_dbg_str = selection_utils.color('blue', 'x')
                     this_lambda = max(leaf.lambda_, self.lambda_min)
                     skip_lambda_n -= 1
@@ -408,13 +411,13 @@ class MutationModel():
                     n_mutation_list, kd_list = [], []
                 for _ in range(n_children):
                     if args.naive_seq2 is not None:  # for paired heavy/light we mutate them separately with their own mutation rate
-                        mfos = [self.mutate(get_pair_seq(leaf.nuc_seq, args.pair_bounds, iseq), args.lambda0[iseq]) for iseq in range(len(args.lambda0))]  # NOTE doesn't pass or get aa_seq, but only result of that should be that self.init_node() has to calculate it
+                        mfos = [self.mutate(get_pair_seq(leaf.nuc_seq, args.pair_bounds, iseq), args.lambda0[iseq]) for iseq in range(len(args.lambda0))]  # NOTE doesn't pass or get aa_seq, but the only result of that should be that self.init_node() has to calculate it
                         mutated_sequence = ''.join(m['nuc_seq'] for m in mfos)
                     else:
                         mfo = self.mutate(leaf.nuc_seq, args.lambda0[0], aa_seq=leaf.aa_seq)
                         if args.debug > 1:
                             n_mutation_list.append(mfo['n_muts'])
-                    child = self.init_node(args, mfo['nuc_seq'], current_time, leaf, target_seqs, aa_seq=mfo['aa_seq'])
+                    child = self.init_node(args, mfo['nuc_seq'], current_time, leaf, target_seqs, aa_seq=mfo['aa_seq'], mean_kd=updated_mean_kd)
                     if args.selection and args.debug > 1:
                         kd_list.append(child.Kd)
                     leaf.add_child(child)
@@ -422,10 +425,12 @@ class MutationModel():
                     if leaf in updated_live_leaves:  # <leaf> isn't a leaf any more, since now it has children
                         updated_live_leaves.remove(leaf)  # now that it's been updated, it matches self.n_unterminated_leaves
                 if args.debug > 1:
+                    terminated_dbg_str = selection_utils.color('red', 'x') if n_children == 0 else ' '
                     n_mutation_str_list = [('%d' % n) if n > 0 else '-' for n in n_mutation_list]
                     kd_str_list = ['%.0f' % kd for kd in kd_list]
+                    rel_kd_str_list = ['%.2f' % (kd / updated_mean_kd) for kd in kd_list]
                     pre_leaf_str = '' if static_live_leaves.index(leaf) == 0 else ('%12s %3d' % ('', len(updated_live_leaves)))
-                    print(('      %s      %4d   %3d  %s          %-14s       %-28s') % (pre_leaf_str, static_live_leaves.index(leaf), n_children, lambda_update_dbg_str, ' '.join(n_mutation_str_list), ' '.join(kd_str_list)))
+                    print(('      %s    %4d      %5.2f  %3d  %s%s          %-14s       %-28s      %-28s') % (pre_leaf_str, static_live_leaves.index(leaf), leaf.lambda_, n_children, lambda_update_dbg_str, terminated_dbg_str, ' '.join(n_mutation_str_list), ' '.join(kd_str_list), ' '.join(rel_kd_str_list)))
 
             if args.selection:
                 self.tdist_hists[current_time] = self.get_target_distance_hist(args, updated_live_leaves)
