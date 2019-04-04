@@ -95,7 +95,9 @@ class MutationModel():
         node.add_feature('frequency', 0)  # observation frequency, is set to either 1 or 0 in set_observation_frequencies_and_names(), then when the collapsed tree is constructed it can get bigger than 1 when the frequencies of nodes connected by zero-length branches are summed
         if args.selection:
             node.add_feature('lambda_', None)  # set in selection_utils.update_lambda_values() (i.e. is modified every (few) generations)
-            node.add_feature('target_distance', target_distance_fcn(args, TranslatedSeq(nuc_seq, node.aa_seq), target_seqs))  # nuc or aa distance, depending on args
+            itarget, tdist = target_distance_fcn(args, TranslatedSeq(nuc_seq, node.aa_seq), target_seqs)
+            node.add_feature('target_index', itarget)
+            node.add_feature('target_distance', tdist)  # nuc or aa distance, depending on args
             node.add_feature('Kd', selection_utils.calc_kd(node, args))
             node.add_feature('relative_Kd', node.Kd / float(mean_kd) if mean_kd is not None else None)  # kd relative to mean of the current leaves
         return node
@@ -205,7 +207,7 @@ class MutationModel():
             while dist is None or dist < tdist:
                 mfo = self.mutate(tseq.nuc, lambda0, aa_seq=tseq.aa)
                 tseq = TranslatedSeq(mfo['nuc_seq'], aa_seq=mfo['aa_seq'])
-                dist = target_distance_fcn(args, initial_tseq, [tseq])
+                _, dist = target_distance_fcn(args, initial_tseq, [tseq])
                 # TODO wouldn't it make more sense (or at least be faster) to give up as soon as you get a stop codon?
                 if dist >= tdist and not has_stop_aa(tseq.aa):  # greater-than is for aa-sim metric, since it's almost continuous
                     return tseq
@@ -223,7 +225,7 @@ class MutationModel():
         target_seqs = [self.make_target_sequence(args, args.naive_tseq, args.target_distance, args.target_sequence_lambda0) for i in range(main_target_count)]
         assert len(set([len(args.naive_tseq.aa)] + [len(t.aa) for t in target_seqs])) == 1  # targets and naive seq are same length
         if args.metric_for_target_distance != 'aa-sim':  # can't really require it to be exactly equal, since the distance between difference various amino acids varies close to continuously
-            assert len(set([args.target_distance] + [target_distance_fcn(args, args.naive_tseq, [t]) for t in target_seqs])) == 1  # all targets are the right distance from the naive
+            assert len(set([args.target_distance] + [target_distance_fcn(args, args.naive_tseq, [t])[1] for t in target_seqs])) == 1  # all targets are the right distance from the naive
 
         if args.n_target_clusters is not None:
             tmp_n_per_cluster = max(1, int(args.target_count / float(args.n_target_clusters)))  # you should really set them so they are nicely divisible integers, but if you don't, you'll still get at least one, and some kind of rounding (the goal here is to have --target_count always be the total number of target sequences)
@@ -236,7 +238,7 @@ class MutationModel():
             final_target_seqs = []
             for tseq, csize in zip(target_seqs, cluster_sizes):
                 cluster_targets = [self.make_target_sequence(args, tseq, args.target_cluster_distance, args.target_sequence_lambda0) for i in range(csize - 1)]
-                assert len(set([args.target_cluster_distance] + [target_distance_fcn(args, tseq, [t]) for t in cluster_targets])) == 1  # all targets are the right distance from the naive
+                assert len(set([args.target_cluster_distance] + [target_distance_fcn(args, tseq, [t])[1] for t in cluster_targets])) == 1  # all targets are the right distance from the naive
                 final_target_seqs += [tseq] + cluster_targets
             target_seqs = final_target_seqs
             print('      added clusters around each main target for %d total targets: %s' % (len(target_seqs), ' '.join(str(cs) for cs in cluster_sizes)))

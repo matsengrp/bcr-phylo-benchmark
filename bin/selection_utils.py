@@ -16,6 +16,7 @@ from scipy.optimize import minimize, fsolve
 import matplotlib; matplotlib.use('agg')
 from matplotlib import pyplot as plt
 from ete3 import TreeNode
+import operator
 
 from GCutils import has_stop_aa, hamming_distance, local_translate
 
@@ -45,11 +46,11 @@ def aa_inverse_similarity(aa1, aa2):
 # ----------------------------------------------------------------------------------------
 def target_distance_fcn(args, this_seq, target_seqs):
     if args.metric_for_target_distance == 'aa':
-        return min([hamming_distance(this_seq.aa, t.aa) for t in target_seqs])
+        return min([(i, hamming_distance(this_seq.aa, t.aa)) for i, t in enumerate(target_seqs)], key=operator.itemgetter(1))  # this is annoyingly complicated because we want to also return *which* target sequence was the closest one, which we have to do here now (instead of afterward) since it depends on which metric we're using
     elif args.metric_for_target_distance == 'nuc':
-        return min([hamming_distance(this_seq.nuc, t.nuc) for t in target_seqs])
+        return min([(i, hamming_distance(this_seq.nuc, t.nuc)) for i, t in enumerate(target_seqs)], key=operator.itemgetter(1))
     elif args.metric_for_target_distance == 'aa-sim':
-        return min(sum(aa_inverse_similarity(aa1, aa2) for aa1, aa2 in zip(this_seq.aa, t.aa) if aa1 != aa2) for t in target_seqs)
+        return min([(i, sum(aa_inverse_similarity(aa1, aa2) for aa1, aa2 in zip(this_seq.aa, t.aa) if aa1 != aa2)) for i, t in enumerate(target_seqs)], key=operator.itemgetter(1))
     else:
         assert False
 
