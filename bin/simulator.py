@@ -443,7 +443,7 @@ class MutationModel():
             if args.debug == 1:
                 mintd, meantd = '-', '-'
                 minkd, meankd = '-', '-'
-                if args.selection:
+                if args.selection and len(updated_live_leaves) > 0:
                     tmptdvals = [l.target_distance for l in updated_live_leaves]
                     mintd, meantd = '%2d' % min(tmptdvals), '%3.1f' % numpy.mean(tmptdvals)
                     tmpkdvals = [l.Kd for l in updated_live_leaves if l.Kd != float('inf')]
@@ -544,8 +544,6 @@ class MutationModel():
         treename = 'GCsim %s' % ('selection' if args.selection else 'neutral')
         collapsed_tree = CollapsedTree(tree, treename, allow_repeats=args.selection)
         n_collapsed_seqs = sum(node.frequency > 0 for node in collapsed_tree.tree.traverse())
-        if n_collapsed_seqs < 2:
-            raise RuntimeError('collapsed tree contains only %d observed sequences (we require at least two)' % n_collapsed_seqs)
 
         tree.ladderize()
 
@@ -617,8 +615,8 @@ def run_simulation(args):
     start = time.time()
     mutation_model = MutationModel(args)
     tree, collapsed_tree = mutation_model.simulate(args)
-    if tree is None:
-        raise Exception('simulation failed')  # not sure if this can actually happen any more
+    if len(list(tree.iter_leaves())) < 2:
+        raise Exception('only one leaf in tree (probably just need to run with different --random_seed)')
 
     # write observed sequences to fasta file(s)
     if args.naive_seq2 is not None:

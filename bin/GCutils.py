@@ -125,12 +125,10 @@ class CollapsedTree():
             raise RuntimeError('observed genotypes don\'t match after collapse\n\tbefore: {}\n\tafter: {}\n\tsymmetric diff: {}'.format(observed_genotypes, final_observed_genotypes, observed_genotypes ^ final_observed_genotypes))
         assert sum(node.frequency for node in tree.traverse()) == sum(node.frequency for node in self.tree.traverse())
 
-        rep_seq = sum(node.frequency > 0 for node in self.tree.traverse()) - len(set([node.nuc_seq for node in self.tree.traverse() if node.frequency > 0]))
-        if not allow_repeats and rep_seq:
-            raise RuntimeError('Repeated observed sequences in collapsed tree. {} sequences were found repeated.'.format(rep_seq))
-        elif allow_repeats and rep_seq:
-            rep_seq = sum(node.frequency > 0 for node in self.tree.traverse()) - len(set([node.nuc_seq for node in self.tree.traverse() if node.frequency > 0]))
-            print('Repeated observed sequences in collapsed tree. {} sequences were found repeated.'.format(rep_seq))
+        n_repeated_seqs = sum(node.frequency > 0 for node in self.tree.traverse()) - len(set([node.nuc_seq for node in self.tree.traverse() if node.frequency > 0]))
+        if not allow_repeats and n_repeated_seqs:
+            raise RuntimeError('found %d repeated sequences when collapsing tree' % n_repeated_seqs)
+
         # a custom ladderize accounting for abundance and sequence to break ties in abundance
         for node in self.tree.traverse(strategy='postorder'):
             # add a partition feature and compute it recursively up the tree
