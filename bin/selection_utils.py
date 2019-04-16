@@ -17,6 +17,8 @@ import matplotlib; matplotlib.use('agg')
 from matplotlib import pyplot as plt
 from ete3 import TreeNode
 import operator
+import warnings
+warnings.filterwarnings('ignore', 'The iteration is not making good progress')  # scipy.optimize.fsolve() is throwing this. I think it's telling us that our initial guess isn't very good, but as far as I can tell (without understanding kristian's code here) it ends up at a fine solution in the end, so maybe it's ok to turn off this warning
 
 from GCutils import has_stop_aa, hamming_distance, local_translate
 
