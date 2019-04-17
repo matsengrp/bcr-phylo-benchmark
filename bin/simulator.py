@@ -308,28 +308,32 @@ class MutationModel():
 
     # ----------------------------------------------------------------------------------------
     def check_termination(self, args, current_time, updated_live_leaves):
-        finished = False
+        finished, successful = False, False
         dbgstr, termstr = [], []
         if self.n_unterminated_leaves <= 0:  # if everybody's dead (probably can't actually go less than zero, but not sure)
             termstr += ['    stopping: no unterminated leaves']
             finished = True
+            successful = False
         if args.n_final_seqs is not None:
             dbgstr += ['n leaves %d' % self.n_unterminated_leaves]
             if self.n_unterminated_leaves >= args.n_final_seqs:  # if we've got as many sequences as we were asked for
                 termstr += ['    --n_final_seqs: breaking with %d >= %d unterminated leaves' % (self.n_unterminated_leaves, args.n_final_seqs)]
                 finished = True
+                successful = True
         if args.obs_times is not None:
             dbgstr += ['time %d' % current_time]
             if current_time >= max(args.obs_times):  # if we've done as many generations as we were told to
                 termstr += ['    --obs_times: breaking at generation %d >= %d' % (current_time, max(args.obs_times))]
                 finished = True
+                successful = True
         if args.stop_dist is not None and current_time > 0:
             min_tdist = min([l.target_distance for l in updated_live_leaves])
             dbgstr += ['min tdist %d' % min_tdist]
             if min_tdist <= args.stop_dist:  # if the leaves have gotten close enough to the target sequences
                 termstr += ['    --stop_dist: breaking with min target distance %d <= %d' % (min_tdist, args.stop_dist)]
                 finished = True
-        return finished, ', '.join(dbgstr), '\n'.join(termstr)
+                successful = True
+        return finished, successful, ', '.join(dbgstr), '\n'.join(termstr)
 
     # ----------------------------------------------------------------------------------------
     def simulate(self, args):
@@ -438,7 +442,7 @@ class MutationModel():
                 self.tdist_hists[current_time] = self.get_target_distance_hist(args, updated_live_leaves)
                 self.n_mutated_hists[current_time] = scipy.histogram([l.naive_distance for l in updated_live_leaves], bins=list(numpy.arange(-0.5, (max(args.obs_times) if args.obs_times is not None else current_time) + 0.5)))  # can't have more than one mutation per generation
 
-            finished, dbgstr, termstr = self.check_termination(args, current_time, updated_live_leaves)
+            finished, successful, dbgstr, termstr = self.check_termination(args, current_time, updated_live_leaves)
 
             if args.debug == 1:
                 mintd, meantd = '-', '-'
@@ -543,11 +547,10 @@ class MutationModel():
         # neutral collapse will fail if there's backmutations (?) [preserving old comment]
         treename = 'GCsim %s' % ('selection' if args.selection else 'neutral')
         collapsed_tree = CollapsedTree(tree, treename, allow_repeats=args.selection)
-        n_collapsed_seqs = sum(node.frequency > 0 for node in collapsed_tree.tree.traverse())
 
         tree.ladderize()
 
-        return tree, collapsed_tree
+        return tree, collapsed_tree, successful
 
 # ----------------------------------------------------------------------------------------
 def make_plots(args, tree, collapsed_tree):
@@ -614,9 +617,15 @@ def make_plots(args, tree, collapsed_tree):
 def run_simulation(args):
     start = time.time()
     mutation_model = MutationModel(args)
-    tree, collapsed_tree = mutation_model.simulate(args)
+    itry = 0
+    while itry < args.n_tries:
+        tree, collapsed_tree, successful = mutation_model.simulate(args)
+        if successful:
+            break
+        itry += 1
+        print('  itry %d: retrying tree simulation' % itry)
     if len(list(tree.iter_leaves())) < 2:
-        raise Exception('only one leaf in tree (probably just need to run with different --random_seed)')
+        raise Exception('only one leaf in tree (probably just need to run with larger --n-tries and/or different --random_seed)')
 
     # write observed sequences to fasta file(s)
     if args.naive_seq2 is not None:
@@ -684,6 +693,7 @@ def main():
     parser.add_argument('--n_final_seqs', type=int, help='If set, simulation stops when we\'ve reached this number of sequences. Note that because sequences with stop codons are subsequently removed, and because more than one sequence is added per iteration, we don\'t necessarily output exactly this many. (If --n_to_sample is also set, then we simulate until we have --n_final_seqs, then downsample to --n_to_sample).')
     parser.add_argument('--obs_times', type=int, nargs='+', help='If set, simulation stops when we\'ve reached this many generations. If more than one value is specified, the largest value is the final observation time (and stopping criterion), and earlier values are used as additional, intermediate sampling times')
     parser.add_argument('--stop_dist', type=int, help='If set, simulation stops when any simulated sequence is closer than this hamming distance from any of the target sequences, according to --metric_for_target_distance.')
+    parser.add_argument('--n_tries', type=int, default=1, help='If the tree terminates before the specified stopping criteria are met, set larger than 1 to keep trying (effectively, with different --random_seed).')
     parser.add_argument('--lambda', dest='lambda_', type=float, default=0.9, help='Poisson branching parameter')
     parser.add_argument('--lambda0', type=float, nargs='*', help='Baseline sequence mutation rate(s): first value corresponds to --naive_seq, and optionally the second to --naive_seq2. If only one rate is provided for two sequences, this rate is used for both. If not set, the default is set below')
     parser.add_argument('--target_sequence_lambda0', type=float, default=0.1, help='baseline mutation rate used for generating target sequences (you shouldn\'t need to change this)')
