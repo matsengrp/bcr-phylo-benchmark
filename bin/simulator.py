@@ -314,6 +314,10 @@ class MutationModel():
             termstr += ['    stopping: no unterminated leaves']
             finished = True
             successful = False
+        if len([l.Kd for l in updated_live_leaves if l.Kd != float('inf')]) == 0:  # if everybody's got a stop codon (at least a.t.m. that's the only way you get inf kd)
+            termstr += ['    stopping: all leaves have infinite kd']
+            finished = True
+            successful = False
         if args.n_final_seqs is not None:
             dbgstr += ['n leaves %d' % self.n_unterminated_leaves]
             if self.n_unterminated_leaves >= args.n_final_seqs:  # if we've got as many sequences as we were asked for
@@ -406,9 +410,9 @@ class MutationModel():
                             break
 
                 self.n_unterminated_leaves += n_children - 1
+                updated_live_leaves.remove(leaf)  # either it's terminated (no children), or it's got children, either way it's no longer a live leaf
                 if n_children == 0:  # kill everyone with no children
                     leaf.terminated = True
-                    updated_live_leaves.remove(leaf)
                     self.get_ancestor_above_leaf_to_detach(leaf)
                     if len(static_live_leaves) == 1:
                         print('  terminating only leaf in tree (it has no children)')
@@ -428,8 +432,6 @@ class MutationModel():
                         kd_list.append(child.Kd)
                     leaf.add_child(child)
                     updated_live_leaves.append(child)
-                    if leaf in updated_live_leaves:  # <leaf> isn't a leaf any more, since now it has children
-                        updated_live_leaves.remove(leaf)  # now that it's been updated, it matches self.n_unterminated_leaves
                 if args.debug > 1:
                     terminated_dbg_str = selection_utils.color('red', 'x') if n_children == 0 else ' '
                     n_mutation_str_list = [('%d' % n) if n > 0 else '-' for n in n_mutation_list]
