@@ -224,8 +224,6 @@ class MutationModel():
             print('      making %d main target sequences' % main_target_count)
         target_seqs = [self.make_target_sequence(args, args.naive_tseq, args.target_distance, args.target_sequence_lambda0) for i in range(main_target_count)]
         assert len(set([len(args.naive_tseq.aa)] + [len(t.aa) for t in target_seqs])) == 1  # targets and naive seq are same length
-        if args.metric_for_target_distance != 'aa-sim':  # can't really require it to be exactly equal, since the distance between difference various amino acids varies close to continuously
-            assert len(set([args.target_distance] + [target_distance_fcn(args, args.naive_tseq, [t])[1] for t in target_seqs])) == 1  # all targets are the right distance from the naive
 
         if args.n_target_clusters is not None:
             tmp_n_per_cluster = max(1, int(args.target_count / float(args.n_target_clusters)))  # you should really set them so they are nicely divisible integers, but if you don't, you'll still get at least one, and some kind of rounding (the goal here is to have --target_count always be the total number of target sequences)
@@ -247,7 +245,10 @@ class MutationModel():
             for itarget, tseq in enumerate(target_seqs):
                 tfile.write('>%s\n%s\n' % ('target-%d' % itarget, tseq.nuc))  # [:len(tseq.nuc) - args.n_pads_added]))
 
-        print('    made %d total target seqs (%.1fs)' % (len(target_seqs), time.time()-start))  # oh, wait, maybe this doesn't take any real time any more? i thought it used to involve more iteration/traversing
+        tdists = [target_distance_fcn(args, args.naive_tseq, [t])[1] for t in target_seqs]
+        print('    made %d total target seqs in %.1fs with distances %s  (asked for %.1f)' % (len(target_seqs), time.time()-start, ' '.join(['%.1f' % d for d in tdists]), args.target_distance))  # oh, wait, maybe this doesn't take any real time any more? i thought it used to involve more iteration/traversing
+        if len(set([args.target_distance] + tdists)) > 1 and args.metric_for_target_distance != 'aa-sim':  # can't require it to be exactly equal for aa-sim, since the distance between various amino acids varies close to continuously
+            print('    %s target distances not all equal to requested distance' % selection_utils.color('red', 'note'))
         return target_seqs
 
     # ----------------------------------------------------------------------------------------
