@@ -279,7 +279,7 @@ class MutationModel():
                 break
             if any(not s.terminated for s in parent.children):  # stop if any siblings are unterminated (will be the first branching, except if we've already killed off the sibling lineage in a previous generation)
                 break
-            parent.terminated = True  # this is necessary to avoid cases where we follow two parallel lineages up, and both return the same <last_parent> (since the second on we do doesn't know that we already did the first one unless we set terminated here)
+            parent.terminated = True  # this is necessary to avoid cases where we follow two parallel lineages up, and both return the same <last_parent> (since the second one we do doesn't know that we already did the first one unless we set terminated here)
             last_parent = parent
             parent = parent.up
         if last_parent is not None:
@@ -528,12 +528,17 @@ class MutationModel():
         #     n_pruned_lineages += 1
         # print('    removed %d nodes in %d unobserved lineages (%.1fs)' % (n_pruned_nodes, n_pruned_lineages, time.time()-start))
 
-        # remove unobserved unifurcations
+        # remove unobserved unifurcations and nodes that are distance zero from their parents
+        n_removed = 0
         for node in tree.iter_descendants():
             parent = node.up
-            if node.frequency == 0 and len(node.children) == 1:
+            if node.frequency == 0 and (len(node.children) == 1 or node.dist == 0):  # NOTE this allows leaves that are distance zero from their parents, since leaves we get here are observed
                 node.delete(prevent_nondicotomic=False)  # seems like this should instead use the preserve_branch_length=True option so we don't need the next line, but I don't want to change it
-                node.children[0].dist = hamming_distance(node.children[0].nuc_seq, parent.nuc_seq)
+                if node.dist > 0:
+                    for child in node.children:
+                        child.dist = hamming_distance(child.nuc_seq, parent.nuc_seq)
+                n_removed += 1
+        print('    removed %d unobserved unifurcations + degenerate nodes' % n_removed)
 
         if args.observe_common_ancestors:
             start = time.time()
