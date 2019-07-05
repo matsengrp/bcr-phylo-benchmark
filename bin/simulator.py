@@ -633,7 +633,7 @@ def run_simulation(args):
         itry += 1
         print('  itry %d: retrying tree simulation' % itry)
     if len(list(tree.iter_leaves())) < 2:
-        raise Exception('only one leaf in tree (probably just need to run with larger --n-tries and/or different --random_seed)')
+        raise Exception('only one leaf in tree (probably just need to run with larger --n_tries and/or different --random_seed)')
 
     # write observed sequences to fasta file(s)
     if args.naive_seq2 is not None:
