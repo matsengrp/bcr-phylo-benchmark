@@ -478,7 +478,7 @@ class MutationModel():
 
         tree.name = 'naive'  # overwritten below if --observe_common_ancestors is set
         potential_names, used_names = None, None
-        _, potential_names, used_names = selection_utils.choose_new_uid(potential_names, used_names, initial_length=4, shuffle=True)  # call once (ignoring the returned <uid>) to get the initial length right, and to shuffle them (shuffling is so if we're running multiple events, they have different leaf names, as long as we set the seeds differently)
+        _, potential_names, used_names = selection_utils.choose_new_uid(potential_names, used_names, initial_length=args.uid_str_len, shuffle=True)  # call once (ignoring the returned <uid>) to get the initial length right, and to shuffle them (shuffling is so if we're running multiple events, they have different leaf names, as long as we set the seeds differently)
 
         if args.obs_times is not None and len(args.obs_times) > 1:  # observe all intermediate sampled nodes
             print('    labeling/observing %d intermediates ' % len(self.intermediate_sampled_nodes))
@@ -740,6 +740,7 @@ def main():
     parser.add_argument('--observe_based_on_affinity', action='store_true', help='When selecting sequences to observe, instead of choosing at random (default), weight with 1/kd (this weighting is kind of arbitrary, and eventually I should maybe figure out something else, but the point is to allow some configurability as to not just sampling entirely at random).')
     parser.add_argument('--verbose', action='store_true', help='DEPRECATED use --debug')
     parser.add_argument('--n_to_downsample', type=int, nargs='+', help='DEPRECATED use --n_to_sample')
+    parser.add_argument('--uid_str_len', type=int, default=4, help='Number of random lowercase letters to use to construct each node\'s names.')
     # parser.add_argument('--n_pads_added', type=int, default=0, help='INTERNAL USE ONLY')
 
     args = parser.parse_args()
