@@ -18,32 +18,91 @@ from matplotlib import pyplot as plt
 from ete3 import TreeNode
 import operator
 import warnings
+import os
+import csv
+import math
 warnings.filterwarnings('ignore', 'The iteration is not making good progress')  # scipy.optimize.fsolve() is throwing this. I think it's telling us that our initial guess isn't very good, but as far as I can tell (without understanding kristian's code here) it ends up at a fine solution in the end, so maybe it's ok to turn off this warning
 
 from GCutils import has_stop_aa, hamming_distance, local_translate
 
 # ----------------------------------------------------------------------------------------
-def aa_ascii_code_distance(aa1, aa2):  # super arbitrary, but at least for the moment we just want some arbitrary spread in distances
-    return abs(ord(aa2) - ord(aa1))
-
-# ----------------------------------------------------------------------------------------
 # it might make replace_codon_in_aa_seq() faster to use a table here of precached translations, but translation just isn't taking that much time a.t.m.
 all_codons = [''.join(c) for c in itertools.product('ACGT', repeat=3)]
 all_amino_acids = set(local_translate(c) for c in all_codons)  # note: includes stop codons (*)
-all_sdists = [aa_ascii_code_distance(aa1, aa2) for aa1, aa2 in itertools.combinations(all_amino_acids, 2)]
-min_sdist, max_sdist = min(all_sdists), max(all_sdists)
-scale_min, scale_max = 0.7, 1.5  # you want the mean to be kinda sorta around 1, so the --target_dist ends up being comparable. This gives around 0.9 (averaging with the uniform ditribution [below], which is a very arbitrary choice)
 
 # ----------------------------------------------------------------------------------------
-def rescaled_sdist(sval):  # rescale the differences in ascii codes for the aa letters to the range [scale_min, scale_max] (so the mean is around one, so it's similar to the hamming distance)
-    return scale_min + (sval - min_sdist) * (scale_max - scale_min) / float(max_sdist - min_sdist)
+def aa_ascii_code_distance(aa1, aa2):  # super arbitrary, but at least for the moment we just want some arbitrary spread in distances
+    return abs(ord(aa2) - ord(aa1))
+
+blosum_fname = os.path.dirname(os.path.realpath(__file__)).replace('/bin', '') + '/BLOSUM62.txt'
+with open(blosum_fname) as bfile:
+    blines = []
+    for line in bfile:
+        if line[0] == '#':
+            continue
+        blines.append(line.strip().split())
+    top_headers = blines.pop(0)
+    left_headers = []
+    for bline in blines:
+        left_headers.append(bline.pop(0))
+    assert top_headers == left_headers
+    blinfo = {aa1 : {aa2 : None for aa2 in all_amino_acids} for aa1 in all_amino_acids}
+    for ibl, bline in enumerate(blines):
+        assert len(bline) == len(top_headers)
+        for ival, val in enumerate(bline):
+            top_aa = top_headers[ival]
+            left_aa = left_headers[ibl]
+            if top_aa not in all_amino_acids or left_aa not in all_amino_acids:  # blosum table has ambiguous codes
+                continue
+            blinfo[top_aa][left_aa] = math.exp(-float(val))
+
+sdists = {
+    'ascii' : {
+        'vals' : [aa_ascii_code_distance(aa1, aa2) for aa1, aa2 in itertools.combinations(all_amino_acids, 2)],
+        'scale_min' : 0.,  # you want the mean to be kinda sorta around 1, so the --target_dist ends up being comparable. This gives around 0.9
+        'scale_max' : 4.65,
+    },
+    'blosum' : {
+        'vals' : [blinfo[aa1][aa2] for aa1, aa2 in itertools.combinations(all_amino_acids, 2)],
+        'scale_min' : 0.,
+        'scale_max' : 3.95,
+    },
+}
+for sdtype, sdinfo in sdists.items():
+    for bound in ['min', 'max']:
+        sdinfo[bound] = __builtins__[bound](sdinfo['vals'])
 
 # ----------------------------------------------------------------------------------------
-def aa_inverse_similarity(aa1, aa2):
-    return rescaled_sdist(aa_ascii_code_distance(aa1, aa2))
+def rescaled_sdist(sval, sdtype):  # rescale the differences in ascii codes for the aa letters to the range [sdists[sdtype]['scale_min'], sdists[sdtype]['scale_max']] (so the mean is around one, so it's similar to the hamming distance)
+    sdfo = sdists[sdtype]
+    return sdfo['scale_min'] + (sval - sdfo['min']) * (sdfo['scale_max'] - sdfo['scale_min']) / float(sdfo['max'] - sdfo['min'])
 
-# all_rescaled_vals = [aa_inverse_similarity(aa1, aa2) for aa1, aa2 in itertools.combinations(all_amino_acids, 2)]
-# print(' mean %.3f  min %.1f  max %.1f' % (numpy.mean(all_rescaled_vals), min(all_rescaled_vals), max(all_rescaled_vals)))
+# ----------------------------------------------------------------------------------------
+def aa_inverse_similarity(aa1, aa2, sdtype, dont_rescale=False):
+    if sdtype == 'ascii':
+        return_val = aa_ascii_code_distance(aa1, aa2)
+    elif sdtype == 'blosum':
+        return_val = blinfo[aa1][aa2]
+    else:
+        assert False
+    if not dont_rescale:
+        return_val = rescaled_sdist(return_val, sdtype)
+    return return_val
+
+# ----------------------------------------------------------------------------------------
+def plot_sdists():
+    # for aa1 in blinfo:
+    #     print(aa1)
+    #     for aa2 in blinfo[aa1]:
+    #         print('   %s  %.1f  %.1f' % (aa2, blinfo[aa1][aa2], rescaled_sdist(blinfo[aa1][aa2], 'blosum')))
+    import plotutils
+    for sdtype in ['ascii', 'blosum']:
+        print(sdtype)
+        all_rescaled_vals = [aa_inverse_similarity(aa1, aa2, sdtype=sdtype) for aa1, aa2 in itertools.combinations(all_amino_acids, 2)]
+        print(' mean %.3f  min %.1f  max %.1f' % (numpy.mean(all_rescaled_vals), min(all_rescaled_vals), max(all_rescaled_vals)))
+        fig, ax = plotutils.mpl_init()
+        ax.hist(all_rescaled_vals, bins=45)
+        plotutils.mpl_finish(ax, os.getcwd(), sdtype, xlabel='rescaled %s distance' % sdtype, ylabel='AA pairs')
 
 # ----------------------------------------------------------------------------------------
 def target_distance_fcn(args, this_seq, target_seqs):
@@ -51,9 +110,12 @@ def target_distance_fcn(args, this_seq, target_seqs):
         return min([(i, hamming_distance(this_seq.aa, t.aa)) for i, t in enumerate(target_seqs)], key=operator.itemgetter(1))  # this is annoyingly complicated because we want to also return *which* target sequence was the closest one, which we have to do here now (instead of afterward) since it depends on which metric we're using
     elif args.metric_for_target_distance == 'nuc':
         return min([(i, hamming_distance(this_seq.nuc, t.nuc)) for i, t in enumerate(target_seqs)], key=operator.itemgetter(1))
-    elif args.metric_for_target_distance == 'aa-sim':
-        return min([(i, sum(aa_inverse_similarity(aa1, aa2) for aa1, aa2 in zip(this_seq.aa, t.aa) if aa1 != aa2)) for i, t in enumerate(target_seqs)], key=operator.itemgetter(1))
+    elif 'aa-sim' in args.metric_for_target_distance:
+        assert len(args.metric_for_target_distance.split('-')) == 3
+        sdtype = args.metric_for_target_distance.split('-')[2]
+        return min([(i, sum(aa_inverse_similarity(aa1, aa2, sdtype) for aa1, aa2 in zip(this_seq.aa, t.aa) if aa1 != aa2)) for i, t in enumerate(target_seqs)], key=operator.itemgetter(1))
     else:
+        print(args.metric_for_target_distance)
         assert False
 
 # ----------------------------------------------------------------------------------------

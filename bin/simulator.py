@@ -247,7 +247,7 @@ class MutationModel():
 
         tdists = [target_distance_fcn(args, args.naive_tseq, [t])[1] for t in target_seqs]
         print('    made %d total target seqs in %.1fs with distances %s  (asked for %.1f)' % (len(target_seqs), time.time()-start, ' '.join(['%.1f' % d for d in tdists]), args.target_distance))  # oh, wait, maybe this doesn't take any real time any more? i thought it used to involve more iteration/traversing
-        if len(set([args.target_distance] + tdists)) > 1 and args.metric_for_target_distance != 'aa-sim':  # can't require it to be exactly equal for aa-sim, since the distance between various amino acids varies close to continuously
+        if len(set([args.target_distance] + tdists)) > 1 and 'aa-sim' not in args.metric_for_target_distance:  # can't require it to be exactly equal for aa-sim, since the distance between various amino acids varies close to continuously
             print('    %s target distances not all equal to requested distance' % selection_utils.color('red', 'note'))
         return target_seqs
 
@@ -714,7 +714,7 @@ def main():
     parser.add_argument('--target_distance', type=int, default=10, help='Desired distance (using --metric_for_target_distance) between the naive sequence and the target sequences.')
     parser.add_argument('--n_target_clusters', type=int, help='If set, divide the --target_count target sequences into --target_count / --n_target_clusters "clusters" of target sequences, where each cluster consists of one "main" sequence separated from the naive by --target_distance, surrounded by the others in the cluster at radius --target_cluster_distance. If you set numbers that aren\'t evenly divisible, then the clusters won\'t all be the same size, but the total number of targets will always be --target_count')
     parser.add_argument('--target_cluster_distance', type=int, default=1, help='See --target_cluster_count')
-    parser.add_argument('--metric_for_target_distance', default='aa', choices=['aa', 'nuc', 'aa-sim'], help='Metric to use to calculate the distance to each target sequence (aa: use amino acid distance, i.e. only non-synonymous mutations count, nuc: use nucleotide distance, aa-sim: amino acid distance, but where different pairs of amino acids are different distances apart).')
+    parser.add_argument('--metric_for_target_distance', default='aa', choices=['aa', 'nuc', 'aa-sim-ascii', 'aa-sim-blosum'], help='Metric to use to calculate the distance to each target sequence (aa: use amino acid distance, i.e. only non-synonymous mutations count, nuc: use nucleotide distance, aa-sim: amino acid distance, but where different pairs of amino acids are different distances apart, with either ascii-code-based or blosum-based distances).')
     parser.add_argument('--naive_seq2', help='Second seed naive nucleotide sequence. For simulating heavy/light chain co-evolution.')
     parser.add_argument('--naive_kd', type=float, default=100, help='kd of the naive sequence in nano molar.')
     parser.add_argument('--mature_kd', type=float, default=1, help='kd of the mature sequences in nano molar.')
