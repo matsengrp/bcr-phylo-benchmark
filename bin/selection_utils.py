@@ -34,19 +34,47 @@ all_amino_acids = set(local_translate(c) for c in all_codons)  # note: includes 
 def aa_ascii_code_distance(aa1, aa2):  # super arbitrary, but at least for the moment we just want some arbitrary spread in distances
     return abs(ord(aa2) - ord(aa1))
 
-blosum_fname = os.path.dirname(os.path.realpath(__file__)).replace('/bin', '') + '/BLOSUM62.txt'
-with open(blosum_fname) as bfile:
+# ----------------------------------------------------------------------------------------
+#  Matrix made by matblas from blosum62.iij
+#  * column uses minimum score
+#  BLOSUM Clustered Scoring Matrix in 1/2 Bit Units
+#  Blocks Database = /data/blocks_5.0/blocks.dat
+#  Cluster Percentage: >= 62
+#  Entropy =   0.6979, Expected =  -0.5209
+blosum_text = """   A  R  N  D  C  Q  E  G  H  I  L  K  M  F  P  S  T  W  Y  V  B  Z  X  *
+A  4 -1 -2 -2  0 -1 -1  0 -2 -1 -1 -1 -1 -2 -1  1  0 -3 -2  0 -2 -1  0 -4 
+R -1  5  0 -2 -3  1  0 -2  0 -3 -2  2 -1 -3 -2 -1 -1 -3 -2 -3 -1  0 -1 -4 
+N -2  0  6  1 -3  0  0  0  1 -3 -3  0 -2 -3 -2  1  0 -4 -2 -3  3  0 -1 -4 
+D -2 -2  1  6 -3  0  2 -1 -1 -3 -4 -1 -3 -3 -1  0 -1 -4 -3 -3  4  1 -1 -4 
+C  0 -3 -3 -3  9 -3 -4 -3 -3 -1 -1 -3 -1 -2 -3 -1 -1 -2 -2 -1 -3 -3 -2 -4 
+Q -1  1  0  0 -3  5  2 -2  0 -3 -2  1  0 -3 -1  0 -1 -2 -1 -2  0  3 -1 -4 
+E -1  0  0  2 -4  2  5 -2  0 -3 -3  1 -2 -3 -1  0 -1 -3 -2 -2  1  4 -1 -4 
+G  0 -2  0 -1 -3 -2 -2  6 -2 -4 -4 -2 -3 -3 -2  0 -2 -2 -3 -3 -1 -2 -1 -4 
+H -2  0  1 -1 -3  0  0 -2  8 -3 -3 -1 -2 -1 -2 -1 -2 -2  2 -3  0  0 -1 -4 
+I -1 -3 -3 -3 -1 -3 -3 -4 -3  4  2 -3  1  0 -3 -2 -1 -3 -1  3 -3 -3 -1 -4 
+L -1 -2 -3 -4 -1 -2 -3 -4 -3  2  4 -2  2  0 -3 -2 -1 -2 -1  1 -4 -3 -1 -4 
+K -1  2  0 -1 -3  1  1 -2 -1 -3 -2  5 -1 -3 -1  0 -1 -3 -2 -2  0  1 -1 -4 
+M -1 -1 -2 -3 -1  0 -2 -3 -2  1  2 -1  5  0 -2 -1 -1 -1 -1  1 -3 -1 -1 -4 
+F -2 -3 -3 -3 -2 -3 -3 -3 -1  0  0 -3  0  6 -4 -2 -2  1  3 -1 -3 -3 -1 -4 
+P -1 -2 -2 -1 -3 -1 -1 -2 -2 -3 -3 -1 -2 -4  7 -1 -1 -4 -3 -2 -2 -1 -2 -4 
+S  1 -1  1  0 -1  0  0  0 -1 -2 -2  0 -1 -2 -1  4  1 -3 -2 -2  0  0  0 -4 
+T  0 -1  0 -1 -1 -1 -1 -2 -2 -1 -1 -1 -1 -2 -1  1  5 -2 -2  0 -1 -1  0 -4 
+W -3 -3 -4 -4 -2 -2 -3 -2 -2 -3 -2 -3 -1  1 -4 -3 -2 11  2 -3 -4 -3 -2 -4 
+Y -2 -2 -2 -3 -2 -1 -2 -3  2 -1 -1 -2 -1  3 -3 -2 -2  2  7 -1 -3 -2 -1 -4 
+V  0 -3 -3 -3 -1 -2 -2 -3 -3  3  1 -2  1 -1 -2 -2  0 -3 -1  4 -3 -2 -1 -4 
+B -2 -1  3  4 -3  0  1 -1  0 -3 -4  0 -3 -3 -2  0 -1 -4 -3 -3  4  1 -1 -4 
+Z -1  0  0  1 -3  3  4 -2  0 -3 -3  1 -1 -3 -1  0 -1 -3 -2 -2  1  4 -1 -4 
+X  0 -1 -1 -1 -2 -1 -1 -1 -1 -1 -1 -1 -1 -1 -2  0  0 -2 -1 -1 -1 -1 -1 -4 
+* -4 -4 -4 -4 -4 -4 -4 -4 -4 -4 -4 -4 -4 -4 -4 -4 -4 -4 -4 -4 -4 -4 -4  1"""
+def init_blosum():
     blines = []
-    for line in bfile:
-        if line[0] == '#':
-            continue
+    for line in blosum_text.split('\n'):
         blines.append(line.strip().split())
     top_headers = blines.pop(0)
     left_headers = []
     for bline in blines:
         left_headers.append(bline.pop(0))
     assert top_headers == left_headers
-    blinfo = {aa1 : {aa2 : None for aa2 in all_amino_acids} for aa1 in all_amino_acids}
     for ibl, bline in enumerate(blines):
         assert len(bline) == len(top_headers)
         for ival, val in enumerate(bline):
@@ -54,28 +82,36 @@ with open(blosum_fname) as bfile:
             left_aa = left_headers[ibl]
             if top_aa not in all_amino_acids or left_aa not in all_amino_acids:  # blosum table has ambiguous codes
                 continue
-            blinfo[top_aa][left_aa] = math.exp(-float(val))
+            if top_aa == left_aa:  # add them later as a semi-arbitrary value, we have to ignore the values in the table since they're different for different amino acids
+                continue
+            blinfo[top_aa][left_aa] = -float(val)
+    min_val = min(blinfo[aa1][aa2] for aa1 in blinfo for aa2 in blinfo[aa1] if blinfo[aa1][aa2] is not None)
+    for aa in all_amino_acids:
+        blinfo[aa][aa] = min_val - 1.  # arbitrary, but ok. The diagonal of the matrix varies from -4 to -11, and this gives a.t.m. about -4
 
-sdists = {
+blinfo = {aa1 : {aa2 : None for aa2 in all_amino_acids} for aa1 in all_amino_acids}
+init_blosum()
+sdists = {  # config info necessary for rescaling the two versions of aa similarity distance
     'ascii' : {
-        'vals' : [aa_ascii_code_distance(aa1, aa2) for aa1, aa2 in itertools.combinations(all_amino_acids, 2)],
-        'scale_min' : 0.,  # you want the mean to be kinda sorta around 1, so the --target_dist ends up being comparable. This gives around 0.9
-        'scale_max' : 4.65,
+        'scale_min' : 0.,  # you want the mean to be kinda sorta around 1, so the --target_dist ends up being comparable
+        'scale_max' : 4.7,
     },
     'blosum' : {
-        'vals' : [blinfo[aa1][aa2] for aa1, aa2 in itertools.combinations(all_amino_acids, 2)],
         'scale_min' : 0.,
-        'scale_max' : 3.95,
+        # 'scale_max' : 3.95,  # use this value if you go back to taking the exp() (note that now the exp() would need to be added in two places)
+        'scale_max' : 1.55,
     },
 }
 for sdtype, sdinfo in sdists.items():
+    if sdtype == 'ascii':
+        dfcn = aa_ascii_code_distance
+    elif sdtype == 'blosum':
+        dfcn = lambda aa1, aa2: blinfo.get(aa1).get(aa2)
+    else:
+        assert False
+    vals = [dfcn(aa1, aa2) for aa1, aa2 in itertools.combinations_with_replacement(all_amino_acids, 2)]
     for bound in ['min', 'max']:
-        sdinfo[bound] = __builtins__[bound](sdinfo['vals'])
-
-# ----------------------------------------------------------------------------------------
-def rescaled_sdist(sval, sdtype):  # rescale the differences in ascii codes for the aa letters to the range [sdists[sdtype]['scale_min'], sdists[sdtype]['scale_max']] (so the mean is around one, so it's similar to the hamming distance)
-    sdfo = sdists[sdtype]
-    return sdfo['scale_min'] + (sval - sdfo['min']) * (sdfo['scale_max'] - sdfo['scale_min']) / float(sdfo['max'] - sdfo['min'])
+        sdinfo[bound] = __builtins__[bound](vals)
 
 # ----------------------------------------------------------------------------------------
 def aa_inverse_similarity(aa1, aa2, sdtype, dont_rescale=False):
@@ -85,20 +121,25 @@ def aa_inverse_similarity(aa1, aa2, sdtype, dont_rescale=False):
         return_val = blinfo[aa1][aa2]
     else:
         assert False
-    if not dont_rescale:
-        return_val = rescaled_sdist(return_val, sdtype)
+    if not dont_rescale:  # rescale the differences in ascii codes or blosum values for the aa letters to the range [sdists[sdtype]['scale_min'], sdists[sdtype]['scale_max']] (so the mean is around one, so it's similar to the hamming distance)
+        sdfo = sdists[sdtype]
+        return_val = sdfo['scale_min'] + (return_val - sdfo['min']) * (sdfo['scale_max'] - sdfo['scale_min']) / float(sdfo['max'] - sdfo['min'])
     return return_val
 
 # ----------------------------------------------------------------------------------------
 def plot_sdists():
-    # for aa1 in blinfo:
-    #     print(aa1)
-    #     for aa2 in blinfo[aa1]:
-    #         print('   %s  %.1f  %.1f' % (aa2, blinfo[aa1][aa2], rescaled_sdist(blinfo[aa1][aa2], 'blosum')))
+    for aa1 in all_amino_acids:
+        print(aa1)
+        print('         blosum          ascii')
+        print('       raw  rescaled   raw   rescaled')
+        for aa2 in all_amino_acids:
+            print('   %s  %5.2f  %5.2f    %5.1f  %5.2f' % (aa2,
+                                                           aa_inverse_similarity(aa1, aa2, 'blosum', dont_rescale=True), aa_inverse_similarity(aa1, aa2, 'blosum'),
+                                                           aa_inverse_similarity(aa1, aa2, 'ascii', dont_rescale=True), aa_inverse_similarity(aa1, aa2, 'ascii')))
     import plotutils
     for sdtype in ['ascii', 'blosum']:
         print(sdtype)
-        all_rescaled_vals = [aa_inverse_similarity(aa1, aa2, sdtype=sdtype) for aa1, aa2 in itertools.combinations(all_amino_acids, 2)]
+        all_rescaled_vals = [aa_inverse_similarity(aa1, aa2, sdtype=sdtype) for aa1, aa2 in itertools.combinations_with_replacement(all_amino_acids, 2)]
         print(' mean %.3f  min %.1f  max %.1f' % (numpy.mean(all_rescaled_vals), min(all_rescaled_vals), max(all_rescaled_vals)))
         fig, ax = plotutils.mpl_init()
         ax.hist(all_rescaled_vals, bins=45)
