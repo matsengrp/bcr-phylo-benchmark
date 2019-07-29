@@ -170,7 +170,7 @@ def calc_kd(node, args):
     return kd
 
 # ----------------------------------------------------------------------------------------
-def update_lambda_values(tree, live_leaves, A_total, B_total, Lp):
+def update_lambda_values(tree, live_leaves, A_total, B_total, logi_params):
     ''' update the lambda_ feature (parameter for the poisson progeny distribution) for each live leaf in <tree> '''
 
     def calc_BnA(Kd_n, A, B_total):
@@ -201,17 +201,16 @@ def update_lambda_values(tree, live_leaves, A_total, B_total, Lp):
         assert(BnA.sum()+obj_min.x[0]-A_total < A_total/100)
         return(BnA)
 
-    def trans_BA(BA, Lp):
+    def trans_BA(BA):
         '''Transform the fraction B:A (B bound to A) to a poisson lambda between 0 and 2.'''
         # We keep alpha to enable the possibility that there is a minimum lambda_:
-        alpha, beta, Q = Lp
         lambda_ = alpha + (2 - alpha) / (1 + Q*scipy.exp(-beta*BA))
         return(lambda_)
 
-    # Update the list of affinities for all the live leaves:
+    alpha, beta, Q = logi_params
     Kd_n = scipy.array([l.Kd for l in live_leaves])
     BnA = calc_binding_time(Kd_n, A_total, B_total)
-    lambdas = trans_BA(BnA, Lp)
+    lambdas = trans_BA(BnA)
     for lambda_, leaf in zip(lambdas, live_leaves):
         leaf.lambda_ = lambda_
     return(tree)
@@ -240,44 +239,46 @@ def find_A_total(carry_cap, B_total, f_full, mature_kd, U):
 
 
 # ----------------------------------------------------------------------------------------
-def find_Lp(f_full, U):
+# calculate the parameters for the logistic function, i.e. alpha, beta, Q
+def find_logistic_params(f_full, U):
     assert(U > 1)
-    def T_BA(BA, p):
+    def T_BA(BA, lparams):
         # We keep alpha to enable the possibility
         # that there is a minimum lambda_
-        alpha, beta, Q = p
+        alpha, beta, Q = lparams
         lambda_ = alpha + (2 - alpha) / (1 + Q*scipy.exp(-beta*BA))
         return(lambda_)
 
-    def solve_T_BA(p, f_full, U):
+    def solve_T_BA(lparams, f_full, U):
         epsilon = 1/1000
-        C1 = (T_BA(0, p) - 0)**2
-        C2 = (T_BA(f_full/U, p) - 1)**2
-        C3 = (T_BA(1*f_full, p) - (2 - 2*epsilon))**2
+        C1 = (T_BA(0, lparams) - 0)**2
+        C2 = (T_BA(f_full/U, lparams) - 1)**2
+        C3 = (T_BA(1*f_full, lparams) - (2 - 2*epsilon))**2
         return(C1, C2, C3)
 
-    def solve_T_BA_low_epsilon(p, f_full, U):
+    def solve_T_BA_low_epsilon(lparams, f_full, U):
         epsilon = 1/1000
-        C1 = (T_BA(0, p) - 0)**2
-        C2 = (T_BA(f_full/U, p) - 1)**2
-        C3 = (T_BA(1*f_full, p) - (2 - 2*epsilon))**2 * ((2 - T_BA(1*f_full, p)) < 2*epsilon)
+        C1 = (T_BA(0, lparams) - 0)**2
+        C2 = (T_BA(f_full/U, lparams) - 1)**2
+        C3 = (T_BA(1*f_full, lparams) - (2 - 2*epsilon))**2 * ((2 - T_BA(1*f_full, lparams)) < 2*epsilon)
         return(C1, C2, C3)
+
+    def run_fsolve(obj_T_A):
+        return fsolve(obj_T_A, (0, 10e-5, 1), xtol=1e-20, maxfev=1000)
 
     # FloatingPointError errors are not affecting results so ignore them:
     old_settings = scipy.seterr(all='ignore')  # Keep old settings
     scipy.seterr(over='ignore')
+    def obj_T_A(lparams): return(solve_T_BA(lparams, f_full, U))
     try:
-        def obj_T_A(p): return(solve_T_BA(p, f_full, U))
-        p = fsolve(obj_T_A, (0, 10e-5, 1), xtol=1e-20, maxfev=1000)
-        assert(sum(solve_T_BA(p, f_full, U)) < f_full * 1/1000)
+        lparams = run_fsolve(obj_T_A)
     except:
-        print('The U parameter is large and therefore the epsilon parameter has to be adjusted to find a valid solution.')
-        def obj_T_A(p): return(solve_T_BA_low_epsilon(p, f_full, U))
-        p = fsolve(obj_T_A, (0, 10e-5, 1), xtol=1e-20, maxfev=1000)
-        assert(sum(solve_T_BA(p, f_full, U)) < f_full * 1/1000)
+        print('  %s U parameter too large when calculating logistic function parameters, so adjusting epsilon parameter to get a valid solution.' % (color('yellow', 'warning')))
+        def obj_T_A(lparams): return(solve_T_BA_low_epsilon(lparams, f_full, U))
+        lparams = run_fsolve(obj_T_A)
+    assert(sum(solve_T_BA(lparams, f_full, U)) < f_full * 1/1000)
     scipy.seterr(**old_settings)  # Reset to default
-    return(p)
-
+    return lparams  # tuple with (alpha, beta, Q)
 
 # ----------------------------------------------------------------------------------------
 def plot_runstats(tdist_hists, outbase, colors):

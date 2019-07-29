@@ -94,7 +94,7 @@ class MutationModel():
         node.add_feature('terminated', False)  # set if it's dead (only set if it draws zero children, or if --kill_sampled_intermediates is set and it's sampled at an intermediate time point)
         node.add_feature('frequency', 0)  # observation frequency, is set to either 1 or 0 in set_observation_frequencies_and_names(), then when the collapsed tree is constructed it can get bigger than 1 when the frequencies of nodes connected by zero-length branches are summed
         if args.selection:
-            node.add_feature('lambda_', None)  # set in selection_utils.update_lambda_values() (i.e. is modified every (few) generations)
+            node.add_feature('lambda_', None)  # set in selection_utils.update_lambda_values() (i.e. is modified every few generations)
             itarget, tdist = target_distance_fcn(args, TranslatedSeq(nuc_seq, node.aa_seq), target_seqs)
             node.add_feature('target_index', itarget)
             node.add_feature('target_distance', tdist)  # nuc or aa distance, depending on args
@@ -392,7 +392,7 @@ class MutationModel():
                     lambda_update_dbg_str = ' '
                     if skip_lambda_n == 0:  # time to update the lambdas for every leaf
                         skip_lambda_n = args.skip_update + 1  # reset it so we don't update again until we've done <args.skip_update> more leaves (+ 1 is so that if args.skip_update is 0 we don't skip at all, i.e. args.skip_update is the number of leaves skipped, *not* the number of leaves *between* updates)
-                        tree = selection_utils.update_lambda_values(tree, updated_live_leaves, args.A_total, args.B_total, args.Lp)
+                        tree = selection_utils.update_lambda_values(tree, updated_live_leaves, args.A_total, args.B_total, args.logi_params)
                         updated_mean_kd = numpy.mean([l.Kd for l in updated_live_leaves if l.Kd != float('inf')])
                         lambda_update_dbg_str = selection_utils.color('blue', 'x')
                     this_lambda = max(leaf.lambda_, self.lambda_min)
@@ -817,10 +817,8 @@ def main():
     if args.selection:
         assert args.target_distance > 0
         assert args.B_total >= args.f_full  # the fully activating fraction on BA must be possible to reach within B_total
-        # find the total amount of A necessary for sustaining the specified carrying capacity
-        args.A_total = selection_utils.find_A_total(args.carry_cap, args.B_total, args.f_full, args.mature_kd, args.U)
-        # calculate the parameters for the logistic function
-        args.Lp = selection_utils.find_Lp(args.f_full, args.U)
+        args.A_total = selection_utils.find_A_total(args.carry_cap, args.B_total, args.f_full, args.mature_kd, args.U)  # find the total amount of A necessary for sustaining the specified carrying capacity
+        args.logi_params = selection_utils.find_logistic_params(args.f_full, args.U)  # calculate the parameters for the logistic function
 
     run_simulation(args)
 
