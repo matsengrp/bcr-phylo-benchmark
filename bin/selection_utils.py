@@ -170,7 +170,7 @@ def calc_kd(node, args):
     return kd
 
 # ----------------------------------------------------------------------------------------
-def update_lambda_values(tree, live_leaves, A_total, B_total, logi_params, selection_strength):
+def update_lambda_values(tree, live_leaves, A_total, B_total, logi_params, selection_strength, lambda_min=10e-10):
     ''' update the lambda_ feature (parameter for the poisson progeny distribution) for each live leaf in <tree> '''
 
     def calc_BnA(Kd_n, A, B_total):
@@ -199,22 +199,26 @@ def update_lambda_values(tree, live_leaves, A_total, B_total, logi_params, selec
         BnA = calc_BnA(Kd_n, obj_min.x[0], B_total)
         # Terminate if the precision is not good enough:
         assert(BnA.sum()+obj_min.x[0]-A_total < A_total/100)
-        return(BnA)
+        return BnA
 
     def trans_BA(BnA):
         '''Transform the fraction B:A (B bound to A) to a poisson lambda between 0 and 2.'''
         # We keep alpha to enable the possibility that there is a minimum lambda_:
         lambda_ = alpha + (2 - alpha) / (1 + Q*scipy.exp(-beta*BnA))
-        return(lambda_)
+        return [max(lambda_min, l) for l in lambda_]
 
     def apply_selection_strength_scaling(lambdas):  # if <selection_strength> less than 1, instead of using each cell's Kd-determined lambda value, we draw each cell's lambda from a normal distribution with mean and variance depending on the selection strength, that cell's Kd-determined lambda, and the un-scaled distribution of lambda over cells
         assert selection_strength >= 0. and selection_strength < 1.
-        lmean = numpy.mean(lambdas)  # mean unscaled lambda of all cells (unscaled means determined solely by each cell's Kd)
+        lmean = numpy.mean(lambdas)  # mean unscaled lambda of all cells (unscaled means determined solely by each cell's Kd) NOTE <lambdas> includes cells with infinite kd, i.e. stop codons
         lvar = numpy.std(lambdas, ddof=1 if len(lambdas)>1 else 0)  # mean unscaled variance of all cells
         imeanvals, ivarvals = [], []
         for il, ilambda in enumerate(lambdas):  # draw each cell's lambda from a normal (<ilambda> is the unscaled lambda for this cell, i.e. determined solely by this cell's Kd)
-            imeanvals.append(lmean + selection_strength * (ilambda - lmean))  # mean of each cell's normal distribution goes from <lmean> to <ilambda> as <selection_strength> goes from 0 to 1
-            ivarvals.append((1. - selection_strength) * lvar)  # this gives a variance equal to <lvar> (which is a somewhat arbitrary choice, but I don't think we care too much to change the overall variance) for <selection_strength> near 0 and 1, but the resulting variance drops to about 0.7 of <lvar> for <selection_strength> near 0.5 # TODO fix this (adding a math.sqrt is a bit better)
+            if ilambda > lambda_min:  # functional cells
+                imeanvals.append(lmean + selection_strength * (ilambda - lmean))  # mean of each cell's normal distribution goes from <lmean> to <ilambda> as <selection_strength> goes from 0 to 1
+                ivarvals.append((1. - selection_strength) * lvar)  # this gives a variance equal to <lvar> (which is a somewhat arbitrary choice, but I don't think we care too much to change the overall variance) for <selection_strength> near 0 and 1, but the resulting variance drops to about 0.7 of <lvar> for <selection_strength> near 0.5 # TODO fix this (adding a math.sqrt is a bit better) NOTE this got a lot better after I started treating the infinite-kd cells correclty (now it's like 0.9ish for 0.5
+            else:  # cells with (presumably) stop codons
+                imeanvals.append(lambda_min)
+                ivarvals.append(0)
         lambdas = numpy.random.normal(imeanvals, ivarvals)  # this is about twice as fast as doing them individually, although this fcn is only 10-20% of the total simulation time
         # if lmean > 0 and lvar > 0:
         #     print('    %5d   %7.4f  %7.4f --> %7.4f  %7.4f' % (len(lambdas), lmean, lvar, numpy.mean(lambdas) / lmean, numpy.std(lambdas, ddof=1 if len(lambdas)>1 else 0) / lvar))
@@ -228,7 +232,7 @@ def update_lambda_values(tree, live_leaves, A_total, B_total, logi_params, selec
         new_lambdas = apply_selection_strength_scaling(new_lambdas)
     for new_lambda, leaf in zip(new_lambdas, live_leaves):  # transfer new lambda values to the actual leaves
         leaf.lambda_ = new_lambda
-    return(tree)
+    return tree
 
 # ----------------------------------------------------------------------------------------
 def find_A_total(carry_cap, B_total, f_full, mature_kd, U):
@@ -238,7 +242,7 @@ def find_A_total(carry_cap, B_total, f_full, mature_kd, U):
 
     def A_obj(carry_cap, B_total, f_full, Kd_n, U):
         def obj(A): return((carry_cap - C_A(A, A_total_fun(A, B_total, Kd_n), f_full, U))**2)
-        return(obj)
+        return obj
 
     Kd_n = scipy.array([mature_kd] * carry_cap)
     obj = A_obj(carry_cap, B_total, f_full, Kd_n, U)
@@ -250,7 +254,7 @@ def find_A_total(carry_cap, B_total, f_full, mature_kd, U):
     A = obj_min.x[0]
     A_total = A_total_fun(A, B_total, Kd_n)
     assert(C_A(A, A_total, f_full, U) > carry_cap * 99/100)
-    return(A_total)
+    return A_total
 
 
 # ----------------------------------------------------------------------------------------

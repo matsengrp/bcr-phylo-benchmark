@@ -44,7 +44,6 @@ class MutationModel():
         @param mutation_order: whether or not to mutate sequences using a context sensitive manner
                                where mutation order matters
         """
-        self.lambda_min = 10e-10  # small lambdas are causing problems so make a minimum
         self.mutation_order = mutation_order
         self.translation_cache = {}
         if args.mutability_file is not None and args.substitution_file is not None:
@@ -395,16 +394,17 @@ class MutationModel():
                         tree = selection_utils.update_lambda_values(tree, updated_live_leaves, args.A_total, args.B_total, args.logi_params, args.selection_strength)
                         updated_mean_kd = numpy.mean([l.Kd for l in updated_live_leaves if l.Kd != float('inf')])
                         lambda_update_dbg_str = selection_utils.color('blue', 'x')
-                    this_lambda = max(leaf.lambda_, self.lambda_min)
                     skip_lambda_n -= 1
-                else:
-                    this_lambda = args.lambda_
 
-                n_children = numpy.random.poisson(this_lambda)
+                def get_n_children():
+                    return numpy.random.poisson(leaf.lambda_ if args.selection else args.lambda_)
+                n_children = get_n_children()
+                if has_stop_aa(leaf.aa_seq) and n_children > 0:  # shouldn't happen any more (it was a bug when I added selection strength scaling), but let's leave this here just in case
+                    print('    %s non-zero children for leaf with stop codon' % selection_utils.color('red', 'error'))
                 if current_time == 1 and len(static_live_leaves) == 1:  # if the first leaf draws zero children, keep trying so we don't have to throw out the whole tree and start over
                     itry = 0
                     while n_children == 0:
-                        n_children = numpy.random.poisson(this_lambda)
+                        n_children = get_n_children()
                         itry += 1
                         if itry > 10 == 0:
                             print('too many tries to get at least one child, giving up on tree')
