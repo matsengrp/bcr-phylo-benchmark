@@ -222,7 +222,7 @@ def update_lambda_values(tree, live_leaves, A_total, B_total, logi_params, selec
         lambdas = numpy.random.normal(imeanvals, ivarvals)  # this is about twice as fast as doing them individually, although this fcn is only 10-20% of the total simulation time
         # if lmean > 0 and lvar > 0:
         #     print('    %5d   %7.4f  %7.4f --> %7.4f  %7.4f' % (len(lambdas), lmean, lvar, numpy.mean(lambdas) / lmean, numpy.std(lambdas, ddof=1 if len(lambdas)>1 else 0) / lvar))
-        return lambdas
+        return [max(lambda_min, l) for l in lambdas]
 
     alpha, beta, Q = logi_params
     Kd_n = scipy.array([l.Kd for l in live_leaves])
