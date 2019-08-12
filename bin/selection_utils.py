@@ -208,22 +208,27 @@ def update_lambda_values(tree, live_leaves, A_total, B_total, logi_params, selec
         return [max(lambda_min, l) for l in lambda_]
 
     def apply_selection_strength_scaling(lambdas):  # if <selection_strength> less than 1, instead of using each cell's Kd-determined lambda value, we draw each cell's lambda from a normal distribution with mean and variance depending on the selection strength, that cell's Kd-determined lambda, and the un-scaled distribution of lambda over cells
+        def getmean(lvals):
+            return numpy.mean([l for l in lvals if l > lambda_min])  # mean unscaled lambda of functional cells (unscaled means determined solely by each cell's Kd)
+        def getvar(lvals):
+            functional_lambdas = [l for l in lvals if l > lambda_min]
+            return numpy.std(functional_lambdas, ddof=1 if len(functional_lambdas)>1 else 0)  # mean unscaled variance of functional cells
         assert selection_strength >= 0. and selection_strength < 1.
-        lmean = numpy.mean(lambdas)  # mean unscaled lambda of all cells (unscaled means determined solely by each cell's Kd) NOTE <lambdas> includes cells with infinite kd, i.e. stop codons
-        lvar = numpy.std(lambdas, ddof=1 if len(lambdas)>1 else 0)  # mean unscaled variance of all cells
+        lmean, lvar = getmean(lambdas), getvar(lambdas)
         imeanvals, ivarvals = [], []
         for il, ilambda in enumerate(lambdas):  # draw each cell's lambda from a normal (<ilambda> is the unscaled lambda for this cell, i.e. determined solely by this cell's Kd)
             if ilambda > lambda_min:  # functional cells
                 imeanvals.append(lmean + selection_strength * (ilambda - lmean))  # mean of each cell's normal distribution goes from <lmean> to <ilambda> as <selection_strength> goes from 0 to 1
                 ivarvals.append((1. - selection_strength) * lvar)  # this gives a variance equal to <lvar> (which is a somewhat arbitrary choice, but I don't think we care too much to change the overall variance) for <selection_strength> near 0 and 1, but the resulting variance drops to about 0.7 of <lvar> for <selection_strength> near 0.5 # TODO fix this (adding a math.sqrt is a bit better) NOTE this got a lot better after I started treating the infinite-kd cells correclty (now it's like 0.9ish for 0.5
             else:  # cells with (presumably) stop codons
-                imeanvals.append(lambda_min)
+                imeanvals.append(lambda_min)  # this is a little weird and wasteful, but if we did it differently we'd have to keep track of which indices have what
                 ivarvals.append(0)
         lambdas = numpy.random.normal(imeanvals, ivarvals)  # this is about twice as fast as doing them individually, although this fcn is only 10-20% of the total simulation time
         # if lmean > 0 and lvar > 0:
-        #     print('    %5d   %7.4f  %7.4f --> %7.4f  %7.4f' % (len(lambdas), lmean, lvar, numpy.mean(lambdas) / lmean, numpy.std(lambdas, ddof=1 if len(lambdas)>1 else 0) / lvar))
+        #     print('    %5d   %7.4f  %7.4f --> %7.4f  %7.4f' % (len(lambdas), lmean, lvar, getmean(lambdas) / lmean, getvar(lambdas) / lvar))
         return [max(lambda_min, l) for l in lambdas]
 
+    # ----------------------------------------------------------------------------------------
     alpha, beta, Q = logi_params
     Kd_n = scipy.array([l.Kd for l in live_leaves])
     BnA = calc_binding_time(Kd_n, A_total, B_total)  # get list of binding time values for each cell
