@@ -363,8 +363,8 @@ class MutationModel():
             self.tdist_hists[0] = self.get_target_distance_hist(args, tree)  # i guess the first entry in the other two just stays None
 
         if args.debug == 1:
-            print('        end of      live     target dist (%s)          kd           termination' % args.metric_for_target_distance)
-            print('      generation   leaves      min  mean           min    mean        checks')
+            print('        end of      live     target dist (%s)          kd            lambda       termination' % args.metric_for_target_distance)
+            print('      generation   leaves      min  mean           min    mean      max  mean        checks')
         if args.debug > 1:
             print('       gen   live leaves   (%s: terminated/no children)' % selection_utils.color('red', 'x'))
             print('             before/after   ileaf   lambda  n children     n mutations            Kd   (%s: updated lambdas)' % selection_utils.color('blue', 'x'))
@@ -392,7 +392,7 @@ class MutationModel():
                     if skip_lambda_n == 0:  # time to update the lambdas for every leaf
                         skip_lambda_n = args.skip_update + 1  # reset it so we don't update again until we've done <args.skip_update> more leaves (+ 1 is so that if args.skip_update is 0 we don't skip at all, i.e. args.skip_update is the number of leaves skipped, *not* the number of leaves *between* updates)
                         tree = selection_utils.update_lambda_values(tree, updated_live_leaves, args.A_total, args.B_total, args.logi_params, args.selection_strength)
-                        updated_mean_kd = numpy.mean([l.Kd for l in updated_live_leaves if l.Kd != float('inf')])
+                        updated_mean_kd = numpy.mean([l.Kd for l in updated_live_leaves if l.Kd != float('inf')])  # NOTE that if mean kd deviates by a huge amount from args.mature_kd (probably due to very low selection strength, causing the cells to rapidly drift away from the target sequence) then in order to avoid the cells dying out you'd need to recalculate A_total here with the current mean kd (but it's unclear what you'd really be simulating then, since adding an aribtrarily large amount of new antigen because the population's getting low isn't very realistic)
                         lambda_update_dbg_str = selection_utils.color('blue', 'x')
                     skip_lambda_n -= 1
 
@@ -450,12 +450,16 @@ class MutationModel():
             if args.debug == 1:
                 mintd, meantd = '-', '-'
                 minkd, meankd = '-', '-'
+                maxl, meanl = '-', '-'
                 if args.selection and len(updated_live_leaves) > 0:
                     tmptdvals = [l.target_distance for l in updated_live_leaves]
                     mintd, meantd = '%2d' % min(tmptdvals), '%3.1f' % numpy.mean(tmptdvals)
                     tmpkdvals = [l.Kd for l in updated_live_leaves if l.Kd != float('inf')]
                     minkd, meankd = [('%5.1f' % v) for v in (min(tmpkdvals), numpy.mean(tmpkdvals))]
-                print('        %3d       %5d         %s  %s          %s  %s       %s' % (current_time, len(updated_live_leaves), mintd, meantd, minkd, meankd, dbgstr))
+                    tmplvals = [l.lambda_ for l in updated_live_leaves if l.lambda_ is not None]
+                    if len(tmplvals) > 0:
+                        maxl, meanl = [('%4.2f' % v) for v in (max(tmplvals), numpy.mean(tmplvals))]
+                print('        %3d       %5d         %s  %s          %s  %s     %4s  %4s      %s' % (current_time, len(updated_live_leaves), mintd, meantd, minkd, meankd, maxl, meanl, dbgstr))
 
             if finished:
                 print(termstr)

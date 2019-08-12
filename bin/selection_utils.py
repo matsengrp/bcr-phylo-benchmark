@@ -173,14 +173,16 @@ def calc_kd(node, args):
 def update_lambda_values(tree, live_leaves, A_total, B_total, logi_params, selection_strength, lambda_min=10e-10):
     ''' update the lambda_ feature (parameter for the poisson progeny distribution) for each live leaf in <tree> '''
 
+    # ----------------------------------------------------------------------------------------
     def calc_BnA(Kd_n, A, B_total):
         '''
-        This calculated the fraction B:A (B bound to A), at equilibrium also referred to as "binding time",
+        This calculates the fraction B:A (B bound to A), at equilibrium also referred to as "binding time",
         of all the different Bs in the population given the number of free As in solution.
         '''
         BnA = B_total/(1+Kd_n/A)
         return(BnA)
 
+    # ----------------------------------------------------------------------------------------
     def return_objective_A(Kd_n, A_total, B_total):
         '''
         The objective function that solves the set of differential equations setup to find the number of free As,
@@ -188,6 +190,7 @@ def update_lambda_values(tree, live_leaves, A_total, B_total, logi_params, selec
         '''
         return lambda A: (A_total - (A + scipy.sum(B_total/(1+Kd_n/A))))**2
 
+    # ----------------------------------------------------------------------------------------
     def calc_binding_time(Kd_n, A_total, B_total):
         '''
         Solves the objective function to find the number of free As and then uses this,
@@ -201,12 +204,15 @@ def update_lambda_values(tree, live_leaves, A_total, B_total, logi_params, selec
         assert(BnA.sum()+obj_min.x[0]-A_total < A_total/100)
         return BnA
 
+    # ----------------------------------------------------------------------------------------
     def trans_BA(BnA):
         '''Transform the fraction B:A (B bound to A) to a poisson lambda between 0 and 2.'''
         # We keep alpha to enable the possibility that there is a minimum lambda_:
         lambda_ = alpha + (2 - alpha) / (1 + Q*scipy.exp(-beta*BnA))
         return [max(lambda_min, l) for l in lambda_]
 
+    # ----------------------------------------------------------------------------------------
+    # note that since this scales to the existing (kd-determined) mean lambda, if that lambda is decreasing (for instance if selection strength is very low, then sequences drift away from the target very rapidly) then the rescaled lambdas will also decrease
     def apply_selection_strength_scaling(lambdas):  # if <selection_strength> less than 1, instead of using each cell's Kd-determined lambda value, we draw each cell's lambda from a normal distribution with mean and variance depending on the selection strength, that cell's Kd-determined lambda, and the un-scaled distribution of lambda over cells
         def getmean(lvals):
             return numpy.mean([l for l in lvals if l > lambda_min])  # mean unscaled lambda of functional cells (unscaled means determined solely by each cell's Kd)
@@ -241,6 +247,7 @@ def update_lambda_values(tree, live_leaves, A_total, B_total, logi_params, selec
 
 # ----------------------------------------------------------------------------------------
 def find_A_total(carry_cap, B_total, f_full, mature_kd, U):
+    # find the total amount of A necessary for sustaining the specified carrying capacity
     def A_total_fun(A, B_total, Kd_n): return(A + scipy.sum(B_total/(1+Kd_n/A)))
 
     def C_A(A, A_total, f_full, U): return(U * (A_total - A) / f_full)
