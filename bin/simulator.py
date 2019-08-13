@@ -383,6 +383,7 @@ class MutationModel():
                 static_live_leaves = updated_live_leaves
             updated_live_leaves = [l for l in static_live_leaves]  # but this one, we keep updating (so we don't have to call iter_leaves() so much, which was taking quite a bit of time) (matches self.n_unterminated_leaves)
             updated_mean_kd = None  # keep track of mean kd over current leaves, so on initialization we can set each leaf's relative_kd
+            updated_lambda_values = None  # just for dbg (need to keep track of it since we update them only periodically)
             random.shuffle(static_live_leaves)
             if args.debug > 1:
                 print('      %3d    %3d' % (current_time, len(static_live_leaves)), end='\n' if len(static_live_leaves) == 0 else '')  # NOTE these are live leaves *after* the intermediate sampling above
@@ -391,7 +392,7 @@ class MutationModel():
                     lambda_update_dbg_str = ' '
                     if skip_lambda_n == 0:  # time to update the lambdas for every leaf
                         skip_lambda_n = args.skip_update + 1  # reset it so we don't update again until we've done <args.skip_update> more leaves (+ 1 is so that if args.skip_update is 0 we don't skip at all, i.e. args.skip_update is the number of leaves skipped, *not* the number of leaves *between* updates)
-                        tree = selection_utils.update_lambda_values(tree, updated_live_leaves, args.A_total, args.B_total, args.logi_params, args.selection_strength)
+                        updated_lambda_values = selection_utils.update_lambda_values(updated_live_leaves, args.A_total, args.B_total, args.logi_params, args.selection_strength)  # note that when this updates in the middle of the loop over leaves, it'll set lambda values for any children that have so far been added
                         updated_mean_kd = numpy.mean([l.Kd for l in updated_live_leaves if l.Kd != float('inf')])  # NOTE that if mean kd deviates by a huge amount from args.mature_kd (probably due to very low selection strength, causing the cells to rapidly drift away from the target sequence) then in order to avoid the cells dying out you'd need to recalculate A_total here with the current mean kd (but it's unclear what you'd really be simulating then, since adding an aribtrarily large amount of new antigen because the population's getting low isn't very realistic)
                         lambda_update_dbg_str = selection_utils.color('blue', 'x')
                     skip_lambda_n -= 1
@@ -450,15 +451,14 @@ class MutationModel():
             if args.debug == 1:
                 mintd, meantd = '-', '-'
                 minkd, meankd = '-', '-'
-                maxl, meanl = '-', '-'
-                if args.selection and len(updated_live_leaves) > 0:
+                maxl, meanl = '-', '-'  # NOTE don't use <updated_live_leaves> to get lambda values here, since it's either entirely or partly full on unset values from children that were just added
+                if args.selection and len(updated_live_leaves) > 0:  # NOTE when you get to here, there are either zero lambda values set in <updated_live_leaves> (if lambdas updated only at the start of the loop) or some intermediate number (if they updated also partway through)
                     tmptdvals = [l.target_distance for l in updated_live_leaves]
                     mintd, meantd = '%2d' % min(tmptdvals), '%3.1f' % numpy.mean(tmptdvals)
                     tmpkdvals = [l.Kd for l in updated_live_leaves if l.Kd != float('inf')]
                     minkd, meankd = [('%5.1f' % v) for v in (min(tmpkdvals), numpy.mean(tmpkdvals))]
-                    tmplvals = [l.lambda_ for l in updated_live_leaves if l.lambda_ is not None]
-                    if len(tmplvals) > 0:
-                        maxl, meanl = [('%4.2f' % v) for v in (max(tmplvals), numpy.mean(tmplvals))]
+                    if len(updated_lambda_values) > 0:
+                        maxl, meanl = [('%4.2f' % v) for v in (max(updated_lambda_values), numpy.mean(updated_lambda_values))]
                 print('        %3d       %5d         %s  %s          %s  %s     %4s  %4s      %s' % (current_time, len(updated_live_leaves), mintd, meantd, minkd, meankd, maxl, meanl, dbgstr))
 
             if finished:

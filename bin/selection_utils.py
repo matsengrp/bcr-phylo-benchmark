@@ -170,8 +170,8 @@ def calc_kd(node, args):
     return kd
 
 # ----------------------------------------------------------------------------------------
-def update_lambda_values(tree, live_leaves, A_total, B_total, logi_params, selection_strength, lambda_min=10e-10):
-    ''' update the lambda_ feature (parameter for the poisson progeny distribution) for each live leaf in <tree> '''
+def update_lambda_values(live_leaves, A_total, B_total, logi_params, selection_strength, lambda_min=10e-10):
+    ''' update the lambda_ feature (parameter for the poisson progeny distribution) for each leaf in <live_leaves> '''
 
     # ----------------------------------------------------------------------------------------
     def calc_BnA(Kd_n, A, B_total):
@@ -243,7 +243,7 @@ def update_lambda_values(tree, live_leaves, A_total, B_total, logi_params, selec
         new_lambdas = apply_selection_strength_scaling(new_lambdas)
     for new_lambda, leaf in zip(new_lambdas, live_leaves):  # transfer new lambda values to the actual leaves
         leaf.lambda_ = new_lambda
-    return tree
+    return new_lambdas
 
 # ----------------------------------------------------------------------------------------
 def find_A_total(carry_cap, B_total, f_full, mature_kd, U):
