@@ -337,6 +337,8 @@ class MutationModel():
                 termstr += ['    --stop_dist: breaking with min target distance %d <= %d' % (min_tdist, args.stop_dist)]
                 finished = True
                 successful = True
+        if finished and self.n_unterminated_leaves < 2:  # moving this check from later on, so we can rerun if we finish successfully but only have one leaf (I think some of the post-processing steps must fail if there's only one leaf)
+            successful = False
         return finished, successful, ', '.join(dbgstr), '\n'.join(termstr)
 
     # ----------------------------------------------------------------------------------------
@@ -456,7 +458,7 @@ class MutationModel():
                     tmptdvals = [l.target_distance for l in updated_live_leaves]
                     mintd, meantd = '%2d' % min(tmptdvals), '%3.1f' % numpy.mean(tmptdvals)
                     tmpkdvals = [l.Kd for l in updated_live_leaves if l.Kd != float('inf')]
-                    minkd, meankd = [('%5.1f' % v) for v in (min(tmpkdvals), numpy.mean(tmpkdvals))]
+                    minkd, meankd = [('%5.1f' % v) for v in (min(tmpkdvals), numpy.mean(tmpkdvals))] if len(tmpkdvals) > 0 else (0, 0)
                     if len(updated_lambda_values) > 0:
                         maxl, meanl = [('%4.2f' % v) for v in (max(updated_lambda_values), numpy.mean(updated_lambda_values))]
                 print('        %3d       %5d         %s  %s          %s  %s     %4s  %4s      %s' % (current_time, len(updated_live_leaves), mintd, meantd, minkd, meankd, maxl, meanl, dbgstr))
@@ -636,8 +638,6 @@ def run_simulation(args):
             break
         itry += 1
         print('  itry %d: retrying tree simulation' % itry)
-    if len(list(tree.iter_leaves())) < 2:
-        raise Exception('only one leaf in tree (probably just need to run with larger --n_tries and/or different --random_seed)')
 
     # write observed sequences to fasta file(s)
     if args.naive_seq2 is not None:
