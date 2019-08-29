@@ -482,7 +482,7 @@ class MutationModel():
         if len(stop_leaves) > 0:
             print('    %d / %d leaves at final time point have stop codons' % (len(stop_leaves), len(stop_leaves) + len(non_stop_leaves)))
 
-        tree.name = 'naive'  # overwritten below if --observe_common_ancestors is set
+        tree.name = 'naive' if args.observe_common_ancestors else ''  # overwritten below if --observe_common_ancestors is set UPDATE I'm making it so the root has name '' if we're not observing common ancestors (since I don't want to have it in the final annotation), but I don't want to remove the 'naive' if we are observing common ancestors since I'm not sure if it makes a difference
         potential_names, used_names = None, None
         _, potential_names, used_names = selection_utils.choose_new_uid(potential_names, used_names, initial_length=args.uid_str_len, shuffle=True)  # call once (ignoring the returned <uid>) to get the initial length right, and to shuffle them (shuffling is so if we're running multiple events, they have different leaf names, as long as we set the seeds differently)
 
@@ -649,7 +649,8 @@ def run_simulation(args):
                 fh.write('>%s\n%s\n' % (node.name, get_pair_seq(node.nuc_seq, args.pair_bounds, iseq)))
     else:
         with open('%s.fasta' % args.outbase, 'w') as fh:
-            fh.write('>%s\n%s\n' % (tree.name, args.naive_tseq.nuc))  # [:len(args.naive_tseq.nuc) - args.n_pads_added]))
+            if args.observe_common_ancestors:
+                fh.write('>%s\n%s\n' % (tree.name, args.naive_tseq.nuc))  # [:len(args.naive_tseq.nuc) - args.n_pads_added]))
             for node in [n for n in tree.iter_descendants() if n.frequency != 0]:  # NOTE doesn't iterate over root node
                 fh.write('>%s\n%s\n' % (node.name, node.nuc_seq))  # [:len(node.nuc_seq) - args.n_pads_added]))
 
