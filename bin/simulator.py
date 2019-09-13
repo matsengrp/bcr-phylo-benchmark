@@ -496,7 +496,7 @@ class MutationModel():
         observed_leaves = list(non_stop_leaves)  # don't really need a separate list, but it's a little nicer
         if args.n_to_sample is not None and len(observed_leaves) > args.n_to_sample[-1]:  # if there's more leaves than we were asked to sample
             observed_leaves = self.choose_leaves_to_sample(args, observed_leaves, args.n_to_sample[-1])
-            print('    sampled %d leaves at final time' % len(observed_leaves))
+            print('    sampled %d / %d no-stop leaves at final time' % (len(observed_leaves), len(non_stop_leaves)))
 
         for leaf in observed_leaves:
             leaf.frequency = 1
