@@ -471,7 +471,7 @@ class MutationModel():
                 self.sample_intermediates(args, current_time, tree)  # note that we don't need to update <updated_live_leaves> in this fcn
 
         # write a histogram of the hamming distances to target at each generation
-        if args.selection:
+        if args.selection and not args.dont_write_hists:
             with open(args.outbase + '_min_aa_target_hdists.p', 'wb') as histfile:
                 pickle.dump(self.tdist_hists, histfile)
             with open(args.outbase + '_n_mutated_nuc_hdists.p', 'wb') as histfile:
@@ -508,7 +508,7 @@ class MutationModel():
 
         if args.selection:
             self.sampled_tdist_hists[current_time] = self.get_target_distance_hist(args, observed_leaves)  # NOTE this doesn't include nodes added from --observe_common_ancestors or --observe_all_ancestors
-            if len(self.sampled_tdist_hists) > 0:
+            if len(self.sampled_tdist_hists) > 0 and not args.dont_write_hists:
                 with open(args.outbase + '_sampled_min_aa_target_hdists.p', 'wb') as histfile:
                     pickle.dump(self.sampled_tdist_hists, histfile)
 
@@ -623,9 +623,10 @@ def make_plots(args, tree, collapsed_tree):
         # The minimum distance to the target is colored:
         colormap = {node.name:colors[node.target_distance] for node in collapsed_tree.tree.traverse()}
         collapsed_tree.render(args.outbase+'_collapsed_runstat_color_tree.svg', idlabel=args.idlabel, colormap=colormap)
-        with open(args.outbase + '_min_aa_target_hdists.p', 'rb') as fh:
-            tdist_hists = pickle.load(fh)
-            selection_utils.plot_runstats(tdist_hists, args.outbase, colors)
+        if not args.dont_write_hists:
+            with open(args.outbase + '_min_aa_target_hdists.p', 'rb') as fh:
+                tdist_hists = pickle.load(fh)
+                selection_utils.plot_runstats(tdist_hists, args.outbase, colors)
 
 # ----------------------------------------------------------------------------------------
 def run_simulation(args):
@@ -737,7 +738,8 @@ def main():
     parser.add_argument('--k_exp', type=float, default=2, help='The exponent in the function to map hamming distance to kd. '
                         'It is recommended to keep this as the default.')
     parser.add_argument('--plotAA', action='store_true', help='Plot trees with collapsing and coloring on amino acid level.')
-    parser.add_argument('--no_plot', action='store_true', help='don\'t write any plots (they\'re pretty slow)')
+    parser.add_argument('--no_plot', action='store_true', help='don\'t write any plots (they\'re pretty slow), although we stil write some .p historgrams (see --dont_write_hists).')
+    parser.add_argument('--dont_write_hists', action='store_true', help='don\'t write any of the .p histograms (they\'re much larger than the fasta + tree files that we really care about)')
     parser.add_argument('--debug', type=int, default=0, choices=[0, 1, 2], help='Debug verbosity level.')
     parser.add_argument('--outbase', default='GCsimulator_out', help='Output file base name')
     parser.add_argument('--idlabel', action='store_true', help='Flag for labeling the sequence ids of the nodes in the output tree images, also write associated fasta alignment if True')
