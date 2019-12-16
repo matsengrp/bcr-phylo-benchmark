@@ -252,14 +252,18 @@ class MutationModel():
 
     # ----------------------------------------------------------------------------------------
     def choose_leaves_to_sample(self, args, leaves, n_to_sample):
-        if args.observe_based_on_affinity:
-            raise Exception('needs to be checked')
+        if args.leaf_sampling_scheme == 'uniform-random':
+            return random.sample(leaves, n_to_sample)
+        elif args.leaf_sampling_scheme == 'affinity-biased':
             probs = [1. / l.Kd for l in leaves]
             total = sum(probs)
             probs = [p / total for p in probs]
             return list(numpy.random.choice(leaves, n_to_sample, p=probs, replace=False))
+        elif args.leaf_sampling_scheme == 'high-affinity':
+            sorted_leaves = sorted(leaves, key=lambda l: l.Kd)
+            return sorted_leaves[:n_to_sample]
         else:
-            return random.sample(leaves, n_to_sample)
+            raise Exception('unsupported leaf sampling scheme %s' % args.leaf_sampling_scheme)
 
     # ----------------------------------------------------------------------------------------
     def get_target_distance_hist(self, args, leaves):
@@ -745,7 +749,7 @@ def main():
     parser.add_argument('--idlabel', action='store_true', help='Flag for labeling the sequence ids of the nodes in the output tree images, also write associated fasta alignment if True')
     parser.add_argument('--random_seed', type=int, help='for random number generator')
     parser.add_argument('--pair_bounds', help='for internal use only')
-    parser.add_argument('--observe_based_on_affinity', action='store_true', help='When selecting sequences to observe, instead of choosing at random (default), weight with 1/kd (this weighting is kind of arbitrary, and eventually I should maybe figure out something else, but the point is to allow some configurability as to not just sampling entirely at random).')
+    parser.add_argument('--leaf_sampling_scheme', default='uniform-random', choices=['uniform-random', 'affinity-biased', 'high-affinity'], help='When selecting cells to observe, we can either sample entirely randomly (\'uniform-random\', default), randomly sample with each cell\'s weight 1/Kd (\'affinity-biased\'), or sort cells by Kd and choose precisely the highest-affinity cells (\'high-affinity\').')
     parser.add_argument('--verbose', action='store_true', help='DEPRECATED use --debug')
     parser.add_argument('--n_to_downsample', type=int, nargs='+', help='DEPRECATED use --n_to_sample')
     parser.add_argument('--uid_str_len', type=int, default=4, help='Number of random lowercase letters to use to construct each node\'s names.')
