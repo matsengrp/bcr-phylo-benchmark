@@ -638,11 +638,14 @@ def run_simulation(args):
     mutation_model = MutationModel(args)
     itry = 0
     while itry < args.n_tries:
+        if itry > 0:
+            print('  itry %d: retrying tree simulation' % itry)
         tree, collapsed_tree, successful = mutation_model.simulate(args)
         if successful:
             break
         itry += 1
-        print('  itry %d: retrying tree simulation' % itry)
+    if not successful:
+        raise Exception('didn\'t succeed after %d tries' % args.n_tries)
 
     # write observed sequences to fasta file(s)
     if args.naive_seq2 is not None:
