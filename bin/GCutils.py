@@ -2,15 +2,19 @@
 # -*- coding: utf-8 -*-
 from __future__ import absolute_import
 from Bio.Seq import Seq
+from Bio.Seq import translate as bio_translate
 from Bio.Alphabet import generic_dna
 from ete3 import TreeNode, NodeStyle, TreeStyle, TextFace, CircleFace, PieChartFace, faces, SVG_COLORS
 import scipy
 import numpy as np
 import random
+import math
+
 try:
     import cPickle as pickle
 except:
     import pickle
+
 try:
     import jellyfish
 
@@ -32,20 +36,38 @@ ISO_TYPE_ORDER = {'IgM': 1, 'IgD': 1, 'IgG': 2, 'IgGA': 2, 'IgGb': 2, 'IgE': 3, 
 ISO_TYPE_charORDER = {'M': 1, 'D': 2, 'G': 3, 'E': 4, 'A': 5}
 ISO_SHORT = {'IgM': 'M', 'IgD': 'D', 'IgG': 'G', 'IgGA': 'G', 'IgGb': 'G', 'IgE': 'E', 'IgA': 'A'}
 
-def translate(seq):
-    return str(Seq(seq[:], generic_dna).translate())
+# ----------------------------------------------------------------------------------------
+def local_translate(seq):
+    if len(seq) % 3 != 0:
+        seq += 'N' * (3 - (len(seq) % 3))
+    return bio_translate(seq)
 
+# ----------------------------------------------------------------------------------------
+def replace_codon_in_aa_seq(new_nuc_seq, old_aa_seq, inuc):  # <inuc>: single nucleotide position that was mutated from old nuc seq (which corresponds to old_aa_seq) to new_nuc_seq
+    istart = 3 * int(math.floor(inuc / 3.))  # nucleotide position of start of mutated codon
+    new_codon = local_translate(new_nuc_seq[istart : istart + 3])
+    return old_aa_seq[:inuc / 3] + new_codon + old_aa_seq[inuc / 3 + 1:]  # would be nice to check for synonymity and not do any translation unless we need to
 
-def has_stop(seq):
-    return '*' in str(Seq(seq[:], generic_dna).translate())
+# ----------------------------------------------------------------------------------------
+class TranslatedSeq(object):
+    def __init__(self, nuc_seq, aa_seq=None):
+        self.nuc = nuc_seq
+        self.aa = local_translate(nuc_seq) if aa_seq is None else aa_seq
 
+# ----------------------------------------------------------------------------------------
+def has_stop_aa(seq):
+    return '*' in seq
 
+# # ----------------------------------------------------------------------------------------
+# def has_stop_nuc(seq):  # huh, turns out we don't need this anywhere, but don't feel like deleting, since it makes more clear that the other fcn needs to be passed an aa sequence
+#     return has_stop_aa(local_translate(seq))
+
+# ----------------------------------------------------------------------------------------
 class CollapsedTree():
     '''
-    Collapsed tree class from GCtree. Collapses an ete3 tree
-    into a genotype collapsed tree based on hamming distance between node seqeunces.
+    Collapses an ete3 tree into a genotype collapsed tree based on hamming distance between node seqeunces.
     '''
-    def __init__(self, tree, name, meta=None, collapse_syn=False, allow_repeats=False):
+    def __init__(self, tree, name, meta=None, collapse_syn=False, allow_repeats=False, add_selection_metrics=False):
         '''
         meta: dictionary with key value pairs e.g. the likelihood of a given tree
         tree: ete tree with frequency node feature. If uncollapsed, it will be collapsed.
@@ -60,72 +82,78 @@ class CollapsedTree():
 
         self.tree = tree.copy()
         tree.dist = 0  # no branch above root
+
+        # TODO remove this, since it happens to the input tree at the end of MutationModel.simulate()
         # Remove unobserved internal unifurcations:
         for node in self.tree.iter_descendants():
             parent = node.up
             if node.frequency == 0 and len(node.children) == 1:
+                assert False
                 node.delete(prevent_nondicotomic=False)
-                node.children[0].dist = hamming_distance(node.children[0].sequence, parent.sequence)
+                node.children[0].dist = hamming_distance(node.children[0].nuc_seq, parent.nuc_seq)
 
         # Collapse synonymous reads:
         if collapse_syn is True:
             print('Collapsing synonymous reads')
             tree.dist = 0  # No branch above root
             for node in tree.iter_descendants():
-                aa = translate(node.sequence)
-                aa_parent = translate(node.up.sequence)
-                node.dist = hamming_distance(aa, aa_parent)
+                node.dist = hamming_distance(node.aa_seq, node.up.aa_seq)  # NOTE the .dist feature is previously set to be nucleotide distance (but here's it's set to aa distance) THIS IS REALLY DUMB
 
         # iterate over the tree below root and collapse edges of zero length
-        # if the node is a leaf and it's parent has nonzero frequency we combine taxa names to a set
-        # this acommodates bootstrap samples that result in repeated genotypes
+        # if the node is a leaf and its parent has nonzero frequency we combine taxa names to a set (this acommodates bootstrap samples that result in repeated genotypes)
         observed_genotypes = set((node.name for node in self.tree.traverse() if node.frequency > 0))
         observed_genotypes.add(self.tree.name)
         for node in self.tree.get_descendants(strategy='postorder'):
-            if node.dist == 0:
-                node.up.frequency += node.frequency
-                node_set = set([node.name]) if isinstance(node.name, str) else set(node.name)
-                node_up_set = set([node.up.name]) if isinstance(node.up.name, str) else set(node.up.name)
-                if node_up_set < observed_genotypes:
-                    if node_set < observed_genotypes:
-                        node.up.name = tuple(node_set | node_up_set)
-                        if len(node.up.name) == 1:
-                            node.up.name = node.up.name[0]
-                elif node_set < observed_genotypes:
-                    node.up.name = tuple(node_set)
+            if node.dist != 0:
+                continue
+            node.up.frequency += node.frequency
+            node_set = set([node.name]) if isinstance(node.name, str) else set(node.name)
+            node_up_set = set([node.up.name]) if isinstance(node.up.name, str) else set(node.up.name)
+            if node_up_set < observed_genotypes:
+                if node_set < observed_genotypes:
+                    node.up.name = tuple(node_set | node_up_set)
                     if len(node.up.name) == 1:
                         node.up.name = node.up.name[0]
-                node.delete(prevent_nondicotomic=False)
+            elif node_set < observed_genotypes:
+                node.up.name = tuple(node_set)
+                if len(node.up.name) == 1:
+                    node.up.name = node.up.name[0]
+            node.delete(prevent_nondicotomic=False)
 
         final_observed_genotypes = set([nam for node in self.tree.traverse() if node.frequency > 0 or node == self.tree for nam in ((node.name,) if isinstance(node.name, str) else node.name)])
         if final_observed_genotypes != observed_genotypes:
             raise RuntimeError('observed genotypes don\'t match after collapse\n\tbefore: {}\n\tafter: {}\n\tsymmetric diff: {}'.format(observed_genotypes, final_observed_genotypes, observed_genotypes ^ final_observed_genotypes))
         assert sum(node.frequency for node in tree.traverse()) == sum(node.frequency for node in self.tree.traverse())
 
-        rep_seq = sum(node.frequency > 0 for node in self.tree.traverse()) - len(set([node.sequence for node in self.tree.traverse() if node.frequency > 0]))
-        if not allow_repeats and rep_seq:
-            raise RuntimeError('Repeated observed sequences in collapsed tree. {} sequences were found repeated.'.format(rep_seq))
-        elif allow_repeats and rep_seq:
-            rep_seq = sum(node.frequency > 0 for node in self.tree.traverse()) - len(set([node.sequence for node in self.tree.traverse() if node.frequency > 0]))
-            print('Repeated observed sequences in collapsed tree. {} sequences were found repeated.'.format(rep_seq))
+        n_repeated_seqs = sum(node.frequency > 0 for node in self.tree.traverse()) - len(set([node.nuc_seq for node in self.tree.traverse() if node.frequency > 0]))
+        if not allow_repeats and n_repeated_seqs:
+            raise RuntimeError('found %d repeated sequences when collapsing tree' % n_repeated_seqs)
+
         # a custom ladderize accounting for abundance and sequence to break ties in abundance
         for node in self.tree.traverse(strategy='postorder'):
             # add a partition feature and compute it recursively up the tree
             node.add_feature('partition', node.frequency + sum(node2.partition for node2 in node.children))
             # sort children of this node based on partion and sequence
-            node.children.sort(key=lambda node: (node.partition, node.sequence))
+            node.children.sort(key=lambda node: (node.partition, node.nuc_seq))
 
+        if add_selection_metrics:
+            self.add_selection_metrics()
 
+    # ----------------------------------------------------------------------------------------
+    def __str__(self):
+        '''Return a string representation for printing.'''
+        return 'tree:\n' + str(self.tree)
+
+    # ----------------------------------------------------------------------------------------
+    def add_selection_metrics():
         # Add some usefull annotations, including a metric for selection,
         # inspired/adapted from the LONR score: https://academic.oup.com/nar/article/44/5/e46/2464514
         for node in tree.iter_descendants():
-            aa = translate(node.sequence)
-            aa_parent = translate(node.up.sequence)
-            node.add_feature('NS_dist', hamming_distance(aa, aa_parent))
+            node.add_feature('NS_dist', hamming_distance(node.aa_seq, node.up.aa_seq))
             if node.is_leaf():
                 dist2tip = 0
             else:
-                dist2tip = min([hamming_distance(node.sequence, l.sequence) for l in node.iter_descendants() if l.is_leaf()])
+                dist2tip = min([hamming_distance(node.nuc_seq, l.nuc_seq) for l in node.iter_descendants() if l.is_leaf()])
             node.add_feature('dist2tip', dist2tip)
             if hasattr(node, 'Kd'):
                 node.add_feature('delta_Kd', (node.up.Kd - node.Kd))
@@ -143,7 +171,7 @@ class CollapsedTree():
             except:
                 pass
 
-        # Make a Z-score LONR based of the synonymous mutations:
+        # Make a Z-score LONR based on synonymous mutations
         try:
             LONR_syn = np.array([node.LONR for node in tree.iter_descendants() if hasattr(node, 'LONR') and node.NS_dist == 0])
             LONR_syn_mean = np.mean(LONR_syn)
@@ -154,10 +182,7 @@ class CollapsedTree():
         except:
             pass
 
-    def __str__(self):
-        '''Return a string representation for printing.'''
-        return 'tree:\n' + str(self.tree)
-
+    # ----------------------------------------------------------------------------------------
     def render(self, outfile, idlabel=False, isolabel=False, colormap=None, chain_split=None):
         '''Render to image file, filetype inferred from suffix, svg for color images'''
         def my_layout(node):
@@ -198,11 +223,9 @@ class CollapsedTree():
             nstyle = NodeStyle()
             nstyle['size'] = 0
             if node.up is not None:
-                if set(node.sequence.upper()) == set('ACGT'):  # Don't know what this do, try and delete
-                    aa = translate(node.sequence)
-                    aa_parent = translate(node.up.sequence)
-                    nonsyn = hamming_distance(aa, aa_parent)
-                    if '*' in aa:
+                if set(node.nuc_seq.upper()) == set('ACGT'):  # Don't know what this do, try and delete
+                    nonsyn = hamming_distance(node.aa_seq, node.up.aa_seq)
+                    if has_stop_aa(node.aa_seq):
                         nstyle['bgcolor'] = 'red'
                     if nonsyn > 0:
                         nstyle['hz_line_color'] = 'black'
@@ -223,7 +246,7 @@ class CollapsedTree():
         if idlabel:
             aln = MultipleSeqAlignment([])
             for node in self.tree.traverse():
-                aln.append(SeqRecord(Seq(str(node.sequence), generic_dna), id=node.name, description='abundance={}'.format(node.frequency)))
+                aln.append(SeqRecord(Seq(str(node.nuc_seq), generic_dna), id=node.name, description='abundance={}'.format(node.frequency)))
             AlignIO.write(aln, open(os.path.splitext(outfile)[0] + '.fasta', 'w'), 'fasta')
 
     def write(self, file_name):
@@ -236,13 +259,13 @@ class CollapsedTree():
         if method == 'identity':
             # we compare lists of seq, parent, abundance
             # return true if these lists are identical, else false
-            list1 = sorted((node.sequence, node.frequency, node.up.sequence if node.up is not None else None) for node in self.tree.traverse())
-            list2 = sorted((node.sequence, node.frequency, node.up.sequence if node.up is not None else None) for node in tree2.tree.traverse())
+            list1 = sorted((node.nuc_seq, node.frequency, node.up.nuc_seq if node.up is not None else None) for node in self.tree.traverse())
+            list2 = sorted((node.nuc_seq, node.frequency, node.up.nuc_seq if node.up is not None else None) for node in tree2.tree.traverse())
             return list1 == list2
         elif method == 'MRCA':
             # matrix of hamming distance of common ancestors of taxa
             # takes a true and inferred tree as CollapsedTree objects
-            taxa = [node.sequence for node in self.tree.traverse() if node.frequency]
+            taxa = [node.nuc_seq for node in self.tree.traverse() if node.frequency]
             n_taxa = len(taxa)
             d = scipy.zeros(shape=(n_taxa, n_taxa))
             sum_sites = scipy.zeros(shape=(n_taxa, n_taxa))
@@ -252,8 +275,8 @@ class CollapsedTree():
                 for j in range(i + 1, n_taxa):
                     nodej_true = self.tree.iter_search_nodes(sequence=taxa[j]).next()
                     nodej      =      tree2.tree.iter_search_nodes(sequence=taxa[j]).next()
-                    MRCA_true = self.tree.get_common_ancestor((nodei_true, nodej_true)).sequence
-                    MRCA =           tree2.tree.get_common_ancestor((nodei, nodej)).sequence
+                    MRCA_true = self.tree.get_common_ancestor((nodei_true, nodej_true)).nuc_seq
+                    MRCA =           tree2.tree.get_common_ancestor((nodei, nodej)).nuc_seq
                     d[i, j] = hamming_distance(MRCA_true, MRCA)
                     sum_sites[i, j] = len(MRCA_true)
             return d.sum() / sum_sites.sum()
@@ -263,8 +286,9 @@ class CollapsedTree():
             for treex in (tree1_copy, tree2_copy):
                 for node in list(treex.traverse()):
                     if node.frequency > 0:
+                        # child = init_node(self.args, node.nuc_seq, node.time, node)  # too hard to import this
                         child = TreeNode()
-                        child.add_feature('sequence', node.sequence)
+                        child.add_feature('sequence', node.nuc_seq)
                         node.add_child(child)
             try:
                 return tree1_copy.robinson_foulds(tree2_copy, attr_t1='sequence', attr_t2='sequence', unrooted_trees=True)[0]
