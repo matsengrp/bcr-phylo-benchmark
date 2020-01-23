@@ -308,7 +308,7 @@ class MutationModel():
                 self.n_unterminated_leaves -= 1
                 self.get_ancestor_above_leaf_to_detach(leaf)
         self.sampled_tdist_hists[current_time] = self.get_target_distance_hist(args, inter_sampled_leaves)
-        print('                  sampled %d (of %d live and stop-free) intermediate leaves (%s) at end of generation %d' % (n_to_sample, len(live_nostop_leaves), 'killing each of them' if args.kill_sampled_intermediates else 'leaving them alive', current_time))
+        print('                  sampled %d (of %d live and stop-free) intermediate leaves (%s) at end of generation %d (sampling scheme: %s)' % (n_to_sample, len(live_nostop_leaves), 'killing each of them' if args.kill_sampled_intermediates else 'leaving them alive', current_time, args.leaf_sampling_scheme))
 
     # ----------------------------------------------------------------------------------------
     def check_termination(self, args, current_time, updated_live_leaves):
@@ -500,7 +500,7 @@ class MutationModel():
         observed_leaves = list(non_stop_leaves)  # don't really need a separate list, but it's a little nicer
         if args.n_to_sample is not None and len(observed_leaves) > args.n_to_sample[-1]:  # if there's more leaves than we were asked to sample
             observed_leaves = self.choose_leaves_to_sample(args, observed_leaves, args.n_to_sample[-1])
-            print('    sampled %d / %d no-stop leaves at final time' % (len(observed_leaves), len(non_stop_leaves)))
+            print('    sampled %d / %d no-stop leaves at final time (sampling scheme: %s)' % (len(observed_leaves), len(non_stop_leaves), args.leaf_sampling_scheme))
 
         for leaf in observed_leaves:
             leaf.frequency = 1
