@@ -235,7 +235,6 @@ class MutationModel():
             final_target_seqs = []
             for tseq, csize in zip(target_seqs, cluster_sizes):
                 cluster_targets = [self.make_target_sequence(args, tseq, args.target_cluster_distance, args.target_sequence_lambda0) for i in range(csize - 1)]
-                assert len(set([args.target_cluster_distance] + [target_distance_fcn(args, tseq, [t])[1] for t in cluster_targets])) == 1  # all targets are the right distance from the naive
                 final_target_seqs += [tseq] + cluster_targets
             target_seqs = final_target_seqs
             print('      added clusters around each main target for %d total targets: %s' % (len(target_seqs), ' '.join(str(cs) for cs in cluster_sizes)))
