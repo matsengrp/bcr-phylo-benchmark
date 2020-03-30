@@ -671,7 +671,7 @@ def run_simulation(args):
                           'Hamming neighbor genotypes':degree})
     stats.to_csv(args.outbase+'_stats.tsv', sep='\t', index=False)
 
-    print('  observed %d simulated sequences' % sum(node.frequency for node in collapsed_tree.tree.traverse()))
+    print('  observed %d simulated sequences%s' % (sum(node.frequency for node in collapsed_tree.tree.traverse()), '' if args.no_context else ' (with context dependence)'))
 
     if not args.no_plot:  # put this before we pickledump them, so the style gets written to the pickle files
         make_plots(args, tree, collapsed_tree)
