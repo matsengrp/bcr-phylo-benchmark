@@ -94,7 +94,7 @@ class MutationModel():
         node.add_feature('frequency', 0)  # observation frequency, is set to either 1 or 0 in set_observation_frequencies_and_names(), then when the collapsed tree is constructed it can get bigger than 1 when the frequencies of nodes connected by zero-length branches are summed
         if args.selection:
             node.add_feature('lambda_', None)  # set in selection_utils.update_lambda_values() (i.e. is modified every few generations)
-            itarget, tdist = target_distance_fcn(args, TranslatedSeq(nuc_seq, node.aa_seq), target_seqs)
+            itarget, tdist = target_distance_fcn(args, TranslatedSeq(args, nuc_seq, aa_seq=node.aa_seq), target_seqs)
             node.add_feature('target_index', itarget)
             node.add_feature('target_distance', tdist)  # nuc or aa distance, depending on args
             node.add_feature('Kd', selection_utils.calc_kd(node, args))
@@ -205,7 +205,7 @@ class MutationModel():
             tseq = initial_tseq
             while dist is None or dist < tdist:
                 mfo = self.mutate(tseq.nuc, lambda0, aa_seq=tseq.aa)
-                tseq = TranslatedSeq(mfo['nuc_seq'], aa_seq=mfo['aa_seq'])
+                tseq = TranslatedSeq(args, mfo['nuc_seq'], aa_seq=mfo['aa_seq'])
                 _, dist = target_distance_fcn(args, initial_tseq, [tseq])
                 # TODO wouldn't it make more sense (or at least be faster) to give up as soon as you get a stop codon?
                 if dist >= tdist and not has_stop_aa(tseq.aa):  # greater-than is for aa-sim metric, since it's almost continuous
@@ -728,6 +728,7 @@ def main():
     parser.add_argument('--n_target_clusters', type=int, help='If set, divide the --target_count target sequences into --target_count / --n_target_clusters "clusters" of target sequences, where each cluster consists of one "main" sequence separated from the naive by --target_distance, surrounded by the others in the cluster at radius --target_cluster_distance. If you set numbers that aren\'t evenly divisible, then the clusters won\'t all be the same size, but the total number of targets will always be --target_count')
     parser.add_argument('--target_cluster_distance', type=int, default=1, help='See --target_cluster_count')
     parser.add_argument('--metric_for_target_distance', default='aa', choices=['aa', 'nuc', 'aa-sim-ascii', 'aa-sim-blosum'], help='Metric to use to calculate the distance to each target sequence (aa: use amino acid distance, i.e. only non-synonymous mutations count, nuc: use nucleotide distance, aa-sim: amino acid distance, but where different pairs of amino acids are different distances apart, with either ascii-code-based or blosum-based distances).')
+    parser.add_argument('--paratope_positions', default='all', choices=['all', 'cdrs'], help='Positions in each sequence that should be considered as part of the paratope, i.e. that count toward the target distance (non-paratope positions are ignored for purposes of the target distance). \'all\' uses all positions, \'cdrs\' uses half the positions (not actually the cdr positions a.t.m.).')
     parser.add_argument('--naive_seq2', help='Second seed naive nucleotide sequence. For simulating heavy/light chain co-evolution.')
     parser.add_argument('--naive_kd', type=float, default=100, help='kd of the naive sequence in nano molar.')
     parser.add_argument('--mature_kd', type=float, default=1, help='kd of the mature sequences in nano molar.')
@@ -791,7 +792,7 @@ def main():
     #     n_pads_added = 3 - (len(args.naive_seq) % 3)
     #     args.naive_seq += 'N' * n_pads_added
     #     args.n_pads_added = n_pads_added
-    args.naive_tseq = TranslatedSeq(args.naive_seq)
+    args.naive_tseq = TranslatedSeq(args, args.naive_seq)
     delattr(args, 'naive_seq')  # I think this is the most sensible thing to to
     if has_stop_aa(args.naive_tseq.aa):
         raise Exception('stop codon in --naive_seq (this isn\'t necessarily otherwise forbidden, but it\'ll quickly end you in a thicket of infinite loops, so should be corrected).')
@@ -824,7 +825,7 @@ def main():
         if len(args.naive_tseq.nuc) % 3 != 0:  # have to pad first one out to a full codon so we don't think there's a bunch of stop codons in the second sequence
             args.naive_tseq.nuc += 'N' * (3 - len(args.naive_tseq.nuc) % 3)
         args.pair_bounds = ((0, len(args.naive_tseq.nuc)), (len(args.naive_tseq.nuc), len(args.naive_tseq.nuc + args.naive_seq2)))  # bounds to allow mashing the two sequences toegether as one string
-        args.naive_tseq = TranslatedSeq(args.naive_tseq.nuc + args.naive_seq2.upper())  # merge the two seqeunces to simplify future dealing with the pair:
+        args.naive_tseq = TranslatedSeq(args, args.naive_tseq.nuc + args.naive_seq2.upper())  # merge the two seqeunces to simplify future dealing with the pair:
         if has_stop(args.naive_tseq.nuc):
             raise Exception('stop codon in --naive_seq2 (this isn\'t necessarily otherwise forbidden, but it\'ll quickly end you in a thicket of infinite loops, so should be corrected).')
 

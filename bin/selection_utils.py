@@ -148,13 +148,13 @@ def plot_sdists():
 # ----------------------------------------------------------------------------------------
 def target_distance_fcn(args, this_seq, target_seqs):
     if args.metric_for_target_distance == 'aa':
-        return min([(i, hamming_distance(this_seq.aa, t.aa)) for i, t in enumerate(target_seqs)], key=operator.itemgetter(1))  # this is annoyingly complicated because we want to also return *which* target sequence was the closest one, which we have to do here now (instead of afterward) since it depends on which metric we're using
+        return min([(i, hamming_distance(this_seq.dseq('aa'), t.dseq('aa'))) for i, t in enumerate(target_seqs)], key=operator.itemgetter(1))  # this is annoyingly complicated because we want to also return *which* target sequence was the closest one, which we have to do here now (instead of afterward) since it depends on which metric we're using
     elif args.metric_for_target_distance == 'nuc':
-        return min([(i, hamming_distance(this_seq.nuc, t.nuc)) for i, t in enumerate(target_seqs)], key=operator.itemgetter(1))
+        return min([(i, hamming_distance(this_seq.dseq('nuc'), t.dseq('nuc'))) for i, t in enumerate(target_seqs)], key=operator.itemgetter(1))
     elif 'aa-sim' in args.metric_for_target_distance:
         assert len(args.metric_for_target_distance.split('-')) == 3
         sdtype = args.metric_for_target_distance.split('-')[2]
-        return min([(i, sum(aa_inverse_similarity(aa1, aa2, sdtype) for aa1, aa2 in zip(this_seq.aa, t.aa) if aa1 != aa2)) for i, t in enumerate(target_seqs)], key=operator.itemgetter(1))
+        return min([(i, sum(aa_inverse_similarity(aa1, aa2, sdtype) for aa1, aa2 in zip(this_seq.dseq('aa'), t.dseq('aa')) if aa1 != aa2)) for i, t in enumerate(target_seqs)], key=operator.itemgetter(1))
     else:
         print(args.metric_for_target_distance)
         assert False
