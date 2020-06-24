@@ -727,6 +727,7 @@ def main():
     parser.add_argument('--target_distance', type=int, default=10, help='Desired distance (using --metric_for_target_distance) between the naive sequence and the target sequences.')
     parser.add_argument('--n_target_clusters', type=int, help='If set, divide the --target_count target sequences into --target_count / --n_target_clusters "clusters" of target sequences, where each cluster consists of one "main" sequence separated from the naive by --target_distance, surrounded by the others in the cluster at radius --target_cluster_distance. If you set numbers that aren\'t evenly divisible, then the clusters won\'t all be the same size, but the total number of targets will always be --target_count')
     parser.add_argument('--target_cluster_distance', type=int, default=1, help='See --target_cluster_count')
+    parser.add_argument('--min_target_distance', type=int, help='If set, the target distance used to calculate affinity can never fall below this value, even if the cell\'s sequence is closer than this to a target sequence. This makes it so cells can bounce around within this threshold of distance, rather than being sucked into exactly the target sequence.')
     parser.add_argument('--metric_for_target_distance', default='aa', choices=['aa', 'nuc', 'aa-sim-ascii', 'aa-sim-blosum'], help='Metric to use to calculate the distance to each target sequence (aa: use amino acid distance, i.e. only non-synonymous mutations count, nuc: use nucleotide distance, aa-sim: amino acid distance, but where different pairs of amino acids are different distances apart, with either ascii-code-based or blosum-based distances).')
     parser.add_argument('--paratope_positions', default='all', choices=['all', 'cdrs'], help='Positions in each sequence that should be considered as part of the paratope, i.e. that count toward the target distance (non-paratope positions are ignored for purposes of the target distance). \'all\' uses all positions, \'cdrs\' uses half the positions (not actually the cdr positions a.t.m.).')
     parser.add_argument('--naive_seq2', help='Second seed naive nucleotide sequence. For simulating heavy/light chain co-evolution.')
@@ -831,6 +832,8 @@ def main():
 
     if args.selection:
         assert args.target_distance > 0
+        if args.min_target_distance is not None and args.min_target_distance >= args.target_distance:
+            raise Exception('--min_target_distance %d has to be less than --target_distance %d' % (args.min_target_distance, args.target_distance))
         assert args.B_total >= args.f_full  # the fully activating fraction on BA must be possible to reach within B_total
         args.A_total = selection_utils.find_A_total(args.carry_cap, args.B_total, args.f_full, args.mature_kd, args.U)  # find the total amount of A necessary for sustaining the specified carrying capacity
         args.logi_params = selection_utils.find_logistic_params(args.f_full, args.U)  # calculate the parameters for the logistic function

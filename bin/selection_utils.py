@@ -148,16 +148,17 @@ def plot_sdists():
 # ----------------------------------------------------------------------------------------
 def target_distance_fcn(args, this_seq, target_seqs):
     if args.metric_for_target_distance == 'aa':
-        return min([(i, hamming_distance(this_seq.dseq('aa'), t.dseq('aa'))) for i, t in enumerate(target_seqs)], key=operator.itemgetter(1))  # this is annoyingly complicated because we want to also return *which* target sequence was the closest one, which we have to do here now (instead of afterward) since it depends on which metric we're using
+        tdists = [(i, hamming_distance(this_seq.dseq('aa'), t.dseq('aa'))) for i, t in enumerate(target_seqs)]  # this is annoyingly complicated because we want to also return *which* target sequence was the closest one, which we have to do here now (instead of afterward) since it depends on which metric we're using
     elif args.metric_for_target_distance == 'nuc':
-        return min([(i, hamming_distance(this_seq.dseq('nuc'), t.dseq('nuc'))) for i, t in enumerate(target_seqs)], key=operator.itemgetter(1))
+        tdists = [(i, hamming_distance(this_seq.dseq('nuc'), t.dseq('nuc'))) for i, t in enumerate(target_seqs)]
     elif 'aa-sim' in args.metric_for_target_distance:
         assert len(args.metric_for_target_distance.split('-')) == 3
         sdtype = args.metric_for_target_distance.split('-')[2]
-        return min([(i, sum(aa_inverse_similarity(aa1, aa2, sdtype) for aa1, aa2 in zip(this_seq.dseq('aa'), t.dseq('aa')) if aa1 != aa2)) for i, t in enumerate(target_seqs)], key=operator.itemgetter(1))
+        tdists = [(i, sum(aa_inverse_similarity(aa1, aa2, sdtype) for aa1, aa2 in zip(this_seq.dseq('aa'), t.dseq('aa')) if aa1 != aa2)) for i, t in enumerate(target_seqs)]
     else:
-        print(args.metric_for_target_distance)
-        assert False
+        raise Exception('unsupported --metric_for_target_distance \'%s\'' % args.metric_for_target_distance)
+    itarget, tdist = min(tdists, key=operator.itemgetter(1))
+    return itarget, tdist
 
 # ----------------------------------------------------------------------------------------
 def calc_kd(node, args):
@@ -165,7 +166,8 @@ def calc_kd(node, args):
         return float('inf')
 
     assert args.mature_kd < args.naive_kd
-    kd = args.mature_kd + (args.naive_kd - args.mature_kd) * (node.target_distance / float(args.target_distance))**args.k_exp  # transformation from distance to kd
+    tdist = node.target_distance if args.min_target_distance is None else max(node.target_distance, args.min_target_distance)
+    kd = args.mature_kd + (args.naive_kd - args.mature_kd) * (tdist / float(args.target_distance))**args.k_exp  # transformation from distance to kd
 
     return kd
 
