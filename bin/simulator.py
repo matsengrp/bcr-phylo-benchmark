@@ -99,6 +99,9 @@ class MutationModel():
             node.add_feature('target_distance', tdist)  # nuc or aa distance, depending on args
             node.add_feature('Kd', selection_utils.calc_kd(node, args))
             node.add_feature('relative_Kd', node.Kd / float(mean_kd) if mean_kd is not None else None)  # kd relative to mean of the current leaves
+        else:  # maybe it'd be nicer to remove these from the args.selection/not blocks, but this is kind of clearer
+            node.add_feature('lambda_', -1.)
+            node.add_feature('Kd', selection_utils.calc_kd(node, args))
         return node
 
     # ----------------------------------------------------------------------------------------
@@ -403,6 +406,8 @@ class MutationModel():
                     skip_lambda_n -= 1
 
                 def get_n_children():
+                    if not args.selection and has_stop_aa(leaf.aa_seq):
+                        return 0  # note that this 0 "corresponds to" lambda_min in selection_utils.update_lambda_values()
                     return numpy.random.poisson(leaf.lambda_ if args.selection else args.lambda_)
                 n_children = get_n_children()
                 if has_stop_aa(leaf.aa_seq) and n_children > 0:  # shouldn't happen any more (it was a bug when I added selection strength scaling), but let's leave this here just in case
@@ -445,7 +450,7 @@ class MutationModel():
                     kd_str_list = ['%.0f' % kd for kd in kd_list]
                     rel_kd_str_list = ['%.2f' % (kd / updated_mean_kd) for kd in kd_list]
                     pre_leaf_str = '' if static_live_leaves.index(leaf) == 0 else ('%12s %3d' % ('', len(updated_live_leaves)))
-                    print(('      %s    %4d      %5.2f  %3d  %s%s          %-14s       %-28s      %-28s') % (pre_leaf_str, static_live_leaves.index(leaf), leaf.lambda_, n_children, lambda_update_dbg_str, terminated_dbg_str, ' '.join(n_mutation_str_list), ' '.join(kd_str_list), ' '.join(rel_kd_str_list)))
+                    print(('      %s    %4d      %5.2f  %3d  %s%s          %-14s       %-28s      %-28s') % (pre_leaf_str, static_live_leaves.index(leaf), leaf.lambda_, n_children, lambda_update_dbg_str if args.selection else '', terminated_dbg_str, ' '.join(n_mutation_str_list), ' '.join(kd_str_list), ' '.join(rel_kd_str_list)))
 
             if args.selection:
                 self.tdist_hists[current_time] = self.get_target_distance_hist(args, updated_live_leaves)
@@ -695,10 +700,11 @@ def main():
     formatter_class = MultiplyInheritedFormatter
     help_str = '''
     Germinal center simulation. Can simulate in two modes:
-      a) Neutral mode. A Galton–Watson process, with mutation probabilities according to a user defined motif model e.g. S5F.
-      b) Selection mode. With the same mutation process as in a), but the poisson progeny distribution's lambda parameter is dynamically adjusted according to the hamming distance to any of a list
+      a) Neutral mode (default). A Galton–Watson process, with mutation probabilities according to a user defined motif model e.g. S5F.
+      b) Selection mode (set --selection). With the same mutation process as in a), but the poisson progeny distribution's lambda parameter is dynamically adjusted according to the hamming distance to any of a list
          of target sequences such that the closer a sequence gets to any of the targets, the higher its fitness (and the closer lambda gets to 2). Similarly, when the sequence is far away
          from any target, lambda approaches 0.
+      NOTE: you can also get neutral evolution by turning on --selection and setting --selection_strength to zero.
     Completion is determined by three stopping criteria arguments: %s (see below).
     ''' % ', '.join(['--' + sc for sc in stop_crits])
     parser = argparse.ArgumentParser(description=help_str,
@@ -717,7 +723,7 @@ def main():
     parser.add_argument('--lambda', dest='lambda_', type=float, default=0.9, help='Poisson branching parameter to use if selection is turned off.')
     parser.add_argument('--lambda0', type=float, nargs='*', help='Baseline sequence mutation rate(s): first value corresponds to --naive_seq, and optionally the second to --naive_seq2. If only one rate is provided for two sequences, this rate is used for both. If not set, the default is set below')
     parser.add_argument('--target_sequence_lambda0', type=float, default=0.1, help='baseline mutation rate used for generating target sequences (you shouldn\'t need to change this)')
-    parser.add_argument('--selection_strength', type=float, default=1., help='Value in [0, 1] specifying the relative strength of selection, i.e. the extent to which fitness (in the form of the lambda value for each cell\'s poisson distribution from which its N offspring is drawn) is determined by affinity (strength of 1) vs by chance (strength of 0)')
+    parser.add_argument('--selection_strength', type=float, default=1., help='Value in [0, 1] specifying the relative strength of selection, i.e. the extent to which fitness (in the form of the lambda value for each cell\'s poisson distribution from which its N offspring is drawn) is determined by affinity (strength of 1) vs by chance (strength of 0). Has *no* effect unless --selection is turned on.')
     parser.add_argument('--n_to_sample', type=int, nargs='+', help='Number of cells to sample from the final generation (if one value), or at each generation specified in --obs-times (if same length as --obs_times, and both are set). If --obs_times is set and has more than one value, but --n_to_sample is length one, this same value is applied to each time in --obs_times.')
     parser.add_argument('--kill_sampled_intermediates', action='store_true', help='kill intermediate sequences as they are sampled')
     parser.add_argument('--observe_common_ancestors', action='store_true', help='If set, after deciding which nodes to observe (write to file) according to other options, we then also select the most recent common ancestor for every pair of those nodes (the idea is that this gets you the nodes that you would reconstruct with a phylogenetic program). NOTE histograms written to disk currently don\'t include these.')
@@ -749,7 +755,7 @@ def main():
     parser.add_argument('--no_plot', action='store_true', help='don\'t write any plots (they\'re pretty slow), although we stil write some .p historgrams (see --dont_write_hists).')
     parser.add_argument('--dont_write_hists', action='store_true', help='don\'t write any of the .p histograms (they\'re much larger than the fasta + tree files that we really care about)')
     parser.add_argument('--debug', type=int, default=0, choices=[0, 1, 2], help='Debug verbosity level.')
-    parser.add_argument('--outbase', default='GCsimulator_out', help='Output file base name')
+    parser.add_argument('--outbase', default='GCsimulator_out', help='String specifying output location: concatenation of output directory with an optional base string for the output files. E.g. \'/path/to/output/xxx\' will write files to the dir \'/path/to/output/\', each of which begin with the string \'xxx\'. If no path is specified, they\'re written to the current dir (or a subdir of it if a relative path is specified).')
     parser.add_argument('--idlabel', action='store_true', help='Flag for labeling the sequence ids of the nodes in the output tree images, also write associated fasta alignment if True')
     parser.add_argument('--random_seed', type=int, help='for random number generator')
     parser.add_argument('--pair_bounds', help='for internal use only')
@@ -830,6 +836,9 @@ def main():
         if has_stop(args.naive_tseq.nuc):
             raise Exception('stop codon in --naive_seq2 (this isn\'t necessarily otherwise forbidden, but it\'ll quickly end you in a thicket of infinite loops, so should be corrected).')
 
+    if not os.path.exists(os.path.dirname(args.outbase)):
+        os.makedirs(os.path.dirname(args.outbase))
+
     if args.selection:
         assert args.target_distance > 0
         if args.min_target_distance is not None and args.min_target_distance >= args.target_distance:
@@ -837,6 +846,9 @@ def main():
         assert args.B_total >= args.f_full  # the fully activating fraction on BA must be possible to reach within B_total
         args.A_total = selection_utils.find_A_total(args.carry_cap, args.B_total, args.f_full, args.mature_kd, args.U)  # find the total amount of A necessary for sustaining the specified carrying capacity
         args.logi_params = selection_utils.find_logistic_params(args.f_full, args.U)  # calculate the parameters for the logistic function
+    else:
+        if args.selection_strength > 0.:  # yes, this will get triggered by fully-default parameters, but the default parameters kind of suck, I just don't want to/can't change them cause of backwards compatibility
+            print('  %s --selection-strength is greater than zero (%.2f), but --selection was not set (i.e. this is neutral simulation), so --selection-strength will have no effect' % (selection_utils.color('yellow', 'warning'), args.selection_strength))
 
     run_simulation(args)
 
