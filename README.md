@@ -77,6 +77,7 @@ source activate bpb
 First [install Docker](https://docs.docker.com/engine/installation/).
 
 We have a Docker [image on Docker Hub](https://hub.docker.com/r/krdav/bcr-phylo-benchmark) that is automatically kept up to date with the master branch of this repository.
+UPDATE unfortunately this docker image isn't being updated at the moment, sorry.
 It can be pulled and used directly:
 ```
 sudo docker pull krdav/bcr-phylo-benchmark
@@ -129,6 +130,7 @@ source activate bpb
 ## Sequence simulation
 
 Simulation commands with reasonable model parameters.
+UPDATE While the commands listed here should generally work, some arguments have been updated, so you should refer to the `--help` messages for definitive descriptions.
 
 ### Neutral simulation
 
