@@ -50,9 +50,33 @@ def replace_codon_in_aa_seq(new_nuc_seq, old_aa_seq, inuc):  # <inuc>: single nu
 
 # ----------------------------------------------------------------------------------------
 class TranslatedSeq(object):
-    def __init__(self, nuc_seq, aa_seq=None):
+    # ----------------------------------------------------------------------------------------
+    def __init__(self, args, nuc_seq, aa_seq=None):
         self.nuc = nuc_seq
         self.aa = local_translate(nuc_seq) if aa_seq is None else aa_seq
+        if args.paratope_positions == 'all':
+            self.cdrps_aa = None
+            self.cdrps_nuc = None
+        elif args.paratope_positions == 'cdrs':
+            self.cdrps_aa = list(range(0, int((1./3) * len(self.aa)), 1))  # cdr/paratope positions
+            self.cdrps_nuc = [j for i in self.cdrps_aa for j in (3*i, 3*i+1, 3*i+2)]
+            # from selection_utils import color
+            # print self.aa
+            # print ''.join([color('red' if i in self.cdrps_aa else None, a) for i, a in enumerate(self.aa)])
+            # print self.nuc
+            # print ''.join([color('red' if i in self.cdrps_nuc else None, n) for i, n in enumerate(self.nuc)])
+            # sys.exit()
+        else:
+            assert False
+    # ----------------------------------------------------------------------------------------
+    def dseq(self, stype):  # return the sequence to use for distance calculations, i.e. only including paratope positions
+        if self.cdrps_aa is None:
+            return self.aa if stype == 'aa' else self.nuc
+        else:
+            if stype == 'aa':
+                return ''.join(self.aa[i] for i in self.cdrps_aa)  # it might be faster to cache this, but then you'd have to deal with updating it when something mutates, so maybe not
+            else:
+                return ''.join(self.nuc[i] for i in self.cdrps_nuc)
 
 # ----------------------------------------------------------------------------------------
 def has_stop_aa(seq):
