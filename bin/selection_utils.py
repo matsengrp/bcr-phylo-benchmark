@@ -31,141 +31,11 @@ all_codons = [''.join(c) for c in itertools.product('ACGT', repeat=3)]
 all_amino_acids = set(local_translate(c) for c in all_codons)  # note: includes stop codons (*)
 
 # ----------------------------------------------------------------------------------------
-def aa_ascii_code_distance(aa1, aa2):  # super arbitrary, but at least for the moment we just want some arbitrary spread in distances
-    return abs(ord(aa2) - ord(aa1))
-
-# ----------------------------------------------------------------------------------------
-#  Matrix made by matblas from blosum62.iij
-#  * column uses minimum score
-#  BLOSUM Clustered Scoring Matrix in 1/2 Bit Units
-#  Blocks Database = /data/blocks_5.0/blocks.dat
-#  Cluster Percentage: >= 62
-#  Entropy =   0.6979, Expected =  -0.5209
-blosum_text = """   A  R  N  D  C  Q  E  G  H  I  L  K  M  F  P  S  T  W  Y  V  B  Z  X  *
-                 A  4 -1 -2 -2  0 -1 -1  0 -2 -1 -1 -1 -1 -2 -1  1  0 -3 -2  0 -2 -1  0 -4
-                 R -1  5  0 -2 -3  1  0 -2  0 -3 -2  2 -1 -3 -2 -1 -1 -3 -2 -3 -1  0 -1 -4
-                 N -2  0  6  1 -3  0  0  0  1 -3 -3  0 -2 -3 -2  1  0 -4 -2 -3  3  0 -1 -4
-                 D -2 -2  1  6 -3  0  2 -1 -1 -3 -4 -1 -3 -3 -1  0 -1 -4 -3 -3  4  1 -1 -4
-                 C  0 -3 -3 -3  9 -3 -4 -3 -3 -1 -1 -3 -1 -2 -3 -1 -1 -2 -2 -1 -3 -3 -2 -4
-                 Q -1  1  0  0 -3  5  2 -2  0 -3 -2  1  0 -3 -1  0 -1 -2 -1 -2  0  3 -1 -4
-                 E -1  0  0  2 -4  2  5 -2  0 -3 -3  1 -2 -3 -1  0 -1 -3 -2 -2  1  4 -1 -4
-                 G  0 -2  0 -1 -3 -2 -2  6 -2 -4 -4 -2 -3 -3 -2  0 -2 -2 -3 -3 -1 -2 -1 -4
-                 H -2  0  1 -1 -3  0  0 -2  8 -3 -3 -1 -2 -1 -2 -1 -2 -2  2 -3  0  0 -1 -4
-                 I -1 -3 -3 -3 -1 -3 -3 -4 -3  4  2 -3  1  0 -3 -2 -1 -3 -1  3 -3 -3 -1 -4
-                 L -1 -2 -3 -4 -1 -2 -3 -4 -3  2  4 -2  2  0 -3 -2 -1 -2 -1  1 -4 -3 -1 -4
-                 K -1  2  0 -1 -3  1  1 -2 -1 -3 -2  5 -1 -3 -1  0 -1 -3 -2 -2  0  1 -1 -4
-                 M -1 -1 -2 -3 -1  0 -2 -3 -2  1  2 -1  5  0 -2 -1 -1 -1 -1  1 -3 -1 -1 -4
-                 F -2 -3 -3 -3 -2 -3 -3 -3 -1  0  0 -3  0  6 -4 -2 -2  1  3 -1 -3 -3 -1 -4
-                 P -1 -2 -2 -1 -3 -1 -1 -2 -2 -3 -3 -1 -2 -4  7 -1 -1 -4 -3 -2 -2 -1 -2 -4
-                 S  1 -1  1  0 -1  0  0  0 -1 -2 -2  0 -1 -2 -1  4  1 -3 -2 -2  0  0  0 -4
-                 T  0 -1  0 -1 -1 -1 -1 -2 -2 -1 -1 -1 -1 -2 -1  1  5 -2 -2  0 -1 -1  0 -4
-                 W -3 -3 -4 -4 -2 -2 -3 -2 -2 -3 -2 -3 -1  1 -4 -3 -2 11  2 -3 -4 -3 -2 -4
-                 Y -2 -2 -2 -3 -2 -1 -2 -3  2 -1 -1 -2 -1  3 -3 -2 -2  2  7 -1 -3 -2 -1 -4
-                 V  0 -3 -3 -3 -1 -2 -2 -3 -3  3  1 -2  1 -1 -2 -2  0 -3 -1  4 -3 -2 -1 -4
-                 B -2 -1  3  4 -3  0  1 -1  0 -3 -4  0 -3 -3 -2  0 -1 -4 -3 -3  4  1 -1 -4
-                 Z -1  0  0  1 -3  3  4 -2  0 -3 -3  1 -1 -3 -1  0 -1 -3 -2 -2  1  4 -1 -4
-                 X  0 -1 -1 -1 -2 -1 -1 -1 -1 -1 -1 -1 -1 -1 -2  0  0 -2 -1 -1 -1 -1 -1 -4
-                 * -4 -4 -4 -4 -4 -4 -4 -4 -4 -4 -4 -4 -4 -4 -4 -4 -4 -4 -4 -4 -4 -4 -4  1"""
-def init_blosum():
-    blines = []
-    for line in blosum_text.split('\n'):
-        blines.append(line.strip().split())
-    top_headers = blines.pop(0)
-    left_headers = []
-    for bline in blines:
-        left_headers.append(bline.pop(0))
-    assert top_headers == left_headers
-    for ibl, bline in enumerate(blines):
-        assert len(bline) == len(top_headers)
-        for ival, val in enumerate(bline):
-            top_aa = top_headers[ival]
-            left_aa = left_headers[ibl]
-            if top_aa not in all_amino_acids or left_aa not in all_amino_acids:  # blosum table has ambiguous codes
-                continue
-            if top_aa == left_aa:  # add them later as a semi-arbitrary value, we have to ignore the values in the table since they're different for different amino acids
-                continue
-            blinfo[top_aa][left_aa] = -float(val)
-    min_val = min(blinfo[aa1][aa2] for aa1 in blinfo for aa2 in blinfo[aa1] if blinfo[aa1][aa2] is not None)
-    for aa in all_amino_acids:
-        blinfo[aa][aa] = min_val - 1.  # arbitrary, but ok. The diagonal of the matrix varies from -4 to -11, and this gives a.t.m. about -4
-
-blinfo = {aa1 : {aa2 : None for aa2 in all_amino_acids} for aa1 in all_amino_acids}
-init_blosum()
-sdists = {  # config info necessary for rescaling the two versions of aa similarity distance
-    'ascii' : {
-        'scale_min' : 0.,  # you want the mean to be kinda sorta around 1, so the --target_dist ends up being comparable
-        'scale_max' : 4.7,
-    },
-    'blosum' : {
-        'scale_min' : 0.,
-        # 'scale_max' : 3.95,  # use this value if you go back to taking the exp() (note that now the exp() would need to be added in two places)
-        'scale_max' : 1.55,
-    },
-}
-for sdtype, sdinfo in sdists.items():
-    if sdtype == 'ascii':
-        dfcn = aa_ascii_code_distance
-    elif sdtype == 'blosum':
-        dfcn = lambda aa1, aa2: blinfo.get(aa1).get(aa2)
-    else:
-        assert False
-    vals = [dfcn(aa1, aa2) for aa1, aa2 in itertools.combinations_with_replacement(all_amino_acids, 2)]
-    for bound in ['min', 'max']:
-        sdinfo[bound] = __builtins__[bound](vals)
-
-# ----------------------------------------------------------------------------------------
-def aa_inverse_similarity(aa1, aa2, sdtype, dont_rescale=False):
-    if sdtype == 'ascii':
-        return_val = aa_ascii_code_distance(aa1, aa2)
-    elif sdtype == 'blosum':
-        return_val = blinfo[aa1][aa2]
-    else:
-        assert False
-    if not dont_rescale:  # rescale the differences in ascii codes or blosum values for the aa letters to the range [sdists[sdtype]['scale_min'], sdists[sdtype]['scale_max']] (so the mean is around one, so it's similar to the hamming distance)
-        sdfo = sdists[sdtype]
-        return_val = sdfo['scale_min'] + (return_val - sdfo['min']) * (sdfo['scale_max'] - sdfo['scale_min']) / float(sdfo['max'] - sdfo['min'])
-    return return_val
-
-# ----------------------------------------------------------------------------------------
-def plot_sdists():
-    for aa1 in all_amino_acids:
-        print(aa1)
-        print('         blosum          ascii')
-        print('       raw  rescaled   raw   rescaled')
-        for aa2 in all_amino_acids:
-            print('   %s  %5.2f  %5.2f    %5.1f  %5.2f' % (aa2,
-                                                           aa_inverse_similarity(aa1, aa2, 'blosum', dont_rescale=True), aa_inverse_similarity(aa1, aa2, 'blosum'),
-                                                           aa_inverse_similarity(aa1, aa2, 'ascii', dont_rescale=True), aa_inverse_similarity(aa1, aa2, 'ascii')))
-    import plotutils
-    for sdtype in ['ascii', 'blosum']:
-        print(sdtype)
-        all_rescaled_vals = [aa_inverse_similarity(aa1, aa2, sdtype=sdtype) for aa1, aa2 in itertools.combinations_with_replacement(all_amino_acids, 2)]
-        print(' mean %.3f  min %.1f  max %.1f' % (numpy.mean(all_rescaled_vals), min(all_rescaled_vals), max(all_rescaled_vals)))
-        fig, ax = plotutils.mpl_init()
-        ax.hist(all_rescaled_vals, bins=45)
-        plotutils.mpl_finish(ax, os.getcwd(), sdtype, xlabel='rescaled %s distance' % sdtype, ylabel='AA pairs')
-
-# ----------------------------------------------------------------------------------------
-def target_distance_fcn(args, this_seq, target_seqs):
-    if args.metric_for_target_distance == 'aa':
-        tdists = [(i, hamming_distance(this_seq.dseq('aa'), t.dseq('aa'))) for i, t in enumerate(target_seqs)]  # this is annoyingly complicated because we want to also return *which* target sequence was the closest one, which we have to do here now (instead of afterward) since it depends on which metric we're using
-    elif args.metric_for_target_distance == 'nuc':
-        tdists = [(i, hamming_distance(this_seq.dseq('nuc'), t.dseq('nuc'))) for i, t in enumerate(target_seqs)]
-    elif 'aa-sim' in args.metric_for_target_distance:
-        assert len(args.metric_for_target_distance.split('-')) == 3
-        sdtype = args.metric_for_target_distance.split('-')[2]
-        tdists = [(i, sum(aa_inverse_similarity(aa1, aa2, sdtype) for aa1, aa2 in zip(this_seq.dseq('aa'), t.dseq('aa')) if aa1 != aa2)) for i, t in enumerate(target_seqs)]
-    else:
-        raise Exception('unsupported --metric_for_target_distance \'%s\'' % args.metric_for_target_distance)
-    itarget, tdist = min(tdists, key=operator.itemgetter(1))
-    return itarget, tdist
-
-# ----------------------------------------------------------------------------------------
-def calc_kd(node, args):
+def calc_kd(node, args): 
+    #want to check if stop codon before loading, or will model automatically calculate it?
+    #return kd AND exp
     if has_stop_aa(node.aa_seq):  # nonsense sequences have zero affinity/infinite kd
-        return float('inf')
-    if not args.selection:
-        return 1.
+        return float
 
     assert args.mature_kd < args.naive_kd
     tdist = node.target_distance if args.min_target_distance is None else max(node.target_distance, args.min_target_distance)
@@ -178,13 +48,19 @@ def update_lambda_values(live_leaves, A_total, B_total, logi_params, selection_s
     ''' update the lambda_ feature (parameter for the poisson progeny distribution) for each leaf in <live_leaves> '''
 
     # ----------------------------------------------------------------------------------------
-    def calc_BnA(Kd_n, A, B_total):
+    def sum_of_B(B_n):
+        B_total = scipy.sum(B_n)
+        return B_total
+    
+    def calc_BnA(Kd_n, A, B_n):
         '''
         This calculates the fraction B:A (B bound to A), at equilibrium also referred to as "binding time",
         of all the different Bs in the population given the number of free As in solution.
         '''
-        BnA = B_total/(1+Kd_n/A)
-        return(BnA)
+        #changed so B_total is B_n
+        #BnA = B_total/(1+Kd_n/A)
+        BnA = B_n/(1+Kd_n/A)
+        return BnA
 
     # ----------------------------------------------------------------------------------------
     def return_objective_A(Kd_n, A_total, B_total):
@@ -192,18 +68,19 @@ def update_lambda_values(live_leaves, A_total, B_total, logi_params, selection_s
         The objective function that solves the set of differential equations setup to find the number of free As,
         at equilibrium, given a number of Bs with some affinity listed in Kd_n.
         '''
-        return lambda A: (A_total - (A + scipy.sum(B_total/(1+Kd_n/A))))**2
+        return lambda A: (A_total - (A + scipy.sum(B_total/(1+Kd_n/A))))**2  #is it as simple as replacing B_total with B_n here?
 
     # ----------------------------------------------------------------------------------------
-    def calc_binding_time(Kd_n, A_total, B_total):
+    def calc_binding_time(Kd_n, A_total, B_n):
         '''
         Solves the objective function to find the number of free As and then uses this,
         to calculate the fraction B:A (B bound to A) for all the different Bs.
         '''
+        B_total = sum_of_B(B_n)
         obj = return_objective_A(Kd_n, A_total, B_total)
         # Different minimizers have been tested and 'L-BFGS-B' was significant faster than anything else:
         obj_min = minimize(obj, A_total, bounds=[[1e-10, A_total]], method='L-BFGS-B', tol=1e-20)
-        BnA = calc_BnA(Kd_n, obj_min.x[0], B_total)
+        BnA = calc_BnA(Kd_n, obj_min.x[0], B_n)
         # Terminate if the precision is not good enough:
         assert(BnA.sum()+obj_min.x[0]-A_total < A_total/100)
         return BnA
@@ -317,6 +194,7 @@ def find_logistic_params(f_full, U):
 
 # ----------------------------------------------------------------------------------------
 def plot_runstats(tdist_hists, outbase, colors):
+    #would be cool to replace with plots for mean affinity, expression, and amount of Ag captured per node at each generation
     def make_bounds(tdist_hists):  # tdist_hists: list (over generations) of scipy.hists of min distance to [any] target over leaves
         # scipy.hist is two arrays: [0] is bin counts, [1] is bin x values (not sure if low, high, or centers)
         all_counts = None  # sum over generations of number of leaves in each bin (i.e. at each min distance to target sequence)
