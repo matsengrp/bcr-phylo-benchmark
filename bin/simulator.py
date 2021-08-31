@@ -94,10 +94,12 @@ class MutationModel():
         node.add_feature('frequency', 0)  # observation frequency, is set to either 1 or 0 in set_observation_frequencies_and_names(), then when the collapsed tree is constructed it can get bigger than 1 when the frequencies of nodes connected by zero-length branches are summed
         if args.selection:
             node.add_feature('lambda_', None)  # set in selection_utils.update_lambda_values() (i.e. is modified every few generations)
-            #itarget, tdist = target_distance_fcn(args, TranslatedSeq(args, nuc_seq, aa_seq=node.aa_seq), target_seqs)
+            #REMOVING itarget, tdist = target_distance_fcn(args, TranslatedSeq(args, nuc_seq, aa_seq=node.aa_seq), target_seqs)
             node.add_feature('target_index', itarget)
-            #node.add_feature('target_distance', tdist)  # nuc or aa distance, depending on args
+            #REMOVING node.add_feature('target_distance', tdist)  # nuc or aa distance, depending on args
+            #MODIFY
             node.add_feature('Kd', selection_utils.calc_kd(node, args))
+            #add a node.add_feature('BCR_quantity', selection_utils.    )
             node.add_feature('relative_Kd', node.Kd / float(mean_kd) if mean_kd is not None else None)  # kd relative to mean of the current leaves
         else:  # maybe it'd be nicer to remove these from the args.selection/not blocks, but this is kind of clearer
             node.add_feature('lambda_', -1.)
@@ -356,20 +358,15 @@ class MutationModel():
         or using an affinity muturation inspired model for selection.
         '''
 
-        self.sampled_tdist_hists, self.tdist_hists, self.n_mutated_hists = [None], [None], [None]
-        target_seqs = None
-        if args.selection:
-            target_seqs = self.get_targets(args)
-
         current_time = 0
         self.n_unterminated_leaves = 1
         self.intermediate_sampled_nodes = []  # actual intermediate-sampled nodes
         self.intermediate_sampled_lineage_nodes = set()  # any nodes ancestral to intermediate-sampled nodes (we keep track of these so we know not to prune them)
         self.nodes_to_detach = set()
+        # MODFIY so no target_seqs argument
         tree = self.init_node(args, args.naive_tseq.nuc, 0, None, target_seqs, mean_kd=args.naive_kd)
-        if args.selection:
-            self.tdist_hists[0] = self.get_target_distance_hist(args, tree)  # i guess the first entry in the other two just stays None
-
+        
+        #MODIFY
         if args.debug == 1:
             print('        end of      live     target dist (%s)          kd            lambda       termination' % args.metric_for_target_distance)
             print('      generation   leaves      min  mean           min    mean      max  mean        checks')
@@ -380,6 +377,7 @@ class MutationModel():
         while True:
             current_time += 1
 
+            #MODFIY histograms to consider expression and affinity 
             self.sampled_tdist_hists.append(None)
             self.tdist_hists.append(None)
             self.n_mutated_hists.append(None)
