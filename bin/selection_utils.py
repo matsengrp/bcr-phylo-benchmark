@@ -25,20 +25,53 @@ warnings.filterwarnings('ignore', 'The iteration is not making good progress')  
 
 from GCutils import has_stop_aa, hamming_distance, local_translate
 
+#ADD from torchdms import utils 
+#ADD import torch
+
 # ----------------------------------------------------------------------------------------
 # it might make replace_codon_in_aa_seq() faster to use a table here of precached translations, but translation just isn't taking that much time a.t.m.
 all_codons = [''.join(c) for c in itertools.product('ACGT', repeat=3)]
 all_amino_acids = set(local_translate(c) for c in all_codons)  # note: includes stop codons (*)
 
 # ----------------------------------------------------------------------------------------
-def calc_kd(node, args): 
+#MODIFY Load torchdms model
+data_path = 'data/dummy_file_name.pkl'
+data = utils.from_pickle_file(data_path)
+wtseq = data.val.wtseq
+alphabet = data.val.alphabet
+
+def seq_to_onehot(seq, alphabet):
+    """ Take a given aa-sequence and return it's onehot encoding.
+    Args:
+        - seq (string): The amino acid sequence to be converted (should be same 
+                        length as WT for now)
+        - alphabet (dict): A dictionary of characters representing amino acids.
+    
+    Returns:
+        - encoding (torch.Tensor): A 1-hot encoding of `seq`, appropriate for `torchdms`
+    """
+    # Get indicies to place 1s for present amino acids.
+    alphabet_dict = {letter: idx for idx, letter in enumerate(alphabet)}
+    seq_idx = [alphabet_dict[aa] for aa in seq]
+    indicies = torch.zeros(len(seq), dtype=torch.int, requires_grad=False)
+    for site, _ in enumerate(seq):
+        indicies[site] = (site * len(alphabet)) + seq_idx[site]
+    
+    # Generate encoding.
+    encoding = torch.zeros((1, len(seq)*len(alphabet)), requires_grad=False)
+    for idx in indicies.data:
+        encoding[0, idx] = 1
+    
+    return encoding
+
+# ----------------------------------------------------------------------------------------
+def calc_kd_and_expression(node, args): 
     #want to check if stop codon before loading, or will model automatically calculate it?
     #return kd AND exp
     if has_stop_aa(node.aa_seq):  # nonsense sequences have zero affinity/infinite kd
         return float
 
     assert args.mature_kd < args.naive_kd
-    tdist = node.target_distance if args.min_target_distance is None else max(node.target_distance, args.min_target_distance)
     kd = args.mature_kd + (args.naive_kd - args.mature_kd) * (tdist / float(args.target_distance))**args.k_exp  # transformation from distance to kd
 
     return kd
