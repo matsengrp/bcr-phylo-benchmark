@@ -65,16 +65,19 @@ def seq_to_onehot(seq, alphabet):
     return encoding
 
 # ----------------------------------------------------------------------------------------
-def calc_kd_and_expression(node, args): 
+#MODIFY
+def calc_kd_and_exp(node, args): 
     #want to check if stop codon before loading, or will model automatically calculate it?
     #return kd AND exp
     if has_stop_aa(node.aa_seq):  # nonsense sequences have zero affinity/infinite kd
         return float
-
-    assert args.mature_kd < args.naive_kd
-    kd = args.mature_kd + (args.naive_kd - args.mature_kd) * (tdist / float(args.target_distance))**args.k_exp  # transformation from distance to kd
-
-    return kd
+    variant_encoding = seq_to_onehot(node.aa_seq, alphabet)
+    variant_preds = model(variant_encoding[0:1])
+    #unsure whether this line is still needed 
+    #assert args.mature_kd < args.naive_kd
+    kd = torch.flatten(variant_preds)[0]  # transformation from amino acid sequence to kd, arbitrarily used 0 index for kd, unsure in actual model
+    exp = torch.flatten(variant_preds)[1]  # transformation from amino acid sequence to BCR expression, need to add an attribute for this 
+    return kd, exp
 
 # ----------------------------------------------------------------------------------------
 def update_lambda_values(live_leaves, A_total, B_total, logi_params, selection_strength, lambda_min=10e-10):
