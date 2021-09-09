@@ -97,8 +97,9 @@ class MutationModel():
             #REMOVING itarget, tdist = target_distance_fcn(args, TranslatedSeq(args, nuc_seq, aa_seq=node.aa_seq), target_seqs)
             node.add_feature('target_index', itarget)
             #REMOVING node.add_feature('target_distance', tdist)  # nuc or aa distance, depending on args
-            #MODIFY
-            node.add_feature('Kd', selection_utils.calc_kd(node, args))
+            #MODIFY to add an expression feature
+            node.add_feature('Kd', selection_utils.calc_kd_and_exp(node, args)[0])
+            node.add_feature('B_exp', selection_utils.calc_kd_and_exp(node, args)[0])
             #add a node.add_feature('BCR_quantity', selection_utils.    )
             node.add_feature('relative_Kd', node.Kd / float(mean_kd) if mean_kd is not None else None)  # kd relative to mean of the current leaves
         else:  # maybe it'd be nicer to remove these from the args.selection/not blocks, but this is kind of clearer
@@ -202,57 +203,10 @@ class MutationModel():
 
     # ----------------------------------------------------------------------------------------
     # Make a single target sequence with <n_muts> hamming distance from <args.naive_tseq> (nuc or aa distance according to args.metric_for_target_distance)
-    def make_target_sequence(self, args, initial_tseq, tdist, lambda0, n_max_tries=100):
-        assert not has_stop_aa(initial_tseq.aa)  # already checked during argument parsing, but we really want to make sure since the loop will blow up if there's a stop to start with
-        itry = 0
-        while itry < n_max_tries:
-            dist = None
-            tseq = initial_tseq
-            while dist is None or dist < tdist:
-                mfo = self.mutate(tseq.nuc, lambda0, aa_seq=tseq.aa)
-                tseq = TranslatedSeq(args, mfo['nuc_seq'], aa_seq=mfo['aa_seq'])
-                _, dist = target_distance_fcn(args, initial_tseq, [tseq])
-                # TODO wouldn't it make more sense (or at least be faster) to give up as soon as you get a stop codon?
-                if dist >= tdist and not has_stop_aa(tseq.aa):  # greater-than is for aa-sim metric, since it's almost continuous
-                    return tseq
-            itry += 1
-
-        raise Exception('couldn\'t make a target sequence in %d tries (didn\'t make it to requested target distance %d, and/or had stops)' % (n_max_tries, tdist))
-
+    #REMOVED def make_target_sequence(self, args, initial_tseq, tdist, lambda0, n_max_tries=100) 
+    
     # ----------------------------------------------------------------------------------------
-    def get_targets(self, args):
-        start = time.time()
-
-        main_target_count = args.target_count if args.n_target_clusters is None else args.n_target_clusters
-        if args.n_target_clusters is not None:
-            print('      making %d main target sequences' % main_target_count)
-        target_seqs = [self.make_target_sequence(args, args.naive_tseq, args.target_distance, args.target_sequence_lambda0) for i in range(main_target_count)]
-        assert len(set([len(args.naive_tseq.aa)] + [len(t.aa) for t in target_seqs])) == 1  # targets and naive seq are same length
-
-        if args.n_target_clusters is not None:
-            tmp_n_per_cluster = max(1, int(args.target_count / float(args.n_target_clusters)))  # you should really set them so they are nicely divisible integers, but if you don't, you'll still get at least one, and some kind of rounding (the goal here is to have --target_count always be the total number of target sequences)
-            cluster_sizes = [tmp_n_per_cluster for _ in target_seqs]
-            if sum(cluster_sizes) > args.target_count:
-                raise Exception('inconsistent --n_target_clusters %d and --target_count %d' % (args.n_target_clusters, args.target_count))
-            if sum(cluster_sizes) < args.target_count:
-                cluster_sizes[-1] += args.target_count - sum(cluster_sizes)
-            assert sum(cluster_sizes) == args.target_count
-            final_target_seqs = []
-            for tseq, csize in zip(target_seqs, cluster_sizes):
-                cluster_targets = [self.make_target_sequence(args, tseq, args.target_cluster_distance, args.target_sequence_lambda0) for i in range(csize - 1)]
-                final_target_seqs += [tseq] + cluster_targets
-            target_seqs = final_target_seqs
-            print('      added clusters around each main target for %d total targets: %s' % (len(target_seqs), ' '.join(str(cs) for cs in cluster_sizes)))
-
-        with open(args.outbase + '_targets.fa', 'w') as tfile:
-            for itarget, tseq in enumerate(target_seqs):
-                tfile.write('>%s\n%s\n' % ('target-%d' % itarget, tseq.nuc))  # [:len(tseq.nuc) - args.n_pads_added]))
-
-        tdists = [target_distance_fcn(args, args.naive_tseq, [t])[1] for t in target_seqs]
-        print('    made %d total target seqs in %.1fs with distances %s  (asked for %.1f)' % (len(target_seqs), time.time()-start, ' '.join(['%.1f' % d for d in tdists]), args.target_distance))  # oh, wait, maybe this doesn't take any real time any more? i thought it used to involve more iteration/traversing
-        if len(set([args.target_distance] + tdists)) > 1 and 'aa-sim' not in args.metric_for_target_distance:  # can't require it to be exactly equal for aa-sim, since the distance between various amino acids varies close to continuously
-            print('    %s target distances not all equal to requested distance' % selection_utils.color('red', 'note'))
-        return target_seqs
+    #REMOVED def get_targets(self, args):
 
     # ----------------------------------------------------------------------------------------
     def choose_leaves_to_sample(self, args, leaves, n_to_sample):
@@ -270,9 +224,8 @@ class MutationModel():
             raise Exception('unsupported leaf sampling scheme %s' % args.leaf_sampling_scheme)
 
     # ----------------------------------------------------------------------------------------
-    def get_target_distance_hist(self, args, leaves):
-        if not args.selection:
-            return scipy.histogram([0])
+    def get_affinities_hist(self, args, leaves):
+        #What bin edges make the most sense
         bin_edges = list(numpy.arange(-0.5, int(2 * args.target_distance) + 0.5))  # some sequences manage to wander quite far away from their nearest target without getting killed, so multiply by 2
         hist = scipy.histogram([l.target_distance for l in leaves], bins=bin_edges)  # if <bins> is a list, it defines the bin edges, including the rightmost edge
         return hist
