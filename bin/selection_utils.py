@@ -25,8 +25,9 @@ warnings.filterwarnings('ignore', 'The iteration is not making good progress')  
 
 from GCutils import has_stop_aa, hamming_distance, local_translate
 
-#ADD from torchdms import utils 
-#ADD import torch
+#ADD 
+from torchdms import utils 
+import torch
 
 # ----------------------------------------------------------------------------------------
 # it might make replace_codon_in_aa_seq() faster to use a table here of precached translations, but translation just isn't taking that much time a.t.m.
@@ -70,14 +71,14 @@ def calc_kd_and_exp(node, args):
     #want to check if stop codon before loading, or will model automatically calculate it?
     #return kd AND exp
     if has_stop_aa(node.aa_seq):  # nonsense sequences have zero affinity/infinite kd
-        return float
+        return [float, 0]
     variant_encoding = seq_to_onehot(node.aa_seq, alphabet)
     variant_preds = model(variant_encoding[0:1])
     #unsure whether this line is still needed 
     #assert args.mature_kd < args.naive_kd
     kd = torch.flatten(variant_preds)[0]  # transformation from amino acid sequence to kd, arbitrarily used 0 index for kd, unsure in actual model
     exp = torch.flatten(variant_preds)[1]  # transformation from amino acid sequence to BCR expression, need to add an attribute for this 
-    return kd, exp
+    return [kd, exp]
 
 # ----------------------------------------------------------------------------------------
 def update_lambda_values(live_leaves, A_total, B_total, logi_params, selection_strength, lambda_min=10e-10):
@@ -94,17 +95,17 @@ def update_lambda_values(live_leaves, A_total, B_total, logi_params, selection_s
         of all the different Bs in the population given the number of free As in solution.
         '''
         #changed so B_total is B_n
-        #BnA = B_total/(1+Kd_n/A)
+        #original BnA = B_total/(1+Kd_n/A)
         BnA = B_n/(1+Kd_n/A)
         return BnA
 
     # ----------------------------------------------------------------------------------------
-    def return_objective_A(Kd_n, A_total, B_total):
+    def return_objective_A(Kd_n, A_total, B_n):
         '''
         The objective function that solves the set of differential equations setup to find the number of free As,
         at equilibrium, given a number of Bs with some affinity listed in Kd_n.
         '''
-        return lambda A: (A_total - (A + scipy.sum(B_total/(1+Kd_n/A))))**2  #is it as simple as replacing B_total with B_n here?
+        return lambda A: (A_total - (A + scipy.sum(B_n/(1+Kd_n/A))))**2  #is it as simple as replacing B_total with B_n here?
 
     # ----------------------------------------------------------------------------------------
     def calc_binding_time(Kd_n, A_total, B_n):
@@ -113,7 +114,7 @@ def update_lambda_values(live_leaves, A_total, B_total, logi_params, selection_s
         to calculate the fraction B:A (B bound to A) for all the different Bs.
         '''
         B_total = sum_of_B(B_n)
-        obj = return_objective_A(Kd_n, A_total, B_total)
+        obj = return_objective_A(Kd_n, A_total, B_n)
         # Different minimizers have been tested and 'L-BFGS-B' was significant faster than anything else:
         obj_min = minimize(obj, A_total, bounds=[[1e-10, A_total]], method='L-BFGS-B', tol=1e-20)
         BnA = calc_BnA(Kd_n, obj_min.x[0], B_n)
@@ -154,6 +155,8 @@ def update_lambda_values(live_leaves, A_total, B_total, logi_params, selection_s
     # ----------------------------------------------------------------------------------------
     alpha, beta, Q = logi_params
     Kd_n = scipy.array([l.Kd for l in live_leaves])
+    #Added line to define B_n similarly to Kd_n 
+    B_n = scipy.array([l.B_exp for l in live_leaves])
     BnA = calc_binding_time(Kd_n, A_total, B_total)  # get list of binding time values for each cell
     new_lambdas = trans_BA(BnA)  # convert binding time list to list of poisson lambdas for each cell (which determine number of offspring)
     if selection_strength < 1:
@@ -165,6 +168,7 @@ def update_lambda_values(live_leaves, A_total, B_total, logi_params, selection_s
 # ----------------------------------------------------------------------------------------
 def find_A_total(carry_cap, B_total, f_full, mature_kd, U):
     # find the total amount of A necessary for sustaining the specified carrying capacity
+    #Modify so it sets B_total once at the beginning, or so that the total amount of antigen follows some function based on generation time
     def A_total_fun(A, B_total, Kd_n): return(A + scipy.sum(B_total/(1+Kd_n/A)))
 
     def C_A(A, A_total, f_full, U): return(U * (A_total - A) / f_full)
@@ -188,6 +192,7 @@ def find_A_total(carry_cap, B_total, f_full, mature_kd, U):
 
 # ----------------------------------------------------------------------------------------
 # calculate the parameters for the logistic function, i.e. (alpha, beta, Q)
+#Should we these or directly feed them in as arguments to test our inference capabilities? 
 def find_logistic_params(f_full, U):
     assert(U > 1)
     def T_BA(BA, lparams):
