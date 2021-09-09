@@ -35,7 +35,7 @@ all_codons = [''.join(c) for c in itertools.product('ACGT', repeat=3)]
 all_amino_acids = set(local_translate(c) for c in all_codons)  # note: includes stop codons (*)
 
 # ----------------------------------------------------------------------------------------
-#MODIFY Load torchdms model
+#MODIFY Load torchdms model and define the onehot encoding function 
 data_path = 'data/dummy_file_name.pkl'
 data = utils.from_pickle_file(data_path)
 wtseq = data.val.wtseq
@@ -66,15 +66,14 @@ def seq_to_onehot(seq, alphabet):
     return encoding
 
 # ----------------------------------------------------------------------------------------
-#MODIFY
+#MODIFY changed the calc_kd function to calculate both kd and BCR expression level using torchdms model 
 def calc_kd_and_exp(node, args): 
-    #want to check if stop codon before loading, or will model automatically calculate it?
-    #return kd AND exp
+    #want to check if stop codon before loading - QUESTION: will the torchDMS model automatically calculate that? 
     if has_stop_aa(node.aa_seq):  # nonsense sequences have zero affinity/infinite kd
         return [float, 0]
     variant_encoding = seq_to_onehot(node.aa_seq, alphabet)
     variant_preds = model(variant_encoding[0:1])
-    #unsure whether this line is still needed 
+    #unsure whether the line below is still needed 
     #assert args.mature_kd < args.naive_kd
     kd = torch.flatten(variant_preds)[0]  # transformation from amino acid sequence to kd, arbitrarily used 0 index for kd, unsure in actual model
     exp = torch.flatten(variant_preds)[1]  # transformation from amino acid sequence to BCR expression, need to add an attribute for this 
@@ -85,6 +84,7 @@ def update_lambda_values(live_leaves, A_total, B_total, logi_params, selection_s
     ''' update the lambda_ feature (parameter for the poisson progeny distribution) for each leaf in <live_leaves> '''
 
     # ----------------------------------------------------------------------------------------
+    #Since each B cell now has its own BCR expression level, must calculate B_total
     def sum_of_B(B_n):
         B_total = scipy.sum(B_n)
         return B_total
@@ -95,11 +95,12 @@ def update_lambda_values(live_leaves, A_total, B_total, logi_params, selection_s
         of all the different Bs in the population given the number of free As in solution.
         '''
         #changed so B_total is B_n
-        #original BnA = B_total/(1+Kd_n/A)
+        #original expression BnA = B_total/(1+Kd_n/A)
         BnA = B_n/(1+Kd_n/A)
         return BnA
 
     # ----------------------------------------------------------------------------------------
+    #Changed to use B_n array instead of B_total 
     def return_objective_A(Kd_n, A_total, B_n):
         '''
         The objective function that solves the set of differential equations setup to find the number of free As,
@@ -113,7 +114,7 @@ def update_lambda_values(live_leaves, A_total, B_total, logi_params, selection_s
         Solves the objective function to find the number of free As and then uses this,
         to calculate the fraction B:A (B bound to A) for all the different Bs.
         '''
-        B_total = sum_of_B(B_n)
+        # B_total = sum_of_B(B_n), just here in case B_total is still needed at some point, but currently only using B_n array
         obj = return_objective_A(Kd_n, A_total, B_n)
         # Different minimizers have been tested and 'L-BFGS-B' was significant faster than anything else:
         obj_min = minimize(obj, A_total, bounds=[[1e-10, A_total]], method='L-BFGS-B', tol=1e-20)
@@ -157,7 +158,7 @@ def update_lambda_values(live_leaves, A_total, B_total, logi_params, selection_s
     Kd_n = scipy.array([l.Kd for l in live_leaves])
     #Added line to define B_n similarly to Kd_n 
     B_n = scipy.array([l.B_exp for l in live_leaves])
-    BnA = calc_binding_time(Kd_n, A_total, B_total)  # get list of binding time values for each cell
+    BnA = calc_binding_time(Kd_n, A_total, B_n)  # get list of binding time values for each cell
     new_lambdas = trans_BA(BnA)  # convert binding time list to list of poisson lambdas for each cell (which determine number of offspring)
     if selection_strength < 1:
         new_lambdas = apply_selection_strength_scaling(new_lambdas)
@@ -166,19 +167,19 @@ def update_lambda_values(live_leaves, A_total, B_total, logi_params, selection_s
     return new_lambdas
 
 # ----------------------------------------------------------------------------------------
-def find_A_total(carry_cap, B_total, f_full, mature_kd, U):
+def find_A_total(carry_cap, B_n, f_full, mature_kd, U):
     # find the total amount of A necessary for sustaining the specified carrying capacity
-    #Modify so it sets B_total once at the beginning, or so that the total amount of antigen follows some function based on generation time
-    def A_total_fun(A, B_total, Kd_n): return(A + scipy.sum(B_total/(1+Kd_n/A)))
+    #TO DO: Need to modify so it sets B_total once at the beginning, or so that the total amount of antigen follows some function based on generation time
+    def A_total_fun(A, _some_fixed_B_total, Kd_n): return(A + scipy.sum(_some_fixed_B_total/(1+Kd_n/A)))
 
     def C_A(A, A_total, f_full, U): return(U * (A_total - A) / f_full)
 
-    def A_obj(carry_cap, B_total, f_full, Kd_n, U):
-        def obj(A): return((carry_cap - C_A(A, A_total_fun(A, B_total, Kd_n), f_full, U))**2)
+    def A_obj(carry_cap, _some_fixed_B_total, f_full, Kd_n, U):
+        def obj(A): return((carry_cap - C_A(A, A_total_fun(A, _some_fixed_B_total, Kd_n), f_full, U))**2)
         return obj
 
     Kd_n = scipy.array([mature_kd] * carry_cap)
-    obj = A_obj(carry_cap, B_total, f_full, Kd_n, U)
+    obj = A_obj(carry_cap, _some_fixed_B_total, f_full, Kd_n, U)
     # Some funny "zero encountered in true_divide" errors are not affecting results so ignore them:
     old_settings = scipy.seterr(all='ignore')  # Keep old settings
     scipy.seterr(divide='ignore')
@@ -192,7 +193,7 @@ def find_A_total(carry_cap, B_total, f_full, mature_kd, U):
 
 # ----------------------------------------------------------------------------------------
 # calculate the parameters for the logistic function, i.e. (alpha, beta, Q)
-#Should we these or directly feed them in as arguments to test our inference capabilities? 
+#QUESTION: Should we these or directly feed them in as arguments to test our inference capabilities? 
 def find_logistic_params(f_full, U):
     assert(U > 1)
     def T_BA(BA, lparams):
@@ -234,8 +235,8 @@ def find_logistic_params(f_full, U):
     return lparams  # tuple with (alpha, beta, Q)
 
 # ----------------------------------------------------------------------------------------
+#TO DO: replace plots of target distance with affinity, expression, and amount of Ag captured (either mean or per node) at each generation
 def plot_runstats(tdist_hists, outbase, colors):
-    #would be cool to replace with plots for mean affinity, expression, and amount of Ag captured per node at each generation
     def make_bounds(tdist_hists):  # tdist_hists: list (over generations) of scipy.hists of min distance to [any] target over leaves
         # scipy.hist is two arrays: [0] is bin counts, [1] is bin x values (not sure if low, high, or centers)
         all_counts = None  # sum over generations of number of leaves in each bin (i.e. at each min distance to target sequence)
