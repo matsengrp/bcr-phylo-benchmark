@@ -26,7 +26,8 @@ except:
 
 from GCutils import hamming_distance, has_stop_aa, local_translate, replace_codon_in_aa_seq, CollapsedTree, TranslatedSeq
 import selection_utils
-from selection_utils import target_distance_fcn
+#DELETE from selection_utils import target_distance_fcn
+#ADD import torch dms here
 
 scipy.seterr(all='raise')
 
@@ -83,24 +84,23 @@ class MutationModel():
         return self.translation_cache[nuc_seq]
 
     # ----------------------------------------------------------------------------------------
-    def init_node(self, args, nuc_seq, time, parent, target_seqs=None, aa_seq=None, mean_kd=None):
+    def init_node(self, args, nuc_seq, time, parent, aa_seq=None, mean_kd=None):
         node = TreeNode()
         node.add_feature('nuc_seq', nuc_seq)  # NOTE don't use a TranslatedSeq feature since it gets written to pickle files, which then requires importing the class definition
         node.add_feature('aa_seq', aa_seq if aa_seq is not None else self.get_translation(nuc_seq))
-        node.add_feature('naive_distance', hamming_distance(nuc_seq, args.naive_tseq.nuc))  # always nucleotide distance
+        #remove node.add_feature('naive_distance', hamming_distance(nuc_seq, args.naive_tseq.nuc))  # always nucleotide distance
         node.add_feature('time', time)
-        node.dist = 0 if parent is None else hamming_distance(nuc_seq, parent.nuc_seq)  # always nucleotide distance (doesn't use add_feature() because it's a builtin ete3 feature)
+        #remove? node.dist = 0 if parent is None else hamming_distance(nuc_seq, parent.nuc_seq)  # always nucleotide distance (doesn't use add_feature() because it's a builtin ete3 feature)
         node.add_feature('terminated', False)  # set if it's dead (only set if it draws zero children, or if --kill_sampled_intermediates is set and it's sampled at an intermediate time point)
         node.add_feature('frequency', 0)  # observation frequency, is set to either 1 or 0 in set_observation_frequencies_and_names(), then when the collapsed tree is constructed it can get bigger than 1 when the frequencies of nodes connected by zero-length branches are summed
         if args.selection:
             node.add_feature('lambda_', None)  # set in selection_utils.update_lambda_values() (i.e. is modified every few generations)
-            #REMOVING itarget, tdist = target_distance_fcn(args, TranslatedSeq(args, nuc_seq, aa_seq=node.aa_seq), target_seqs)
-            node.add_feature('target_index', itarget)
-            #REMOVING node.add_feature('target_distance', tdist)  # nuc or aa distance, depending on args
+            #remove itarget, tdist = target_distance_fcn(args, TranslatedSeq(args, nuc_seq, aa_seq=node.aa_seq), target_seqs)
+            #remove node.add_feature('target_index', itarget)
+            #remove node.add_feature('target_distance', tdist)  # nuc or aa distance, depending on args
             #MODIFY to add an expression feature
             node.add_feature('Kd', selection_utils.calc_kd_and_exp(node, args)[0])
-            node.add_feature('B_exp', selection_utils.calc_kd_and_exp(node, args)[0])
-            #add a node.add_feature('BCR_quantity', selection_utils.    )
+            node.add_feature('B_exp', selection_utils.calc_kd_and_exp(node, args)[1]) #note dummy iindexing currently, code be Kd is [1]
             node.add_feature('relative_Kd', node.Kd / float(mean_kd) if mean_kd is not None else None)  # kd relative to mean of the current leaves
         else:  # maybe it'd be nicer to remove these from the args.selection/not blocks, but this is kind of clearer
             node.add_feature('lambda_', -1.)
@@ -316,12 +316,12 @@ class MutationModel():
         self.intermediate_sampled_nodes = []  # actual intermediate-sampled nodes
         self.intermediate_sampled_lineage_nodes = set()  # any nodes ancestral to intermediate-sampled nodes (we keep track of these so we know not to prune them)
         self.nodes_to_detach = set()
-        # MODFIY so no target_seqs argument
-        tree = self.init_node(args, args.naive_tseq.nuc, 0, None, target_seqs, mean_kd=args.naive_kd)
+        # MODFIY so no target_seqs argument,can initial mean kd be left as none? 
+        tree = self.init_node(args, nuc_seq, 0, None)
         
         #MODIFY
         if args.debug == 1:
-            print('        end of      live     target dist (%s)          kd            lambda       termination' % args.metric_for_target_distance)
+            print('        end of      live           kd            lambda       termination')
             print('      generation   leaves      min  mean           min    mean      max  mean        checks')
         if args.debug > 1:
             print('       gen   live leaves   (%s: terminated/no children)' % selection_utils.color('red', 'x'))
@@ -336,6 +336,7 @@ class MutationModel():
             self.n_mutated_hists.append(None)
 
             skip_lambda_n = 0  # index keeping track of how many leaves since we last updated all the lambdas
+            #TO DO: Ask Duncan about the use of static and updated live leaves, what benefit this syntax gives you 
             if static_live_leaves is None:
                 static_live_leaves = [l for l in tree.iter_leaves() if not l.terminated]  # NOTE this is out of date as soon as we've added any children in the loop, or killed anybody with no children (but we need it to iterate over, at least as currently set up)
             else:
@@ -351,6 +352,7 @@ class MutationModel():
                     lambda_update_dbg_str = ' '
                     if skip_lambda_n == 0:  # time to update the lambdas for every leaf
                         skip_lambda_n = args.skip_update + 1  # reset it so we don't update again until we've done <args.skip_update> more leaves (+ 1 is so that if args.skip_update is 0 we don't skip at all, i.e. args.skip_update is the number of leaves skipped, *not* the number of leaves *between* updates)
+                        #MODIFY to adjust the arguments for update_lambda_values 
                         updated_lambda_values = selection_utils.update_lambda_values(updated_live_leaves, args.A_total, args.B_total, args.logi_params, args.selection_strength)  # note that when this updates in the middle of the loop over leaves, it'll set lambda values for any children that have so far been added
                         updated_mean_kd = numpy.mean([l.Kd for l in updated_live_leaves if l.Kd != float('inf')])  # NOTE that if mean kd deviates by a huge amount from args.mature_kd (probably due to very low selection strength, causing the cells to rapidly drift away from the target sequence) then in order to avoid the cells dying out you'd need to recalculate A_total here with the current mean kd (but it's unclear what you'd really be simulating then, since adding an aribtrarily large amount of new antigen because the population's getting low isn't very realistic)
                         lambda_update_dbg_str = selection_utils.color('blue', 'x')
@@ -390,7 +392,7 @@ class MutationModel():
                         mfo = self.mutate(leaf.nuc_seq, args.lambda0[0], aa_seq=leaf.aa_seq)
                         if args.debug > 1:
                             n_mutation_list.append(mfo['n_muts'])
-                    child = self.init_node(args, mfo['nuc_seq'], current_time, leaf, target_seqs, aa_seq=mfo['aa_seq'], mean_kd=updated_mean_kd)
+                    child = self.init_node(args, mfo['nuc_seq'], current_time, leaf, aa_seq=mfo['aa_seq'], mean_kd=updated_mean_kd)
                     if args.selection and args.debug > 1:
                         kd_list.append(child.Kd)
                     leaf.add_child(child)
@@ -405,7 +407,8 @@ class MutationModel():
 
             if args.selection:
                 self.tdist_hists[current_time] = self.get_target_distance_hist(args, updated_live_leaves)
-                self.n_mutated_hists[current_time] = scipy.histogram([l.naive_distance for l in updated_live_leaves], bins=list(numpy.arange(-0.5, (max(args.obs_times) if args.obs_times is not None else current_time) + 0.5)))  # can't have more than one mutation per generation
+                #remove- or is it worth keeping hamming distance just to get this distance measurement? 
+                #self.n_mutated_hists[current_time] = scipy.histogram([l.naive_distance for l in updated_live_leaves], bins=list(numpy.arange(-0.5, (max(args.obs_times) if args.obs_times is not None else current_time) + 0.5)))  # can't have more than one mutation per generation
 
             finished, successful, dbgstr, termstr = self.check_termination(args, current_time, updated_live_leaves)
 
@@ -430,6 +433,7 @@ class MutationModel():
                 self.sample_intermediates(args, current_time, tree)  # note that we don't need to update <updated_live_leaves> in this fcn
 
         # write a histogram of the hamming distances to target at each generation
+        #MODIFY so it plots affinity and expression 
         if args.selection and not args.dont_write_hists:
             with open(args.outbase + '_min_aa_target_hdists.p', 'wb') as histfile:
                 pickle.dump(self.tdist_hists, histfile)
