@@ -26,7 +26,7 @@ except:
 
 from GCutils import hamming_distance, has_stop_aa, local_translate, replace_codon_in_aa_seq, CollapsedTree, TranslatedSeq
 import selection_utils
-#DELETE from selection_utils import target_distance_fcn
+#remove from selection_utils import target_distance_fcn
 #ADD import torch dms here
 
 scipy.seterr(all='raise')
@@ -226,8 +226,18 @@ class MutationModel():
     # ----------------------------------------------------------------------------------------
     def get_affinities_hist(self, args, leaves):
         #What bin edges make the most sense
-        bin_edges = list(numpy.arange(-0.5, int(2 * args.target_distance) + 0.5))  # some sequences manage to wander quite far away from their nearest target without getting killed, so multiply by 2
-        hist = scipy.histogram([l.target_distance for l in leaves], bins=bin_edges)  # if <bins> is a list, it defines the bin edges, including the rightmost edge
+        #pre-specified
+        bin_edges = list(numpy.arange(5,13))  #I specified limits right now based on Tyler's DMS data, but ideally would get min and max from min or max Kd reached
+        #calculated based on Kds at that generation using amin/amax
+        Kd_n = scipy.array([l.Kd for l in leaves])
+        lowest_kd = np.amin(Kd_n)   #highest affinity binder
+        highest_kd = np.amax(Kd_n)   #worst binder (should sequences with stop codons be reset so instead of inf it returns 10? Then they would have -log10(kd) = -1
+        bin_edges = list(numpy.arange(int(-np.log10(highest_kd))-0.5,int(-np.log10(lowest_kd))+0.5))
+        #calculated using code from def simulate() for minkd
+        tmpkdvals = [l.Kd for l in leaves if l.Kd != float('inf')]
+        minkd, maxkd = (min(tmpkdvals), max(tmpkdvals)) if len(tmpkdvals) > 0 else (0, 0)
+        bin_edges = list(numpy.arange(int(-np.log10(maxkd))-0.5,int(-np.log10(minkd))+0.5))
+        hist = scipy.histogram([-np.log10(l.Kd) for l in leaves], bins=bin_edges)  # if <bins> is a list, it defines the bin edges, including the rightmost edge
         return hist
 
     # ----------------------------------------------------------------------------------------
@@ -264,7 +274,7 @@ class MutationModel():
                 leaf.terminated = True
                 self.n_unterminated_leaves -= 1
                 self.get_ancestor_above_leaf_to_detach(leaf)
-        self.sampled_tdist_hists[current_time] = self.get_target_distance_hist(args, inter_sampled_leaves)
+        self.sampled_tdist_hists[current_time] = self.get_affinities_hist(args, inter_sampled_leaves)
         print('                  sampled %d (of %d live and stop-free) intermediate leaves (%s) at end of generation %d (sampling scheme: %s)' % (n_to_sample, len(live_nostop_leaves), 'killing each of them' if args.kill_sampled_intermediates else 'leaving them alive', current_time, args.leaf_sampling_scheme))
 
     # ----------------------------------------------------------------------------------------
@@ -289,13 +299,6 @@ class MutationModel():
             dbgstr += ['time %d' % current_time]
             if current_time >= max(args.obs_times):  # if we've done as many generations as we were told to
                 termstr += ['    --obs_times: breaking at generation %d >= %d' % (current_time, max(args.obs_times))]
-                finished = True
-                successful = True
-        if args.stop_dist is not None and current_time > 0:
-            min_tdist = min([l.target_distance for l in updated_live_leaves])
-            dbgstr += ['min tdist %d' % min_tdist]
-            if min_tdist <= args.stop_dist:  # if the leaves have gotten close enough to the target sequences
-                termstr += ['    --stop_dist: breaking with min target distance %d <= %d' % (min_tdist, args.stop_dist)]
                 finished = True
                 successful = True
         if finished and self.n_unterminated_leaves < 2:  # moving this check from later on, so we can rerun if we finish successfully but only have one leaf (I think some of the post-processing steps must fail if there's only one leaf)
@@ -330,7 +333,7 @@ class MutationModel():
         while True:
             current_time += 1
 
-            #MODFIY histograms to consider expression and affinity 
+            #MODIFY histograms to consider expression and affinity 
             self.sampled_tdist_hists.append(None)
             self.tdist_hists.append(None)
             self.n_mutated_hists.append(None)
@@ -406,7 +409,7 @@ class MutationModel():
                     print(('      %s    %4d      %5.2f  %3d  %s%s          %-14s       %-28s      %-28s') % (pre_leaf_str, static_live_leaves.index(leaf), leaf.lambda_, n_children, lambda_update_dbg_str if args.selection else '', terminated_dbg_str, ' '.join(n_mutation_str_list), ' '.join(kd_str_list), ' '.join(rel_kd_str_list)))
 
             if args.selection:
-                self.tdist_hists[current_time] = self.get_target_distance_hist(args, updated_live_leaves)
+                self.tdist_hists[current_time] = self.get_affinities_hist(args, updated_live_leaves)
                 #remove- or is it worth keeping hamming distance just to get this distance measurement? 
                 #self.n_mutated_hists[current_time] = scipy.histogram([l.naive_distance for l in updated_live_leaves], bins=list(numpy.arange(-0.5, (max(args.obs_times) if args.obs_times is not None else current_time) + 0.5)))  # can't have more than one mutation per generation
 
@@ -417,8 +420,6 @@ class MutationModel():
                 minkd, meankd = '-', '-'
                 maxl, meanl = '-', '-'  # NOTE don't use <updated_live_leaves> to get lambda values here, since it's either entirely or partly full on unset values from children that were just added
                 if args.selection and len(updated_live_leaves) > 0:  # NOTE when you get to here, there are either zero lambda values set in <updated_live_leaves> (if lambdas updated only at the start of the loop) or some intermediate number (if they updated also partway through)
-                    tmptdvals = [l.target_distance for l in updated_live_leaves]
-                    mintd, meantd = '%2d' % min(tmptdvals), '%3.1f' % numpy.mean(tmptdvals)
                     tmpkdvals = [l.Kd for l in updated_live_leaves if l.Kd != float('inf')]
                     minkd, meankd = [('%5.1f' % v) for v in (min(tmpkdvals), numpy.mean(tmpkdvals))] if len(tmpkdvals) > 0 else (0, 0)
                     if len(updated_lambda_values) > 0:
