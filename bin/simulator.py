@@ -281,7 +281,12 @@ class MutationModel():
                 leaf.terminated = True
                 self.n_unterminated_leaves -= 1
                 self.get_ancestor_above_leaf_to_detach(leaf)
-        self.sampled_tdist_hists[current_time] = self.get_affinities_hist(args, inter_sampled_leaves)
+        sampled_updates_to_plots = self.get_scatter_plots(args, updated_live_leaves, current time)
+            # NOTE this doesn't include nodes added from --observe_common_ancestors or --observe_all_ancestors
+        self.sampled_scatter_index.append(sampled_updates_to_plots[1])
+        self.sampled_affinity_scatter.append(sampled_updates_to_plots[0])
+        self.sampled_expression_scatter.append(sampled_updates_to_plots[2])
+        self.sampled_antigen_capture_scatter.append(sampled_updates_to_plots[3])
         print('                  sampled %d (of %d live and stop-free) intermediate leaves (%s) at end of generation %d (sampling scheme: %s)' % (n_to_sample, len(live_nostop_leaves), 'killing each of them' if args.kill_sampled_intermediates else 'leaving them alive', current_time, args.leaf_sampling_scheme))
 
     # ----------------------------------------------------------------------------------------
@@ -490,13 +495,7 @@ class MutationModel():
 
         
         if args.selection:
-            sampled_updates_to_plots = self.get_scatter_plots(args, updated_live_leaves, current time)
-            # NOTE this doesn't include nodes added from --observe_common_ancestors or --observe_all_ancestors
-            self.sampled_scatter_index.append(sampled_updates_to_plots[1])
-            self.sampled_affinity_scatter.append(sampled_updates_to_plots[0])
-            self.sampled_expression_scatter.append(sampled_updates_to_plots[2])
-            self.sampled_antigen_capture_scatter.append(sampled_updates_to_plots[3])
-            if len(self.sampled_tdist_hists) > 0 and not args.dont_write_hists:
+            if len(self.sampled_scatter_index) > 0 and not args.dont_write_hists:
             pickle.dump(self.sampled_scatter_index, SOMEDUMMYFILENAME5)
             pickle.dump(self.sampled_affinity_scatter, SOMEDUMMYFILENAME6)
             pickle.dump(self.sampled_expression_scatter, SOMEDUMMYFILENAME7)
