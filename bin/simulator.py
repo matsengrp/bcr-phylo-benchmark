@@ -701,7 +701,7 @@ def main():
                         '(skip_update < carry_cap/10 recommended.)')
     parser.add_argument('--B_total', type=float, default=1, help='Total number of BCRs per B cell normalized to 10e4. So 1 equals 10e4, 100 equals 10e6 etc. '
                         'It is recommended to keep this as the default.')
-    parser.add_argument('--A_total', type=int, default=1, help='Total amount of antigen is calculated based on carrying capacity, and can fixed through time in the GC or or decaying.')
+    parser.add_argument('--antigen_decay', type=int, default=1, help='Total amount of antigen is calculated based on carrying capacity, and can fixed through time in the GC or or decaying.')
     parser.add_argument('--U', type=float, default=5, help='Controls the fraction of BCRs binding antigen necessary to only sustain the life of the B cell '
                         'It is recommended to keep this as the default.')
     parser.add_argument('--f_full', type=float, default=1, help='The fraction of antigen bound BCRs on a B cell that is needed to elicit close to maximum reponse.'
@@ -797,11 +797,8 @@ def main():
         os.makedirs(os.path.dirname(args.outbase))
 
     if args.selection:
-        assert args.target_distance > 0
-        if args.min_target_distance is not None and args.min_target_distance >= args.target_distance:
-            raise Exception('--min_target_distance %d has to be less than --target_distance %d' % (args.min_target_distance, args.target_distance))
         assert args.B_total >= args.f_full  # the fully activating fraction on BA must be possible to reach within B_total
-        args.A_total = selection_utils.find_A_total(args.carry_cap, args.B_total, args.f_full, args.mature_kd, args.U)  # find the total amount of A necessary for sustaining the specified carrying capacity
+        args.A_total = selection_utils.find_A_total(args.carry_cap, args.B_total, args.f_full, args.mature_kd, args.U, args.antigen_decay)  # find the total amount of A necessary for sustaining the specified carrying capacity
         args.logi_params = selection_utils.find_logistic_params(args.f_full, args.U)  # calculate the parameters for the logistic function
     else:
         if args.selection_strength > 0.:  # yes, this will get triggered by fully-default parameters, but the default parameters kind of suck, I just don't want to/can't change them cause of backwards compatibility
