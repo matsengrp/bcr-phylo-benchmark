@@ -100,7 +100,7 @@ class MutationModel():
             #remove node.add_feature('target_distance', tdist)  # nuc or aa distance, depending on args
             #MODIFY to add an expression feature
             node.add_feature('Kd', selection_utils.calc_kd_and_exp(node, args)[0])
-            node.add_feature('B_exp', selection_utils.calc_kd_and_exp(node, args)[1]) #note dummy iindexing currently, code be Kd is [1]
+            node.add_feature('B_exp', selection_utils.calc_kd_and_exp(node, args)[1]) #note dummy indexing currently, could be Kd is [1]
             node.add_feature('relative_Kd', node.Kd / float(mean_kd) if mean_kd is not None else None)  # kd relative to mean of the current leaves
         else:  # maybe it'd be nicer to remove these from the args.selection/not blocks, but this is kind of clearer
             node.add_feature('lambda_', -1.)
@@ -240,13 +240,13 @@ class MutationModel():
         hist = scipy.histogram([-np.log10(l.Kd) for l in leaves], bins=bin_edges)  # if <bins> is a list, it defines the bin edges, including the rightmost edge
         return hist
     
-    def get_affinities_scatter(self, args, leaves, current_time):
+    def get_scatter_plots(self, args, leaves, current_time):
         Kd_n = scipy.array([l.Kd for l in leaves])
-        scatter_index.append(current_time*np.ones(np.shape(Kd_n))
-         = scipy.histogram([-np.log10(l.Kd) for l in leaves], bins=bin_edges)  # if <bins> is a list, it defines the bin edges, including the rightmost edge
-        return hist
-    
-
+        current_gen_scatter_index = current_time*np.ones(np.shape(Kd_n))
+        B_n = scipy.array([l.B_exp for l in leaves])
+        BnA = B_n/(1+Kd_n/(2*10**6)
+        return Kd_n, current_gen_scatter_index, B_n, BnA  
+        #Used a fixed ideal antigen concentration to get some metric for ability of B cell to capture antigen, which is intrinsic to B cell, but not a measure of how much antigen it actually captured at its generation in the GC. 
     # ----------------------------------------------------------------------------------------
     def get_ancestor_above_leaf_to_detach(self, dead_leaf):  # this is kind of a lot of infrastructure, but it avoids the old way of finding all these lineages afterward, when the tree is huuuuge, which gets really slow as the tree gets large (e.g. for larger times)
         # note, also, that we could do the actual pruning/detaching here, but for now I think it's better to have the entire tree available at the end of the main loop, in case we want to do something with it, rather than removing bits of it as we go
@@ -341,9 +341,15 @@ class MutationModel():
             current_time += 1
 
             #MODIFY histograms to consider expression and affinity 
-            self.sampled_tdist_hists.append(None)
-            self.tdist_hists.append(None)
-            self.n_mutated_hists.append(None)
+            #self.sampled_tdist_hists.append(None)
+            self.scatter_index.append(None)
+            self.affinity_scatter.append(None)
+            self.expression_scatter.append(None)
+            self.antigen_capture_scatter.append(None)
+            self.sampled_scatter_index.append(None)
+            self.sampled_affinity_scatter.append(None)
+            self.sampled_expression_scatter.append(None)
+            self.sampled_antigen_capture_scatter.append(None)
 
             skip_lambda_n = 0  # index keeping track of how many leaves since we last updated all the lambdas
             #TO DO: Ask Duncan about the use of static and updated live leaves, what benefit this syntax gives you 
@@ -415,8 +421,12 @@ class MutationModel():
                     pre_leaf_str = '' if static_live_leaves.index(leaf) == 0 else ('%12s %3d' % ('', len(updated_live_leaves)))
                     print(('      %s    %4d      %5.2f  %3d  %s%s          %-14s       %-28s      %-28s') % (pre_leaf_str, static_live_leaves.index(leaf), leaf.lambda_, n_children, lambda_update_dbg_str if args.selection else '', terminated_dbg_str, ' '.join(n_mutation_str_list), ' '.join(kd_str_list), ' '.join(rel_kd_str_list)))
 
-            if args.selection:
-                self.tdist_hists[current_time] = self.get_affinities_hist(args, updated_live_leaves)
+            if args.selection: #TODO finish up with BnA
+                updates_to_affinity_plots = self.get_scatter_plots(args, updated_live_leaves, current time)
+                self.scatter_index.append(updates_to_affinity_plots[1])
+                self.affinity_scatter.append(updates_to_affinity_plots[0])
+                self.expression_scatter.append(updates_to_affinity_plots[2])
+                self.antigen_capture_scatter.append(updates_to_affinity_plots[3])
                 #remove- or is it worth keeping hamming distance just to get this distance measurement? 
                 #self.n_mutated_hists[current_time] = scipy.histogram([l.naive_distance for l in updated_live_leaves], bins=list(numpy.arange(-0.5, (max(args.obs_times) if args.obs_times is not None else current_time) + 0.5)))  # can't have more than one mutation per generation
 
@@ -440,13 +450,14 @@ class MutationModel():
             if args.obs_times is not None and len(args.obs_times) > 1 and current_time in args.obs_times:
                 self.sample_intermediates(args, current_time, tree)  # note that we don't need to update <updated_live_leaves> in this fcn
 
-        # write a histogram of the hamming distances to target at each generation
-        #MODIFY so it plots affinity and expression 
+        # write scatter plot of affinity and expression over generations 
         if args.selection and not args.dont_write_hists:
-            with open(args.outbase + '_min_aa_target_hdists.p', 'wb') as histfile:
-                pickle.dump(self.tdist_hists, histfile)
-            with open(args.outbase + '_n_mutated_nuc_hdists.p', 'wb') as histfile:
-                pickle.dump(self.n_mutated_hists, histfile)
+            #with open(args.outbase + '_min_aa_target_hdists.p', 'wb') as histfile:
+                #pickle.dump(self.tdist_hists, histfile)
+            pickle.dump(self.scatter_index, SOMEDUMMYFILENAME1)
+            pickle.dump(self.affinity_scatter, SOMEDUMMYFILENAME2)
+            pickle.dump(self.expression_scatter, SOMEDUMMYFILENAME3)
+            pickle.dump(self.antigen_capture_scatter, SOMEDUMMYFILENAME4)
 
         stop_leaves = [l for l in updated_live_leaves if has_stop_aa(l.aa_seq)]
         non_stop_leaves = [l for l in updated_live_leaves if not has_stop_aa(l.aa_seq)]
@@ -477,11 +488,19 @@ class MutationModel():
         for leaf in set(updated_live_leaves) - set(observed_leaves):
             self.get_ancestor_above_leaf_to_detach(leaf)
 
+        
         if args.selection:
-            self.sampled_tdist_hists[current_time] = self.get_target_distance_hist(args, observed_leaves)  # NOTE this doesn't include nodes added from --observe_common_ancestors or --observe_all_ancestors
+            sampled_updates_to_plots = self.get_scatter_plots(args, updated_live_leaves, current time)
+            # NOTE this doesn't include nodes added from --observe_common_ancestors or --observe_all_ancestors
+            self.sampled_scatter_index.append(sampled_updates_to_plots[1])
+            self.sampled_affinity_scatter.append(sampled_updates_to_plots[0])
+            self.sampled_expression_scatter.append(sampled_updates_to_plots[2])
+            self.sampled_antigen_capture_scatter.append(sampled_updates_to_plots[3])
             if len(self.sampled_tdist_hists) > 0 and not args.dont_write_hists:
-                with open(args.outbase + '_sampled_min_aa_target_hdists.p', 'wb') as histfile:
-                    pickle.dump(self.sampled_tdist_hists, histfile)
+            pickle.dump(self.sampled_scatter_index, SOMEDUMMYFILENAME5)
+            pickle.dump(self.sampled_affinity_scatter, SOMEDUMMYFILENAME6)
+            pickle.dump(self.sampled_expression_scatter, SOMEDUMMYFILENAME7)
+            pickle.dump(self.sampled_antigen_capture_scatter, SOMEDUMMYFILENAME8)
 
         print('    detaching %d nodes' % len(self.nodes_to_detach))
         for node in self.nodes_to_detach:
@@ -509,11 +528,8 @@ class MutationModel():
         n_removed = 0
         for node in tree.iter_descendants():
             parent = node.up
-            if node.frequency == 0 and (len(node.children) == 1 or node.dist == 0):  # NOTE this allows leaves that are distance zero from their parents, since leaves we get here are observed
+            if node.frequency == 0 and (len(node.children) == 1):  # NOTE this allows leaves that are distance zero from their parents, since leaves we get here are observed
                 node.delete(prevent_nondicotomic=False)  # seems like this should instead use the preserve_branch_length=True option so we don't need the next line, but I don't want to change it
-                if node.dist > 0:
-                    for child in node.children:
-                        child.dist = hamming_distance(child.nuc_seq, parent.nuc_seq)
                 n_removed += 1
         print('    removed %d unobserved unifurcations + degenerate nodes' % n_removed)
 
@@ -591,7 +607,7 @@ def make_plots(args, tree, collapsed_tree):
         palette = ['crimson', 'purple', 'hotpink', 'limegreen', 'darkorange', 'darkkhaki', 'brown', 'lightsalmon', 'darkgreen', 'darkseagreen', 'darkslateblue', 'teal', 'olive', 'wheat', 'magenta', 'lightsteelblue', 'plum', 'gold']
         palette = itertools.cycle(list(palette)) # <-- circular iterator
         colors = {i: next(palette) for i in range(int(len(args.naive_tseq.nuc) // 3))}
-        # The minimum distance to the target is colored:
+        #TODO Mofidy colormaps - ask Will and Duncan about this
         colormap = {node.name:colors[node.target_distance] for node in collapsed_tree.tree.traverse()}
         collapsed_tree.render(args.outbase+'_collapsed_runstat_color_tree.svg', idlabel=args.idlabel, colormap=colormap)
         if not args.dont_write_hists:
@@ -630,12 +646,14 @@ def run_simulation(args):
                 fh.write('>%s\n%s\n' % (node.name, node.nuc_seq))  # [:len(node.nuc_seq) - args.n_pads_added]))
 
     # write some summary statistics
-    frequency, distance_from_naive, degree = zip(*[(node.frequency,
-                                                    node.naive_distance,
+    frequency, affinity, expression, degree = zip(*[(node.frequency,
+                                                    node.Kd,
+                                                    node.B_exp,
                                                     sum(hamming_distance(node.nuc_seq, node2.nuc_seq) == 1 for node2 in collapsed_tree.tree.traverse() if node2.frequency and node2 is not node))
                                                    for node in collapsed_tree.tree.traverse() if node.frequency])
     stats = pd.DataFrame({'genotype abundance':frequency,
-                          'Hamming distance to root genotype':distance_from_naive,
+                          'Affinity':affinity,
+                          'Expression':expression,
                           'Hamming neighbor genotypes':degree})
     stats.to_csv(args.outbase+'_stats.tsv', sep='\t', index=False)
 
@@ -657,7 +675,7 @@ def main():
     file_path = os.path.realpath(__file__)
     file_dir = os.path.dirname(file_path)
 
-    stop_crits = ['n_final_seqs', 'obs_times', 'stop_dist']
+    stop_crits = ['obs_times']
     class MultiplyInheritedFormatter(argparse.RawTextHelpFormatter, argparse.ArgumentDefaultsHelpFormatter):
         pass
     formatter_class = MultiplyInheritedFormatter
@@ -674,14 +692,14 @@ def main():
                                      formatter_class=MultiplyInheritedFormatter)
 
     parser.add_argument('--naive_seq', help='Initial naive nucleotide sequence.')
-    parser.add_argument('--naive_seq_file', help='Path to fasta file containing initial naive sequences from which do draw at random.')
+    parser.add_argument('--naive_seq_file', help='Path to fasta file containing initial naive sequences from which to draw at random.')
     parser.add_argument('--mutability_file', default=file_dir+'/../motifs/Mutability_S5F.csv', help='Path to mutability model file.')
     parser.add_argument('--substitution_file', default=file_dir+'/../motifs/Substitution_S5F.csv', help='Path to substitution model file.')
     parser.add_argument('--no_context', action='store_true', help='Disable context dependence, i.e. use a uniform mutability and substitution.')
     parser.add_argument('--selection', action='store_true', help='If set, simulate with selection (otherwise neutral). Requires that you set --obs_times, and therefore that you *not* set --n_final_seqs.')
-    parser.add_argument('--n_final_seqs', type=int, help='If set, simulation stops when we\'ve reached this number of sequences. Note that because sequences with stop codons are subsequently removed, and because more than one sequence is added per iteration, we don\'t necessarily output exactly this many. (If --n_to_sample is also set, then we simulate until we have --n_final_seqs, then downsample to --n_to_sample).')
+    #parser.add_argument('--n_final_seqs', type=int, help='If set, simulation stops when we\'ve reached this number of sequences. Note that because sequences with stop codons are subsequently removed, and because more than one sequence is added per iteration, we don\'t necessarily output exactly this many. (If --n_to_sample is also set, then we simulate until we have --n_final_seqs, then downsample to --n_to_sample).')
     parser.add_argument('--obs_times', type=int, nargs='+', help='If set, simulation stops when we\'ve reached this many generations. If more than one value is specified, the largest value is the final observation time (and stopping criterion), and earlier values are used as additional, intermediate sampling times')
-    parser.add_argument('--stop_dist', type=int, help='If set, simulation stops when any simulated sequence is closer than this hamming distance from any of the target sequences, according to --metric_for_target_distance.')
+    #parser.add_argument('--stop_dist', type=int, help='If set, simulation stops when any simulated sequence is closer than this hamming distance from any of the target sequences, according to --metric_for_target_distance.')
     parser.add_argument('--n_tries', type=int, default=1, help='If the tree terminates before the specified stopping criteria are met, set larger than 1 to keep trying (effectively, with different --random_seed).')
     parser.add_argument('--lambda', dest='lambda_', type=float, default=0.9, help='Poisson branching parameter to use if selection is turned off.')
     parser.add_argument('--lambda0', type=float, nargs='*', help='Baseline sequence mutation rate(s): first value corresponds to --naive_seq, and optionally the second to --naive_seq2. If only one rate is provided for two sequences, this rate is used for both. If not set, the default is set below')
@@ -770,9 +788,6 @@ def main():
 
     if [getattr(args, sc) for sc in stop_crits].count(None) == len(stop_crits):
         raise Exception('have to set a stopping criterion (see --help)')
-    if args.n_final_seqs is not None and args.n_to_sample is not None:
-        if args.n_to_sample[-1] > args.n_final_seqs:
-            raise Exception('if both --n_final_seqs and --n_to_sample are set, --n_final_seqs must be larger than the last value in --n_to_sample')
     if args.obs_times is not None and len(args.obs_times) > 1 and args.n_to_sample is None:
         raise Exception('--n_to_sample must be set if more than one obs time is specified, since we don\'t want to just sample all cells at intermediate times')
     if args.n_to_sample is not None and args.obs_times is not None and len(args.n_to_sample) != len(args.obs_times):
