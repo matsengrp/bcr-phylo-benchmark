@@ -701,6 +701,7 @@ def main():
                         '(skip_update < carry_cap/10 recommended.)')
     parser.add_argument('--B_total', type=float, default=1, help='Total number of BCRs per B cell normalized to 10e4. So 1 equals 10e4, 100 equals 10e6 etc. '
                         'It is recommended to keep this as the default.')
+    parser.add_argument('--A_total', type=int, default=1, help='Total amount of antigen is calculated based on carrying capacity, and can fixed through time in the GC or or decaying.')
     parser.add_argument('--U', type=float, default=5, help='Controls the fraction of BCRs binding antigen necessary to only sustain the life of the B cell '
                         'It is recommended to keep this as the default.')
     parser.add_argument('--f_full', type=float, default=1, help='The fraction of antigen bound BCRs on a B cell that is needed to elicit close to maximum reponse.'
