@@ -239,6 +239,13 @@ class MutationModel():
         bin_edges = list(numpy.arange(int(-np.log10(maxkd))-0.5,int(-np.log10(minkd))+0.5))
         hist = scipy.histogram([-np.log10(l.Kd) for l in leaves], bins=bin_edges)  # if <bins> is a list, it defines the bin edges, including the rightmost edge
         return hist
+    
+    def get_affinities_scatter(self, args, leaves, current_time):
+        Kd_n = scipy.array([l.Kd for l in leaves])
+        scatter_index.append(current_time*np.ones(np.shape(Kd_n))
+         = scipy.histogram([-np.log10(l.Kd) for l in leaves], bins=bin_edges)  # if <bins> is a list, it defines the bin edges, including the rightmost edge
+        return hist
+    
 
     # ----------------------------------------------------------------------------------------
     def get_ancestor_above_leaf_to_detach(self, dead_leaf):  # this is kind of a lot of infrastructure, but it avoids the old way of finding all these lineages afterward, when the tree is huuuuge, which gets really slow as the tree gets large (e.g. for larger times)
