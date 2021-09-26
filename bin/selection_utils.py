@@ -241,6 +241,8 @@ def find_logistic_params(f_full, U):
 # ----------------------------------------------------------------------------------------
 #TO DO: replace plots of target distance with affinity, expression, and amount of Ag captured (either mean or per node) at each generation
 def plot_runstats(tdist_hists, outbase, colors):
+    def scatter_plots(
+    
     def make_bounds(tdist_hists):  # tdist_hists: list (over generations) of scipy.hists of min distance to [any] target over leaves
         # scipy.hist is two arrays: [0] is bin counts, [1] is bin x values (not sure if low, high, or centers)
         all_counts = None  # sum over generations of number of leaves in each bin (i.e. at each min distance to target sequence)
