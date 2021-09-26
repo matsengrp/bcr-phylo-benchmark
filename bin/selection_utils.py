@@ -41,6 +41,7 @@ data = utils.from_pickle_file(data_path)
 wtseq = data.val.wtseq
 alphabet = data.val.alphabet
 
+#Might be able to remove the seq_to_onehot function
 def seq_to_onehot(seq, alphabet):
     """ Take a given aa-sequence and return it's onehot encoding.
     Args:
@@ -167,16 +168,16 @@ def update_lambda_values(live_leaves, A_total, B_total, logi_params, selection_s
     return new_lambdas
 
 # ----------------------------------------------------------------------------------------
-def find_A_total(carry_cap, B_n, f_full, mature_kd, U):
+#TO DO Modify to use calculated, specified, or decaying antigen amount 
+def find_A_total(carry_cap, B_n, f_full, mature_kd, U, antigen_decay):
     # find the total amount of A necessary for sustaining the specified carrying capacity
-    #TO DO: Need to modify so it sets B_total once at the beginning, or so that the total amount of antigen follows some function based on generation time
     def A_total_fun(A, _some_fixed_B_total, Kd_n): return(A + scipy.sum(_some_fixed_B_total/(1+Kd_n/A)))
 
     def C_A(A, A_total, f_full, U): return(U * (A_total - A) / f_full)
 
     def A_obj(carry_cap, _some_fixed_B_total, f_full, Kd_n, U):
-        def obj(A): return((carry_cap - C_A(A, A_total_fun(A, _some_fixed_B_total, Kd_n), f_full, U))**2)
-        return obj
+            def obj(A): return((carry_cap - C_A(A, A_total_fun(A, _some_fixed_B_total, Kd_n), f_full, U))**2)
+            return obj
 
     Kd_n = scipy.array([mature_kd] * carry_cap)
     obj = A_obj(carry_cap, _some_fixed_B_total, f_full, Kd_n, U)
@@ -188,7 +189,10 @@ def find_A_total(carry_cap, B_n, f_full, mature_kd, U):
     A = obj_min.x[0]
     A_total = A_total_fun(A, B_total, Kd_n)
     assert(C_A(A, A_total, f_full, U) > carry_cap * 99/100)
-    return A_total
+    if antigen_decay ==1:
+        return A_total
+    else:
+        return A_total* ###(FUNCTION for sigmoidal decay) 
 
 
 # ----------------------------------------------------------------------------------------
