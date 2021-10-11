@@ -606,15 +606,18 @@ def make_plots(args, tree, collapsed_tree):
     #TODO MODIFY these plots and ask Will+Duncan about the colormap               
     if args.selection:
         # Define a list a suitable colors that are easy to distinguish:
-        palette = ['crimson', 'purple', 'hotpink', 'limegreen', 'darkorange', 'darkkhaki', 'brown', 'lightsalmon', 'darkgreen', 'darkseagreen', 'darkslateblue', 'teal', 'olive', 'wheat', 'magenta', 'lightsteelblue', 'plum', 'gold']
-        palette = itertools.cycle(list(palette)) # <-- circular iterator
-        colors = {i: next(palette) for i in range(int(len(args.naive_tseq.nuc) // 3))}
-        colormap = {node.name:colors[node.target_distance] for node in collapsed_tree.tree.traverse()}
-        collapsed_tree.render(args.outbase+'_collapsed_runstat_color_tree.svg', idlabel=args.idlabel, colormap=colormap)
-        if not args.dont_write_hists:
-            with open(args.outbase + '_min_aa_target_hdists.p', 'rb') as fh:
-                tdist_hists = pickle.load(fh)
-                selection_utils.plot_runstats(tdist_hists, args.outbase, colors)
+        #palette = ['crimson', 'purple', 'hotpink', 'limegreen', 'darkorange', 'darkkhaki', 'brown', 'lightsalmon', 'darkgreen', 'darkseagreen', 'darkslateblue', 'teal', 'olive', 'wheat', 'magenta', 'lightsteelblue', 'plum', 'gold']
+        #palette = itertools.cycle(list(palette)) # <-- circular iterator
+        #colors = {i: next(palette) for i in range(int(len(args.naive_tseq.nuc) // 3))}
+        #colormap = {node.name:colors[node.target_distance] for node in collapsed_tree.tree.traverse()}
+        #collapsed_tree.render(args.outbase+'_collapsed_runstat_color_tree.svg', idlabel=args.idlabel, colormap=colormap)
+        scatter_index = pickle.load(SOMEDUMMYFILENAME1)
+        scatter_aff = pickle.load(SOMEDUMMYFILENAME2)
+        scatter_exp = pickle.load(SOMEDUMMYFILENAME3)
+        scatter_aff_cap = pickle.load(SOMEDUMMYFILENAME4)
+        selection_utils.plot_runstats(scatter_aff, scatter_index, 'affinity')
+        selection_utils.plot_runstats(scatter_exp, scatter_index, 'expression')
+        selection_utils.plot_runstats(scatter_aff_cap, scatter_index, 'affinity_capture')
 
 # ----------------------------------------------------------------------------------------
 def run_simulation(args):
