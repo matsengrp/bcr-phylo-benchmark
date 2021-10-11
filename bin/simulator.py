@@ -821,7 +821,7 @@ def main():
 
     if args.selection:
         assert args.B_total >= args.f_full  # the fully activating fraction on BA must be possible to reach within B_total
-        args.A_total = selection_utils.find_A_total(args.carry_cap, args.B_total, args.f_full, args.mature_kd, args.U, args.antigen_decay)  # find the total amount of A necessary for sustaining the specified carrying capacity
+        args.A_total = selection_utils.find_A_total(args.carry_cap, args.B_total, args.f_full, args.mature_kd, args.U)  # find the total amount of A necessary for sustaining the specified carrying capacity
         args.logi_params = selection_utils.find_logistic_params(args.f_full, args.U)  # calculate the parameters for the logistic function
     else:
         if args.selection_strength > 0.:  # yes, this will get triggered by fully-default parameters, but the default parameters kind of suck, I just don't want to/can't change them cause of backwards compatibility
