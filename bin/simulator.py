@@ -244,7 +244,7 @@ class MutationModel():
         Kd_n = scipy.array([l.Kd for l in leaves])
         current_gen_scatter_index = current_time*np.ones(np.shape(Kd_n))
         B_n = scipy.array([l.B_exp for l in leaves])
-        BnA = B_n/(1+Kd_n/(2*10**6)
+        BnA = B_n/(1+Kd_n/(args.antigen_capture_concentration)
         return Kd_n, current_gen_scatter_index, B_n, BnA  
         #Used a fixed ideal antigen concentration to get some metric for ability of B cell to capture antigen, which is intrinsic to B cell, but not a measure of how much antigen it actually captured at its generation in the GC. 
     # ----------------------------------------------------------------------------------------
@@ -727,7 +727,7 @@ def main():
                         '(skip_update < carry_cap/10 recommended.)')
     parser.add_argument('--B_total', type=float, default=1, help='Total number of BCRs per B cell normalized to 10e4. So 1 equals 10e4, 100 equals 10e6 etc. '
                         'It is recommended to keep this as the default.')
-    parser.add_argument('--antigen_decay', type=int, default=1, help='Total amount of antigen is calculated based on carrying capacity, and can fixed through time in the GC or or decaying.')
+    parser.add_argument('--antigen_capture_concentration', type=int, default=1, help='Amount of antigen in the GC used for antigen capture plots')
     parser.add_argument('--U', type=float, default=5, help='Controls the fraction of BCRs binding antigen necessary to only sustain the life of the B cell '
                         'It is recommended to keep this as the default.')
     parser.add_argument('--f_full', type=float, default=1, help='The fraction of antigen bound BCRs on a B cell that is needed to elicit close to maximum reponse.'
