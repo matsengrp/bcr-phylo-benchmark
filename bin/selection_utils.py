@@ -167,20 +167,19 @@ def update_lambda_values(live_leaves, A_total, B_total, logi_params, selection_s
         leaf.lambda_ = new_lambda
     return new_lambdas
 
-# ----------------------------------------------------------------------------------------
-#TO DO Modify to use calculated, specified, or decaying antigen amount 
-def find_A_total(carry_cap, B_n, f_full, mature_kd, U, antigen_decay):
+# ---------------------------------------------------------------------------------------- 
+def find_A_total(carry_cap, B_n, f_full, mature_kd, U):
     # find the total amount of A necessary for sustaining the specified carrying capacity
-    def A_total_fun(A, _some_fixed_B_total, Kd_n): return(A + scipy.sum(_some_fixed_B_total/(1+Kd_n/A)))
+    def A_total_fun(A, some_fixed_B_total, Kd_n): return(A + scipy.sum(some_fixed_B_total/(1+Kd_n/A)))
 
     def C_A(A, A_total, f_full, U): return(U * (A_total - A) / f_full)
 
-    def A_obj(carry_cap, _some_fixed_B_total, f_full, Kd_n, U):
-            def obj(A): return((carry_cap - C_A(A, A_total_fun(A, _some_fixed_B_total, Kd_n), f_full, U))**2)
+    def A_obj(carry_cap, some_fixed_B_total, f_full, Kd_n, U):
+            def obj(A): return((carry_cap - C_A(A, A_total_fun(A, some_fixed_B_total, Kd_n), f_full, U))**2)
             return obj
 
     Kd_n = scipy.array([mature_kd] * carry_cap)
-    obj = A_obj(carry_cap, _some_fixed_B_total, f_full, Kd_n, U)
+    obj = A_obj(carry_cap, some_fixed_B_total, f_full, Kd_n, U)
     # Some funny "zero encountered in true_divide" errors are not affecting results so ignore them:
     old_settings = scipy.seterr(all='ignore')  # Keep old settings
     scipy.seterr(divide='ignore')
@@ -189,15 +188,12 @@ def find_A_total(carry_cap, B_n, f_full, mature_kd, U, antigen_decay):
     A = obj_min.x[0]
     A_total = A_total_fun(A, B_total, Kd_n)
     assert(C_A(A, A_total, f_full, U) > carry_cap * 99/100)
-    if antigen_decay ==1:
-        return A_total
-    else:
-        return A_total* ###(FUNCTION for sigmoidal decay) 
+    return A_total
 
 
 # ----------------------------------------------------------------------------------------
 # calculate the parameters for the logistic function, i.e. (alpha, beta, Q)
-#QUESTION: Should we these or directly feed them in as arguments to test our inference capabilities? 
+#QUESTION: Should we calculate these or directly feed them in as arguments to test our inference capabilities? 
 def find_logistic_params(f_full, U):
     assert(U > 1)
     def T_BA(BA, lparams):
@@ -239,52 +235,24 @@ def find_logistic_params(f_full, U):
     return lparams  # tuple with (alpha, beta, Q)
 
 # ----------------------------------------------------------------------------------------
-#TO DO: replace plots of target distance with affinity, expression, and amount of Ag captured (either mean or per node) at each generation
-def plot_runstats(tdist_hists, outbase, colors):
-    def scatter_plots(
-    
-    def make_bounds(tdist_hists):  # tdist_hists: list (over generations) of scipy.hists of min distance to [any] target over leaves
-        # scipy.hist is two arrays: [0] is bin counts, [1] is bin x values (not sure if low, high, or centers)
-        all_counts = None  # sum over generations of number of leaves in each bin (i.e. at each min distance to target sequence)
-        for hist in tdist_hists:
-            if all_counts is None:
-                all_counts = hist[0].copy()
-            else:
-                all_counts += hist[0]
-        imin, imax = None, None
-        for j, count in enumerate(all_counts):
-            if imin is None and count > 0:
-                imin = j
-            elif count > 0:
-                imax = j
-        return(imin, imax)
-
-    tdist_hists = [h for h in tdist_hists if h is not None]  # the initial list of hist is filled with none values to length max(args.obs_times), but then if we stop because of another criterion some of the nones are still there, so i guess just remove them here for plotting
-    pop_size = scipy.array([sum(r[0]) for r in tdist_hists])  # total population size
-    bounds = make_bounds(tdist_hists)  # bin indices of the min and max hamming distances to plot
-    if None in bounds:
-        print('  note: couldn\'t get bounds for runstat hists, so not writing')
-        return
-
+def plot_runstats(scatter_value, scatter_index, metric):
     fig = plt.figure()
     ax = plt.subplot(111)
-    t = scipy.array(list(range(len(pop_size))))  # The x-axis are generations
-    ax.plot(t, pop_size, lw=2, label='all cells')  # Total population size is plotted
-    # Then plot the counts for each hamming distance as a function on generation:
-    for ibin in list(range(*bounds)):
-        color = colors[ibin]
-        ax.plot(t, scipy.array([r[0][ibin] for r in tdist_hists]), lw=2, color=color, label='distance {}'.format(ibin))
-
-    plt.legend(bbox_to_anchor=(1.05, 1), loc=2, borderaxespad=0)
-
+    ax.scatter(scatter_index, scatter_value)
+    #plt.legend(bbox_to_anchor=(1.05, 1), loc=2, borderaxespad=0)
     # Shrink current axis by 20% to make the legend fit:
-    box = ax.get_position()
-    ax.set_position([box.x0, box.y0, box.width * 0.8, box.height])
-
-    plt.ylabel('count')
+    #box = ax.get_position()
+    #ax.set_position([box.x0, box.y0, box.width * 0.8, box.height])
+    
+    if metric == 'affinity':
+        plt.ylabel('-log(affinity)')
+    elif metric == 'expression':
+        plt.ylabel('expression')
+    else:
+        plt.ylabel('antigen_capture')
     plt.xlabel('GC generation')
-    plt.title('population over time of cells grouped by min. distance to target')
-    fig.savefig(outbase + '.selection_sim.runstats.pdf')
+    plt.title('distribution of BCR value at each generation')
+    fig.savefig(metric + '.selection_sim.runstats.pdf')
 
 # ----------------------------------------------------------------------------------------
 # bash color codes
