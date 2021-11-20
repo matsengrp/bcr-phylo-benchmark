@@ -43,6 +43,11 @@ def local_translate(seq):
     return bio_translate(seq)
 
 # ----------------------------------------------------------------------------------------
+def get_codon(nuc_seq, inuc):  # return codon in <nuc_seq> that contains <inuc>
+    i_codon_start = 3 * int(inuc / 3)
+    return nuc_seq[i_codon_start : i_codon_start + 3]
+
+# ----------------------------------------------------------------------------------------
 def replace_codon_in_aa_seq(new_nuc_seq, old_aa_seq, inuc):  # <inuc>: single nucleotide position that was mutated from old nuc seq (which corresponds to old_aa_seq) to new_nuc_seq
     istart = 3 * int(math.floor(inuc / 3.))  # nucleotide position of start of mutated codon
     new_codon = local_translate(new_nuc_seq[istart : istart + 3])
@@ -54,37 +59,26 @@ class TranslatedSeq(object):
     def __init__(self, args, nuc_seq, aa_seq=None):
         self.nuc = nuc_seq
         self.aa = local_translate(nuc_seq) if aa_seq is None else aa_seq
-        if args.paratope_positions == 'all':
-            self.cdrps_aa = None
-            self.cdrps_nuc = None
-        elif args.paratope_positions == 'cdrs':
-            self.cdrps_aa = list(range(0, int((1./3) * len(self.aa)), 1))  # cdr/paratope positions
-            self.cdrps_nuc = [j for i in self.cdrps_aa for j in (3*i, 3*i+1, 3*i+2)]
-            # from selection_utils import color
-            # print self.aa
-            # print ''.join([color('red' if i in self.cdrps_aa else None, a) for i, a in enumerate(self.aa)])
-            # print self.nuc
-            # print ''.join([color('red' if i in self.cdrps_nuc else None, n) for i, n in enumerate(self.nuc)])
-            # sys.exit()
-        else:
-            assert False
+        self.nuc_paratope_positions, self.aa_paratope_positions = args.nuc_paratope_positions, args.aa_paratope_positions
     # ----------------------------------------------------------------------------------------
     def dseq(self, stype):  # return the sequence to use for distance calculations, i.e. only including paratope positions
-        if self.cdrps_aa is None:
+        if self.aa_paratope_positions is None:  # default -- use all positions
             return self.aa if stype == 'aa' else self.nuc
         else:
             if stype == 'aa':
-                return ''.join(self.aa[i] for i in self.cdrps_aa)  # it might be faster to cache this, but then you'd have to deal with updating it when something mutates, so maybe not
+                return ''.join(self.aa[i] for i in self.aa_paratope_positions)  # it might be faster to cache this, but then you'd have to deal with updating it when something mutates, so maybe not
             else:
-                return ''.join(self.nuc[i] for i in self.cdrps_nuc)
+                return ''.join(self.nuc[i] for i in self.nuc_paratope_positions)
 
 # ----------------------------------------------------------------------------------------
-def has_stop_aa(seq):
-    return '*' in seq
+def nonfunc_aa(args, seq):
+    if not args.allow_stops_in_functional_seqs and '*' in seq:
+        return True
+    return False
 
 # # ----------------------------------------------------------------------------------------
-# def has_stop_nuc(seq):  # huh, turns out we don't need this anywhere, but don't feel like deleting, since it makes more clear that the other fcn needs to be passed an aa sequence
-#     return has_stop_aa(local_translate(seq))
+# def nonfunc_nuc(args, seq):  # huh, turns out we don't need this anywhere, but don't feel like deleting, since it makes more clear that the other fcn needs to be passed an aa sequence
+#     return nonfunc_aa(args, local_translate(seq))
 
 # ----------------------------------------------------------------------------------------
 class CollapsedTree():
@@ -207,7 +201,7 @@ class CollapsedTree():
             pass
 
     # ----------------------------------------------------------------------------------------
-    def render(self, outfile, idlabel=False, isolabel=False, colormap=None, chain_split=None):
+    def render(self, args, outfile, idlabel=False, isolabel=False, colormap=None, chain_split=None):
         '''Render to image file, filetype inferred from suffix, svg for color images'''
         def my_layout(node):
             circle_color = 'lightgray' if colormap is None or node.name not in colormap else colormap[node.name]
@@ -249,7 +243,7 @@ class CollapsedTree():
             if node.up is not None:
                 if set(node.nuc_seq.upper()) == set('ACGT'):  # Don't know what this do, try and delete
                     nonsyn = hamming_distance(node.aa_seq, node.up.aa_seq)
-                    if has_stop_aa(node.aa_seq):
+                    if nonfunc_aa(args, node.aa_seq):
                         nstyle['bgcolor'] = 'red'
                     if nonsyn > 0:
                         nstyle['hz_line_color'] = 'black'

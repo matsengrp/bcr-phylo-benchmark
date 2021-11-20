@@ -24,11 +24,37 @@ try:
 except:
     import pickle
 
-from GCutils import hamming_distance, has_stop_aa, local_translate, replace_codon_in_aa_seq, CollapsedTree, TranslatedSeq
+from GCutils import hamming_distance, nonfunc_aa, local_translate, replace_codon_in_aa_seq, CollapsedTree, TranslatedSeq, get_codon
 import selection_utils
+from selection_utils import color
 from selection_utils import target_distance_fcn
 
 scipy.seterr(all='raise')
+
+# ----------------------------------------------------------------------------------------
+def parse_ipos_arg(argstr, aa_seq, exclude_positions=None):
+    if 'f=' in argstr or 'N=' in argstr:
+        if 'f=' in argstr:
+            n_pos = int(float(argstr.lstrip('f=')) * len(aa_seq))
+        else:
+            n_pos = int(argstr.lstrip('N='))
+        pchoices = range(len(aa_seq))
+        if exclude_positions is not None:
+            pchoices = [p for p in pchoices if p not in exclude_positions]
+            n_pos = min(len(pchoices), n_pos)
+        ipositions = scipy.random.choice(pchoices, n_pos, replace=False)
+    elif 'i=' in argstr:
+        argstr = argstr.lstrip('i=')
+        ipositions = []
+        for tstr in argstr.split(','):
+            if ':' in tstr:
+                istart, istop = [int(len(aa_seq) if s=='len' else s) for s in tstr.split(':')]
+                ipositions += list(range(istart, istop))
+            else:
+                ipositions.append(int(tstr))
+    else:
+        raise Exception('unhandled position specification format \'%s\'' % argstr)
+    return ipositions
 
 # ----------------------------------------------------------------------------------------
 # For paired heavy/light, the sequences are stored sequentially in one string. This fcn is for extracting them.
@@ -149,11 +175,16 @@ class MutationModel():
         return [self.mutability(sequence[(i-self.k//2):(i+self.k//2+1)]) for i in range(self.k//2, len(sequence) - self.k//2)]
 
     # ----------------------------------------------------------------------------------------
-    def mutate(self, nuc_seq, lambda0, aa_seq=None, debug=False):
+    def mutate(self, args, nuc_seq, lambda0, aa_seq=None, skip_stops=False, dont_mutate_struct_positions=False, debug=False):
         """
         Mutate a sequence, with lamdba0 the baseline mutability. Cannot mutate the same position multiple times.
         If <aa_seq> is set, then we update it and return the aa_seq for the final nucleotide sequence.
         """
+        # ----------------------------------------------------------------------------------------
+        def get_mfo():
+            return {'nuc_seq' : nuc_seq, 'aa_seq' : aa_seq, 'n_muts' : n_mutations, 'dbg_str' : dbg_str}
+        # ----------------------------------------------------------------------------------------
+        dbg_str = []
 
         mutabilities = None
         sequence_mutability = 1.
@@ -163,20 +194,21 @@ class MutationModel():
         lambda_sequence = sequence_mutability * lambda0  # Poisson rate for this sequence (given its relative mutability):
 
         n_mutations = numpy.random.poisson(lambda_sequence)
+        if n_mutations == 0:
+            return get_mfo()
 
         # Introduce mutations (note: we very commonly just return, i.e. if the poisson kicks up zero mutations)
-        unmutated_positions = range(len(nuc_seq))
-        if debug:
-            dbg_str = []
-            print('     adding %d mutations:  ' % n_mutations, end='')
-            sys.stdout.flush()
-        for i in range(n_mutations):
+        n_completed_muts = 0
+        available_positions = list(range(len(nuc_seq)))
+        if args.aa_struct_positions is not None and dont_mutate_struct_positions:
+            available_positions = args.nuc_non_struct_positions
+        while n_completed_muts < n_mutations:
             # Determine the position to mutate from the mutability matrix:
             mutability_p = None
             if self.context_model is not None:
-                mutability_p = scipy.array([mutabilities[pos][0] for pos in unmutated_positions])
+                mutability_p = scipy.array([mutabilities[pos][0] for pos in available_positions])
                 mutability_p /= mutability_p.sum()
-            mut_pos = scipy.random.choice(unmutated_positions, p=mutability_p)
+            mut_pos = scipy.random.choice(available_positions, p=mutability_p)
 
             # Now draw the target nucleotide using the substitution matrix
             nucs = [n for n in 'ACGT' if n != nuc_seq[mut_pos]]
@@ -185,34 +217,64 @@ class MutationModel():
                 substitution_p = [mutabilities[mut_pos][1][n] for n in nucs]
                 assert 0 <= abs(sum(substitution_p) - 1.) < 1e-10
             new_nuc = scipy.random.choice(nucs, p=substitution_p)
+            new_seq = nuc_seq[ : mut_pos] + new_nuc + nuc_seq[mut_pos + 1 :]
+            if skip_stops:
+                new_codon = local_translate(get_codon(new_seq, mut_pos))
+                if nonfunc_aa(args, new_codon):
+                    continue
+            if args.aa_struct_positions is not None and mut_pos in args.nuc_struct_positions:
+                assert not dont_mutate_struct_positions
+                old_codon, new_codon = [local_translate(get_codon(s, mut_pos)) for s in (nuc_seq, new_seq)]  # this is slow, but still way tf faster that trashing the whole sequence after doing all the mutations
+                if old_codon != new_codon:
+                    continue
             if debug:
                 dbg_str += ['%s%d%s' % (nuc_seq[mut_pos], mut_pos, new_nuc)]
-            nuc_seq = nuc_seq[ : mut_pos] + new_nuc + nuc_seq[mut_pos + 1 :]
+            nuc_seq = new_seq
             if aa_seq is not None:
                 aa_seq = replace_codon_in_aa_seq(nuc_seq, aa_seq, mut_pos)
                 self.add_translation(nuc_seq, aa_seq)
             if self.context_model is not None and self.mutation_order:  # If mutation order matters, the mutabilities of the sequence need to be updated
                 mutabilities = self.mutabilities(nuc_seq)
+            n_completed_muts += 1
 
-        if debug:
-            print('  '.join(dbg_str))
-        return {'nuc_seq' : nuc_seq, 'aa_seq' : aa_seq, 'n_muts' : n_mutations}
+        return get_mfo()
 
     # ----------------------------------------------------------------------------------------
     # Make a single target sequence with <n_muts> hamming distance from <args.naive_tseq> (nuc or aa distance according to args.metric_for_target_distance)
-    def make_target_sequence(self, args, initial_tseq, tdist, lambda0, n_max_tries=100):
-        assert not has_stop_aa(initial_tseq.aa)  # already checked during argument parsing, but we really want to make sure since the loop will blow up if there's a stop to start with
+    def make_target_sequence(self, args, initial_tseq, tdist, lambda0, n_max_tries=100, tdbg=False):
+        # ----------------------------------------------------------------------------------------
+        def print_final(tseq):
+            print('    nuc target seq:')
+            selection_utils.color_mutants(initial_tseq.nuc, tseq.nuc, print_result=True, extra_str='      ')
+            print('    aa target seq:')
+            selection_utils.color_mutants(initial_tseq.aa, tseq.aa, amino_acid=True, print_result=True, extra_str='      ')
+        # ----------------------------------------------------------------------------------------
+        assert not nonfunc_aa(args, initial_tseq.aa)  # already checked during argument parsing, but we really want to make sure since the loop will blow up if there's a stop to start with
+        if tdbg:
+            print('    making target sequence with distance %d' % tdist)
         itry = 0
         while itry < n_max_tries:
             dist = None
             tseq = initial_tseq
+            if tdbg:
+                print('     try %d:\n      target.  nuc.\n       dist.   dist.' % itry)
+                n_no_mutd, n_total_muts = 0, 0
             while dist is None or dist < tdist:
-                mfo = self.mutate(tseq.nuc, lambda0, aa_seq=tseq.aa)
+                mfo = self.mutate(args, tseq.nuc, lambda0, aa_seq=tseq.aa, skip_stops=True, dont_mutate_struct_positions=True, debug=tdbg or args.debug)
                 tseq = TranslatedSeq(args, mfo['nuc_seq'], aa_seq=mfo['aa_seq'])
                 _, dist = target_distance_fcn(args, initial_tseq, [tseq])
-                # TODO wouldn't it make more sense (or at least be faster) to give up as soon as you get a stop codon?
-                if dist >= tdist and not has_stop_aa(tseq.aa):  # greater-than is for aa-sim metric, since it's almost continuous
+                if tdbg:
+                    if mfo['n_muts'] == 0:
+                        n_no_mutd += 1
+                    else:
+                        n_total_muts += mfo['n_muts']
+                        print('      %3d     %3d    %s' % (dist, n_total_muts, '  '.join(mfo['dbg_str'])))
+                if dist >= tdist and not nonfunc_aa(args, tseq.aa):  # greater-than is for aa-sim metric, since it's almost continuous
+                    if args.debug:
+                        print_final(tseq)
                     return tseq
+            if tdbg:
+                print('     fell through on itry %d (non-func: %s)' % (itry, nonfunc_aa(args, tseq.aa)))
             itry += 1
 
         raise Exception('couldn\'t make a target sequence in %d tries (didn\'t make it to requested target distance %d, and/or had stops)' % (n_max_tries, tdist))
@@ -294,7 +356,7 @@ class MutationModel():
     def sample_intermediates(self, args, current_time, tree):
         assert len(args.obs_times) == len(args.n_to_sample)
         n_to_sample = args.n_to_sample[args.obs_times.index(current_time)]
-        live_nostop_leaves = [l for l in tree.iter_leaves() if not l.terminated and not has_stop_aa(l.aa_seq)]
+        live_nostop_leaves = [l for l in tree.iter_leaves() if not l.terminated and not nonfunc_aa(args, l.aa_seq)]
         if len(live_nostop_leaves) < n_to_sample:
             print('  %s asked to sample more leaves (%d) than are in the tree (%d) at time %d' % (selection_utils.color('red', 'warning'), n_to_sample, len(live_nostop_leaves), current_time))
             n_to_sample = len(live_nostop_leaves)
@@ -406,11 +468,11 @@ class MutationModel():
                     skip_lambda_n -= 1
 
                 def get_n_children():
-                    if not args.selection and has_stop_aa(leaf.aa_seq):
+                    if not args.selection and nonfunc_aa(args, leaf.aa_seq):
                         return 0  # note that this 0 "corresponds to" lambda_min in selection_utils.update_lambda_values()
                     return numpy.random.poisson(leaf.lambda_ if args.selection else args.lambda_)
                 n_children = get_n_children()
-                if has_stop_aa(leaf.aa_seq) and n_children > 0:  # shouldn't happen any more (it was a bug when I added selection strength scaling), but let's leave this here just in case
+                if nonfunc_aa(args, leaf.aa_seq) and n_children > 0:  # shouldn't happen any more (it was a bug when I added selection strength scaling), but let's leave this here just in case
                     print('    %s non-zero children for leaf with stop codon' % selection_utils.color('red', 'error'))
                 if current_time == 1 and len(static_live_leaves) == 1:  # if the first leaf draws zero children, keep trying so we don't have to throw out the whole tree and start over
                     itry = 0
@@ -433,10 +495,10 @@ class MutationModel():
                     n_mutation_list, kd_list = [], []
                 for _ in range(n_children):
                     if args.naive_seq2 is not None:  # for paired heavy/light we mutate them separately with their own mutation rate
-                        mfos = [self.mutate(get_pair_seq(leaf.nuc_seq, args.pair_bounds, iseq), args.lambda0[iseq]) for iseq in range(len(args.lambda0))]  # NOTE doesn't pass or get aa_seq, but the only result of that should be that self.init_node() has to calculate it
+                        mfos = [self.mutate(args, get_pair_seq(leaf.nuc_seq, args.pair_bounds, iseq), args.lambda0[iseq], skip_stops=args.skip_stops_when_mutating, dont_mutate_struct_positions=args.dont_mutate_struct_positions) for iseq in range(len(args.lambda0))]  # NOTE doesn't pass or get aa_seq, but the only result of that should be that self.init_node() has to calculate it
                         mutated_sequence = ''.join(m['nuc_seq'] for m in mfos)
                     else:
-                        mfo = self.mutate(leaf.nuc_seq, args.lambda0[0], aa_seq=leaf.aa_seq)
+                        mfo = self.mutate(args, leaf.nuc_seq, args.lambda0[0], aa_seq=leaf.aa_seq, skip_stops=args.skip_stops_when_mutating, dont_mutate_struct_positions=args.dont_mutate_struct_positions)
                         if args.debug > 1:
                             n_mutation_list.append(mfo['n_muts'])
                     child = self.init_node(args, mfo['nuc_seq'], current_time, leaf, target_seqs, aa_seq=mfo['aa_seq'], mean_kd=updated_mean_kd)
@@ -485,8 +547,8 @@ class MutationModel():
             with open(args.outbase + '_n_mutated_nuc_hdists.p', 'wb') as histfile:
                 pickle.dump(self.n_mutated_hists, histfile)
 
-        stop_leaves = [l for l in updated_live_leaves if has_stop_aa(l.aa_seq)]
-        non_stop_leaves = [l for l in updated_live_leaves if not has_stop_aa(l.aa_seq)]
+        stop_leaves = [l for l in updated_live_leaves if nonfunc_aa(args, l.aa_seq)]
+        non_stop_leaves = [l for l in updated_live_leaves if not nonfunc_aa(args, l.aa_seq)]
         if len(stop_leaves) > 0:
             print('    %d / %d leaves at final time point have stop codons' % (len(stop_leaves), len(stop_leaves) + len(non_stop_leaves)))
 
@@ -606,7 +668,7 @@ def make_plots(args, tree, collapsed_tree):
             nstyle['fgcolor'] = colors[n.nuc_seq]
         n.set_style(nstyle)
 
-    tree.render(args.outbase + '_lineage_tree.svg', tree_style=ts)
+    tree.render(args, args.outbase + '_lineage_tree.svg', tree_style=ts)
 
     # Render collapsed tree,
     # create an id-wise colormap
@@ -615,7 +677,7 @@ def make_plots(args, tree, collapsed_tree):
         colormap = {node.name:colors[node.aa_seq] for node in collapsed_tree.tree.traverse()}
     else:
         colormap = {node.name:colors[node.nuc_seq] for node in collapsed_tree.tree.traverse()}
-    collapsed_tree.render(args.outbase+'_collapsed_tree.svg', idlabel=args.idlabel, colormap=colormap)
+    collapsed_tree.render(args, args.outbase+'_collapsed_tree.svg', idlabel=args.idlabel, colormap=colormap)
     # Print colormap to file:
     with open(args.outbase+'_collapsed_tree_colormap.tsv', 'w') as f:
         for name, color in colormap.items():
@@ -630,7 +692,7 @@ def make_plots(args, tree, collapsed_tree):
         colors = {i: next(palette) for i in range(int(len(args.naive_tseq.nuc) // 3))}
         # The minimum distance to the target is colored:
         colormap = {node.name:colors[node.target_distance] for node in collapsed_tree.tree.traverse()}
-        collapsed_tree.render(args.outbase+'_collapsed_runstat_color_tree.svg', idlabel=args.idlabel, colormap=colormap)
+        collapsed_tree.render(args, args.outbase+'_collapsed_runstat_color_tree.svg', idlabel=args.idlabel, colormap=colormap)
         if not args.dont_write_hists:
             with open(args.outbase + '_min_aa_target_hdists.p', 'rb') as fh:
                 tdist_hists = pickle.load(fh)
@@ -677,6 +739,11 @@ def run_simulation(args):
     stats.to_csv(args.outbase+'_stats.tsv', sep='\t', index=False)
 
     print('  observed %d simulated sequences%s' % (sum(node.frequency for node in collapsed_tree.tree.traverse()), '' if args.no_context else ' (with context dependence)'))
+    if args.debug:
+        print('    one (arbitrary) observed leaf seq:')
+        tnode = [n for n in tree.iter_leaves() if n.frequency != 0][0]
+        selection_utils.color_mutants(args.naive_tseq.nuc, tnode.nuc_seq, print_result=True, extra_str='        ', only_print_seq=True)
+        selection_utils.color_mutants(args.naive_tseq.aa, tnode.aa_seq, amino_acid=True, print_result=True, extra_str='        ', only_print_seq=True)
 
     if not args.no_plot:  # put this before we pickledump them, so the style gets written to the pickle files
         make_plots(args, tree, collapsed_tree)
@@ -732,10 +799,14 @@ def main():
     parser.add_argument('--target_count', type=int, default=10, help='The number of target sequences to generate.')
     parser.add_argument('--target_distance', type=int, default=10, help='Desired distance (using --metric_for_target_distance) between the naive sequence and the target sequences.')
     parser.add_argument('--n_target_clusters', type=int, help='If set, divide the --target_count target sequences into --target_count / --n_target_clusters "clusters" of target sequences, where each cluster consists of one "main" sequence separated from the naive by --target_distance, surrounded by the others in the cluster at radius --target_cluster_distance. If you set numbers that aren\'t evenly divisible, then the clusters won\'t all be the same size, but the total number of targets will always be --target_count')
-    parser.add_argument('--target_cluster_distance', type=int, default=1, help='See --target_cluster_count')
+    parser.add_argument('--target_cluster_distance', type=int, default=1, help='See --n_target_clusters')
     parser.add_argument('--min_target_distance', type=int, help='If set, the target distance used to calculate affinity can never fall below this value, even if the cell\'s sequence is closer than this to a target sequence. This makes it so cells can bounce around within this threshold of distance, rather than being sucked into exactly the target sequence.')
     parser.add_argument('--metric_for_target_distance', default='aa', choices=['aa', 'nuc', 'aa-sim-ascii', 'aa-sim-blosum'], help='Metric to use to calculate the distance to each target sequence (aa: use amino acid distance, i.e. only non-synonymous mutations count, nuc: use nucleotide distance, aa-sim: amino acid distance, but where different pairs of amino acids are different distances apart, with either ascii-code-based or blosum-based distances).')
-    parser.add_argument('--paratope_positions', default='all', choices=['all', 'cdrs'], help='Positions in each sequence that should be considered as part of the paratope, i.e. that count toward the target distance (non-paratope positions are ignored for purposes of the target distance). \'all\' uses all positions, \'cdrs\' uses half the positions (not actually the cdr positions a.t.m.).')
+    parser.add_argument('--aa_paratope_positions', help='amino acid indices that should be considered as part of the paratope, i.e. that count toward the target distance (non-paratope positions are ignored for purposes of the target distance). Three ways to specify (f=<f>, N=<N>, i=<i>): f=<f> sets a fraction of positions chosen at random, if <f> is 1 it uses all remaining positions; N=<N> same as f= but sets absolute number; i=<i> specify exact positions, as a comma-separated list, where each entry in list is either a single position or a python-style slice, e.g. i=0,3,5:10 would use indices 0, 3, 5, 6, 7, 8, 9 (use \'len\' to specify the end of the sequence).')
+    parser.add_argument('--aa_struct_positions', help='amino acid indices to treat as \'structural\' positions that are either only allowed synonymous mutations (default) or forbidden mutation entirely (if --dont_mutate_struct_positions is set). Specified as for --aa_paratope_positions (which is set first, and whose positions are automatically excluded from consideratoin for --aa_struct_positions).')
+    parser.add_argument('--dont_mutate_struct_positions', action='store_true', help='if --aa_paratope_positions is set, by default we allow synonymous mutations at these positions, but this forbids mutations entirely (and is much faster)')
+    parser.add_argument('--allow_stops_in_functional_seqs', action='store_true', help='treat seqs with stop codons as functional')
+    parser.add_argument('--skip_stops_when_mutating', action='store_true', help='when selecting nucleotide mutations, skip any mutations that would result in a stop codon (this is partly designed as a speed optimization, and partly to make it harder for trees to go extinct with low selection strength)')
     parser.add_argument('--naive_seq2', help='Second seed naive nucleotide sequence. For simulating heavy/light chain co-evolution.')
     parser.add_argument('--naive_kd', type=float, default=100, help='kd of the naive sequence in nano molar.')
     parser.add_argument('--mature_kd', type=float, default=1, help='kd of the mature sequences in nano molar.')
@@ -799,9 +870,36 @@ def main():
     #     n_pads_added = 3 - (len(args.naive_seq) % 3)
     #     args.naive_seq += 'N' * n_pads_added
     #     args.n_pads_added = n_pads_added
+    if args.skip_stops_when_mutating and args.allow_stops_in_functional_seqs:
+        raise Exception('--skip_stops_when_mutating has no effect if --allow_stops_in_functional_seqs is also set')
+    if args.aa_paratope_positions is None:
+        args.nuc_paratope_positions = None
+    else:
+        args.aa_paratope_positions = parse_ipos_arg(args.aa_paratope_positions, local_translate(args.naive_seq))
+        if len(args.aa_paratope_positions) < args.target_distance:
+            raise Exception('number of paratope positions can\'t be less than the target distance')
+        args.nuc_paratope_positions = [j for i in args.aa_paratope_positions for j in (3*i, 3*i+1, 3*i+2)]
+    if args.aa_struct_positions is not None:  # set up some stuff to allow fast comparison
+        args.aa_struct_positions = parse_ipos_arg(args.aa_struct_positions, local_translate(args.naive_seq), exclude_positions=args.aa_paratope_positions)
+        if args.aa_paratope_positions is not None and len(set(args.aa_paratope_positions) & set(args.aa_struct_positions)) > 0:
+            raise Exception('overlap between --aa_paratope_positions and aa_struct_positions: %s' % (set(args.aa_paratope_positions) & set(args.aa_struct_positions)))
+        args.nuc_struct_positions = [inuc for iaa in args.aa_struct_positions for inuc in range(3*iaa, 3*iaa+3)]
+        args.nuc_non_struct_positions = [i for i in range(len(args.naive_seq)) if i not in args.nuc_struct_positions]
     args.naive_tseq = TranslatedSeq(args, args.naive_seq)
     delattr(args, 'naive_seq')  # I think this is the most sensible thing to to
-    if has_stop_aa(args.naive_tseq.aa):
+    if args.debug:
+        def getcol(ipos, char, aa=False):
+            if args.aa_paratope_positions is not None:
+                if (not aa and ipos in args.nuc_paratope_positions) or (aa and ipos in args.aa_paratope_positions):
+                    return color('red', char)
+            if args.aa_struct_positions is not None:
+                if (not aa and ipos in args.nuc_struct_positions) or (aa and ipos in args.aa_struct_positions):
+                    return color('blue', char)
+            return char
+        print('    naive seq%s%s:' % ('' if args.aa_paratope_positions is None else color('red', ' paratope'), '' if args.aa_struct_positions is None else color('blue', ' structural')))
+        print('        %s' % ''.join(getcol(i, c) for i, c in enumerate(args.naive_tseq.nuc)))
+        print('        %s' % ''.join(getcol(i, c, aa=True) for i, c in enumerate(args.naive_tseq.aa)))
+    if nonfunc_aa(args, args.naive_tseq.aa):
         raise Exception('stop codon in --naive_seq (this isn\'t necessarily otherwise forbidden, but it\'ll quickly end you in a thicket of infinite loops, so should be corrected).')
 
     if [getattr(args, sc) for sc in stop_crits].count(None) == len(stop_crits):
@@ -824,7 +922,8 @@ def main():
             raise Exception('--obs_times must be sorted (we could sort them here, but then you might think you didn\'t need to worry about the order of --n_to_sample being the same)')
 
     if args.naive_seq2 is not None:
-        # print('%s not padding naive_seq2 to length multiple of 3' % selection_utils.color('red', 'warning:'))
+        assert args.aa_struct_positions is None  # needs implementing
+        # print('%s not padding naive_seq2 to length multiple of 3' % color('red', 'warning:'))
         if len(args.lambda0) == 1:  # Use the same mutation rate on both sequences
             args.lambda0 = [args.lambda0[0], args.lambda0[0]]
         elif len(args.lambda0) != 2:
@@ -833,8 +932,8 @@ def main():
             args.naive_tseq.nuc += 'N' * (3 - len(args.naive_tseq.nuc) % 3)
         args.pair_bounds = ((0, len(args.naive_tseq.nuc)), (len(args.naive_tseq.nuc), len(args.naive_tseq.nuc + args.naive_seq2)))  # bounds to allow mashing the two sequences toegether as one string
         args.naive_tseq = TranslatedSeq(args, args.naive_tseq.nuc + args.naive_seq2.upper())  # merge the two seqeunces to simplify future dealing with the pair:
-        if has_stop(args.naive_tseq.nuc):
-            raise Exception('stop codon in --naive_seq2 (this isn\'t necessarily otherwise forbidden, but it\'ll quickly end you in a thicket of infinite loops, so should be corrected).')
+        # if nonfunc_nuc(XXX needs testing args, args.naive_tseq.nuc):
+        #     raise Exception('stop codon in --naive_seq2 (this isn\'t necessarily otherwise forbidden, but it\'ll quickly end you in a thicket of infinite loops, so should be corrected).')
 
     if not os.path.exists(os.path.dirname(args.outbase)):
         os.makedirs(os.path.dirname(args.outbase))
@@ -848,7 +947,7 @@ def main():
         args.logi_params = selection_utils.find_logistic_params(args.f_full, args.U)  # calculate the parameters for the logistic function
     else:
         if args.selection_strength > 0.:  # yes, this will get triggered by fully-default parameters, but the default parameters kind of suck, I just don't want to/can't change them cause of backwards compatibility
-            print('  %s --selection-strength is greater than zero (%.2f), but --selection was not set (i.e. this is neutral simulation), so --selection-strength will have no effect' % (selection_utils.color('yellow', 'warning'), args.selection_strength))
+            print('  %s --selection-strength is greater than zero (%.2f), but --selection was not set (i.e. this is neutral simulation), so --selection-strength will have no effect' % (color('yellow', 'warning'), args.selection_strength))
 
     run_simulation(args)
 

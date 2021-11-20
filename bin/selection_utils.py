@@ -23,7 +23,7 @@ import csv
 import math
 warnings.filterwarnings('ignore', 'The iteration is not making good progress')  # scipy.optimize.fsolve() is throwing this. I think it's telling us that our initial guess isn't very good, but as far as I can tell (without understanding kristian's code here) it ends up at a fine solution in the end, so maybe it's ok to turn off this warning
 
-from GCutils import has_stop_aa, hamming_distance, local_translate
+from GCutils import nonfunc_aa, hamming_distance, local_translate
 
 # ----------------------------------------------------------------------------------------
 # it might make replace_codon_in_aa_seq() faster to use a table here of precached translations, but translation just isn't taking that much time a.t.m.
@@ -162,7 +162,7 @@ def target_distance_fcn(args, this_seq, target_seqs):
 
 # ----------------------------------------------------------------------------------------
 def calc_kd(node, args):
-    if has_stop_aa(node.aa_seq):  # nonsense sequences have zero affinity/infinite kd
+    if nonfunc_aa(args, node.aa_seq):  # nonsense sequences have zero affinity/infinite kd
         return float('inf')
     if not args.selection:
         return 1.
@@ -389,6 +389,48 @@ def color(col, seq, width=None, padside='left'):
         else:
             assert False
     return ''.join(return_str)
+
+# ----------------------------------------------------------------------------------------
+# very minimal copy of partis utils fcn of same name
+# NOTE returns seqs in opposite order to which you pass in (for compatibility with partis version)
+def color_mutants(ref_seq, seq, print_result=False, extra_str='', print_n_snps=False, only_print_seq=False, amino_acid=False):
+    if len(ref_seq) != len(seq):
+        raise Exception('unequal lengths in color_mutants()\n    %s\n    %s' % (ref_seq, seq))
+
+    gap_chars = ['.', '-']
+    if amino_acid:
+        tmp_ambigs = ['X']
+        tmp_gaps = gap_chars
+    else:
+        tmp_ambigs = list('NRYKMSWBDHV')
+        tmp_gaps = gap_chars
+
+    return_str, isnps = [], []
+    for inuke in range(len(seq)):
+        rchar = ref_seq[inuke]
+        char = seq[inuke]
+        if char in tmp_ambigs or rchar in tmp_ambigs:
+            char = color('blue', char)
+        elif char in tmp_gaps or rchar in tmp_gaps:
+            char = color('blue', char)
+        elif char != rchar:
+            char = color('red', char)
+            isnps.append(inuke)
+        return_str.append(char)
+
+    n_snp_str = ''
+    if print_n_snps:
+        n_snp_str = ' %3d' % len(isnps)
+        if len(isnps) == 0:
+            n_snp_str = color('blue', n_snp_str)
+    if print_result:
+        if not only_print_seq:
+            ref_print_str = ''.join([color('blue' if c in tmp_ambigs + tmp_gaps else None, c) for c in ref_seq])
+            print('%s%s%s' % (extra_str, ref_print_str, '  hdist' if print_n_snps else ''))
+        print('%s%s' % (extra_str, ''.join(return_str) + n_snp_str))
+
+    ref_str = ''.join([ch if ch not in tmp_gaps else color('blue', ch) for ch in ref_seq])
+    return [extra_str + ''.join(return_str), ref_str]
 
 # ----------------------------------------------------------------------------------------
 def choose_new_uid(potential_names, used_names, initial_length=1, shuffle=False):  # NOTE duplicates code in partis/python/utils.py
