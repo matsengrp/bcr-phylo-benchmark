@@ -3,7 +3,6 @@
 from __future__ import absolute_import
 from Bio.Seq import Seq
 from Bio.Seq import translate as bio_translate
-from Bio.Alphabet import generic_dna
 from ete3 import TreeNode, NodeStyle, TreeStyle, TextFace, CircleFace, PieChartFace, faces, SVG_COLORS
 import scipy
 import numpy as np
@@ -15,18 +14,18 @@ try:
 except:
     import pickle
 
-try:
-    import jellyfish
+#try:
+    #import jellyfish
 
-    def hamming_distance(s1, s2):
-        if s1 == s2:
-            return 0
-        else:
-            return jellyfish.hamming_distance(unicode(s1), unicode(s2))
-except:
-    def hamming_distance(seq1, seq2):
-        '''Hamming distance between two sequences of equal length'''
-        return sum(x != y for x, y in zip(seq1, seq2))
+    #def hamming_distance(s1, s2):
+        #if s1 == s2:
+            #return 0
+        #else:
+            #return jellyfish.hamming_distance(s1, s2)
+#except:
+def hamming_distance(seq1, seq2):
+    '''Hamming distance between two sequences of equal length'''
+    return sum(x != y for x, y in zip(seq1, seq2))
     print('Couldn\'t find the python module "jellyfish" which is used for fast string comparison. Falling back to pure python function.')
 
 global ISO_TYPE_ORDER
@@ -44,10 +43,11 @@ def local_translate(seq):
 
 # ----------------------------------------------------------------------------------------
 def replace_codon_in_aa_seq(new_nuc_seq, old_aa_seq, inuc):  # <inuc>: single nucleotide position that was mutated from old nuc seq (which corresponds to old_aa_seq) to new_nuc_seq
-    istart = 3 * int(math.floor(inuc / 3.))  # nucleotide position of start of mutated codon
+    istart = 3 * math.floor(inuc / 3)  # nucleotide position of start of mutated codon
+    aa_new = math.floor(inuc / 3)
     new_codon = local_translate(new_nuc_seq[istart : istart + 3])
-    return old_aa_seq[:inuc / 3] + new_codon + old_aa_seq[inuc / 3 + 1:]  # would be nice to check for synonymity and not do any translation unless we need to
-
+    new_seq = old_aa_seq[:aa_new] + new_codon + old_aa_seq[aa_new + 1:]  # would be nice to check for synonymity and not do any translation unless we need to
+    return new_seq 
 # ----------------------------------------------------------------------------------------
 class TranslatedSeq(object):
     # ----------------------------------------------------------------------------------------
@@ -270,7 +270,7 @@ class CollapsedTree():
         if idlabel:
             aln = MultipleSeqAlignment([])
             for node in self.tree.traverse():
-                aln.append(SeqRecord(Seq(str(node.nuc_seq), generic_dna), id=node.name, description='abundance={}'.format(node.frequency)))
+                aln.append(SeqRecord(Seq(str(node.nuc_seq)), id=node.name, description='abundance={}'.format(node.frequency)))
             AlignIO.write(aln, open(os.path.splitext(outfile)[0] + '.fasta', 'w'), 'fasta')
 
     def write(self, file_name):

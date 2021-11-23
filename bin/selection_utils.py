@@ -25,110 +25,234 @@ warnings.filterwarnings('ignore', 'The iteration is not making good progress')  
 
 from GCutils import has_stop_aa, hamming_distance, local_translate
 
-#ADD 
-from torchdms import utils 
-import torch
-
 # ----------------------------------------------------------------------------------------
 # it might make replace_codon_in_aa_seq() faster to use a table here of precached translations, but translation just isn't taking that much time a.t.m.
 all_codons = [''.join(c) for c in itertools.product('ACGT', repeat=3)]
 all_amino_acids = set(local_translate(c) for c in all_codons)  # note: includes stop codons (*)
 
 # ----------------------------------------------------------------------------------------
-#MODIFY Load torchdms model and define the onehot encoding function 
-data_path = 'data/dummy_file_name.pkl'
-data = utils.from_pickle_file(data_path)
-wtseq = data.val.wtseq
-alphabet = data.val.alphabet
-
-#Might be able to remove the seq_to_onehot function
-def seq_to_onehot(seq, alphabet):
-    """ Take a given aa-sequence and return it's onehot encoding.
-    Args:
-        - seq (string): The amino acid sequence to be converted (should be same 
-                        length as WT for now)
-        - alphabet (dict): A dictionary of characters representing amino acids.
-    
-    Returns:
-        - encoding (torch.Tensor): A 1-hot encoding of `seq`, appropriate for `torchdms`
-    """
-    # Get indicies to place 1s for present amino acids.
-    alphabet_dict = {letter: idx for idx, letter in enumerate(alphabet)}
-    seq_idx = [alphabet_dict[aa] for aa in seq]
-    indicies = torch.zeros(len(seq), dtype=torch.int, requires_grad=False)
-    for site, _ in enumerate(seq):
-        indicies[site] = (site * len(alphabet)) + seq_idx[site]
-    
-    # Generate encoding.
-    encoding = torch.zeros((1, len(seq)*len(alphabet)), requires_grad=False)
-    for idx in indicies.data:
-        encoding[0, idx] = 1
-    
-    return encoding
+def aa_ascii_code_distance(aa1, aa2):  # super arbitrary, but at least for the moment we just want some arbitrary spread in distances
+    return abs(ord(aa2) - ord(aa1))
 
 # ----------------------------------------------------------------------------------------
-#MODIFY changed the calc_kd function to calculate both kd and BCR expression level using torchdms model 
-def calc_kd_and_exp(node, args): 
-    #want to check if stop codon before loading - QUESTION: will the torchDMS model automatically calculate that? 
+#  Matrix made by matblas from blosum62.iij
+#  * column uses minimum score
+#  BLOSUM Clustered Scoring Matrix in 1/2 Bit Units
+#  Blocks Database = /data/blocks_5.0/blocks.dat
+#  Cluster Percentage: >= 62
+#  Entropy =   0.6979, Expected =  -0.5209
+blosum_text = """   A  R  N  D  C  Q  E  G  H  I  L  K  M  F  P  S  T  W  Y  V  B  Z  X  *
+                 A  4 -1 -2 -2  0 -1 -1  0 -2 -1 -1 -1 -1 -2 -1  1  0 -3 -2  0 -2 -1  0 -4
+                 R -1  5  0 -2 -3  1  0 -2  0 -3 -2  2 -1 -3 -2 -1 -1 -3 -2 -3 -1  0 -1 -4
+                 N -2  0  6  1 -3  0  0  0  1 -3 -3  0 -2 -3 -2  1  0 -4 -2 -3  3  0 -1 -4
+                 D -2 -2  1  6 -3  0  2 -1 -1 -3 -4 -1 -3 -3 -1  0 -1 -4 -3 -3  4  1 -1 -4
+                 C  0 -3 -3 -3  9 -3 -4 -3 -3 -1 -1 -3 -1 -2 -3 -1 -1 -2 -2 -1 -3 -3 -2 -4
+                 Q -1  1  0  0 -3  5  2 -2  0 -3 -2  1  0 -3 -1  0 -1 -2 -1 -2  0  3 -1 -4
+                 E -1  0  0  2 -4  2  5 -2  0 -3 -3  1 -2 -3 -1  0 -1 -3 -2 -2  1  4 -1 -4
+                 G  0 -2  0 -1 -3 -2 -2  6 -2 -4 -4 -2 -3 -3 -2  0 -2 -2 -3 -3 -1 -2 -1 -4
+                 H -2  0  1 -1 -3  0  0 -2  8 -3 -3 -1 -2 -1 -2 -1 -2 -2  2 -3  0  0 -1 -4
+                 I -1 -3 -3 -3 -1 -3 -3 -4 -3  4  2 -3  1  0 -3 -2 -1 -3 -1  3 -3 -3 -1 -4
+                 L -1 -2 -3 -4 -1 -2 -3 -4 -3  2  4 -2  2  0 -3 -2 -1 -2 -1  1 -4 -3 -1 -4
+                 K -1  2  0 -1 -3  1  1 -2 -1 -3 -2  5 -1 -3 -1  0 -1 -3 -2 -2  0  1 -1 -4
+                 M -1 -1 -2 -3 -1  0 -2 -3 -2  1  2 -1  5  0 -2 -1 -1 -1 -1  1 -3 -1 -1 -4
+                 F -2 -3 -3 -3 -2 -3 -3 -3 -1  0  0 -3  0  6 -4 -2 -2  1  3 -1 -3 -3 -1 -4
+                 P -1 -2 -2 -1 -3 -1 -1 -2 -2 -3 -3 -1 -2 -4  7 -1 -1 -4 -3 -2 -2 -1 -2 -4
+                 S  1 -1  1  0 -1  0  0  0 -1 -2 -2  0 -1 -2 -1  4  1 -3 -2 -2  0  0  0 -4
+                 T  0 -1  0 -1 -1 -1 -1 -2 -2 -1 -1 -1 -1 -2 -1  1  5 -2 -2  0 -1 -1  0 -4
+                 W -3 -3 -4 -4 -2 -2 -3 -2 -2 -3 -2 -3 -1  1 -4 -3 -2 11  2 -3 -4 -3 -2 -4
+                 Y -2 -2 -2 -3 -2 -1 -2 -3  2 -1 -1 -2 -1  3 -3 -2 -2  2  7 -1 -3 -2 -1 -4
+                 V  0 -3 -3 -3 -1 -2 -2 -3 -3  3  1 -2  1 -1 -2 -2  0 -3 -1  4 -3 -2 -1 -4
+                 B -2 -1  3  4 -3  0  1 -1  0 -3 -4  0 -3 -3 -2  0 -1 -4 -3 -3  4  1 -1 -4
+                 Z -1  0  0  1 -3  3  4 -2  0 -3 -3  1 -1 -3 -1  0 -1 -3 -2 -2  1  4 -1 -4
+                 X  0 -1 -1 -1 -2 -1 -1 -1 -1 -1 -1 -1 -1 -1 -2  0  0 -2 -1 -1 -1 -1 -1 -4
+                 * -4 -4 -4 -4 -4 -4 -4 -4 -4 -4 -4 -4 -4 -4 -4 -4 -4 -4 -4 -4 -4 -4 -4  1"""
+def init_blosum():
+    blines = []
+    for line in blosum_text.split('\n'):
+        blines.append(line.strip().split())
+    top_headers = blines.pop(0)
+    left_headers = []
+    for bline in blines:
+        left_headers.append(bline.pop(0))
+    assert top_headers == left_headers
+    for ibl, bline in enumerate(blines):
+        assert len(bline) == len(top_headers)
+        for ival, val in enumerate(bline):
+            top_aa = top_headers[ival]
+            left_aa = left_headers[ibl]
+            if top_aa not in all_amino_acids or left_aa not in all_amino_acids:  # blosum table has ambiguous codes
+                continue
+            if top_aa == left_aa:  # add them later as a semi-arbitrary value, we have to ignore the values in the table since they're different for different amino acids
+                continue
+            blinfo[top_aa][left_aa] = -float(val)
+    min_val = min(blinfo[aa1][aa2] for aa1 in blinfo for aa2 in blinfo[aa1] if blinfo[aa1][aa2] is not None)
+    for aa in all_amino_acids:
+        blinfo[aa][aa] = min_val - 1.  # arbitrary, but ok. The diagonal of the matrix varies from -4 to -11, and this gives a.t.m. about -4
+
+blinfo = {aa1 : {aa2 : None for aa2 in all_amino_acids} for aa1 in all_amino_acids}
+init_blosum()
+sdists = {  # config info necessary for rescaling the two versions of aa similarity distance
+        'ascii' : {
+            'scale_min' : 0.,  # you want the mean to be kinda sorta around 1, so the --target_dist ends up being comparable
+            'scale_max' : 4.7,
+            },
+        'blosum' : {
+            'scale_min' : 0.,
+            # 'scale_max' : 3.95,  # use this value if you go back to taking the exp() (note that now the exp() would need to be added in two places)
+            'scale_max' : 1.55,
+            },
+        }
+for sdtype, sdinfo in sdists.items():
+    if sdtype == 'ascii':
+        dfcn = aa_ascii_code_distance
+    elif sdtype == 'blosum':
+        dfcn = lambda aa1, aa2: blinfo.get(aa1).get(aa2)
+    else:
+        assert False
+    vals = [dfcn(aa1, aa2) for aa1, aa2 in itertools.combinations_with_replacement(all_amino_acids, 2)]
+    for bound in ['min', 'max']:
+        sdinfo[bound] = __builtins__[bound](vals)
+
+# ----------------------------------------------------------------------------------------
+def aa_inverse_similarity(aa1, aa2, sdtype, dont_rescale=False):
+    if sdtype == 'ascii':
+        return_val = aa_ascii_code_distance(aa1, aa2)
+    elif sdtype == 'blosum':
+        return_val = blinfo[aa1][aa2]
+    else:
+        assert False
+    if not dont_rescale:  # rescale the differences in ascii codes or blosum values for the aa letters to the range [sdists[sdtype]['scale_min'], sdists[sdtype]['scale_max']] (so the mean is around one, so it's similar to the hamming distance)
+        sdfo = sdists[sdtype]
+        return_val = sdfo['scale_min'] + (return_val - sdfo['min']) * (sdfo['scale_max'] - sdfo['scale_min']) / float(sdfo['max'] - sdfo['min'])
+    return return_val
+
+# ----------------------------------------------------------------------------------------
+def plot_sdists():
+    for aa1 in all_amino_acids:
+        print(aa1)
+        print('         blosum          ascii')
+        print('       raw  rescaled   raw   rescaled')
+        for aa2 in all_amino_acids:
+            print('   %s  %5.2f  %5.2f    %5.1f  %5.2f' % (aa2,
+                aa_inverse_similarity(aa1, aa2, 'blosum', dont_rescale=True), aa_inverse_similarity(aa1, aa2, 'blosum'),
+                aa_inverse_similarity(aa1, aa2, 'ascii', dont_rescale=True), aa_inverse_similarity(aa1, aa2, 'ascii')))
+            import plotutils
+    for sdtype in ['ascii', 'blosum']:
+        print(sdtype)
+        all_rescaled_vals = [aa_inverse_similarity(aa1, aa2, sdtype=sdtype) for aa1, aa2 in itertools.combinations_with_replacement(all_amino_acids, 2)]
+        print(' mean %.3f  min %.1f  max %.1f' % (numpy.mean(all_rescaled_vals), min(all_rescaled_vals), max(all_rescaled_vals)))
+        fig, ax = plotutils.mpl_init()
+        ax.hist(all_rescaled_vals, bins=45)
+        plotutils.mpl_finish(ax, os.getcwd(), sdtype, xlabel='rescaled %s distance' % sdtype, ylabel='AA pairs')
+
+# ----------------------------------------------------------------------------------------
+def target_distance_fcn(args, this_seq, target_seqs):
+    if args.metric_for_target_distance == 'aa':
+        tdists = [(i, hamming_distance(this_seq.dseq('aa'), t.dseq('aa'))) for i, t in enumerate(target_seqs)]  # this is annoyingly complicated because we want to also return *which* target sequence was the closest one, which we have to do here now (instead of afterward) since it depends on which metric we're using
+    elif args.metric_for_target_distance == 'nuc':
+        tdists = [(i, hamming_distance(this_seq.dseq('nuc'), t.dseq('nuc'))) for i, t in enumerate(target_seqs)]
+    elif 'aa-sim' in args.metric_for_target_distance:
+        assert len(args.metric_for_target_distance.split('-')) == 3
+        sdtype = args.metric_for_target_distance.split('-')[2]
+        tdists = [(i, sum(aa_inverse_similarity(aa1, aa2, sdtype) for aa1, aa2 in zip(this_seq.dseq('aa'), t.dseq('aa')) if aa1 != aa2)) for i, t in enumerate(target_seqs)]
+    else:
+        raise Exception('unsupported --metric_for_target_distance \'%s\'' % args.metric_for_target_distance)
+    itarget, tdist = min(tdists, key=operator.itemgetter(1))
+    return itarget, tdist
+
+# ----------------------------------------------------------------------------------------
+def count_aa(aa_seq,which_aa):
+    list_of_aa = list(aa_seq)
+    res1 = []
+    for i in range(len(list_of_aa)):
+        if list_of_aa[i] == which_aa:
+            res1.append(i)
+    return len(res1)
+
+def count_not_that_aa(aa_seq,which_aa):
+    list_of_aa = list(aa_seq)
+    res1 = []
+    for i in range(len(list_of_aa)):
+        if list_of_aa[i] != which_aa:
+            res1.append(i)
+    return len(res1)
+
+def calc_kd(node, args):
     if has_stop_aa(node.aa_seq):  # nonsense sequences have zero affinity/infinite kd
-        return [float, 0]
-    variant_encoding = seq_to_onehot(node.aa_seq, alphabet)
-    variant_preds = model(variant_encoding[0:1])
-    #unsure whether the line below is still needed 
-    #assert args.mature_kd < args.naive_kd
-    kd = torch.flatten(variant_preds)[0]  # transformation from amino acid sequence to kd, arbitrarily used 0 index for kd, unsure in actual model
-    exp = torch.flatten(variant_preds)[1]  # transformation from amino acid sequence to BCR expression, need to add an attribute for this 
-    return [kd, exp]
+        return float('inf')
+    if not args.selection:
+        return 1.
+
+    #tdist = node.target_distance if args.min_target_distance is None else max(node.target_distance, args.min_target_distance)
+    #kd = args.mature_kd + (args.naive_kd - args.mature_kd) * (tdist / float(args.target_distance))**args.k_exp  # transformation from distance to kd
+    #kd = 100 - 3*min(count_not_that_aa(node.aa_seq,'A'),33)
+    kd = 100 - 12*min(count_aa(node.aa_seq,'L'),9)
+    return kd
+
+def calc_B_exp(node, args):
+    if has_stop_aa(node.aa_seq):  # nonsense sequences have no production 
+        B_exp = 0
+    if not args.selection:
+        return 10000
+    #B_exp = 5000 + 250*min(count_aa(node.aa_seq,'T'),15)
+    #B_exp = 5000 + 250*min(count_aa(node.aa_seq,'L'),15)
+    B_exp = 5000
+    if B_exp == 0:
+        print(node.aa_seq)
+    return B_exp
 
 # ----------------------------------------------------------------------------------------
 def update_lambda_values(live_leaves, A_total, B_total, logi_params, selection_strength, lambda_min=10e-10):
     ''' update the lambda_ feature (parameter for the poisson progeny distribution) for each leaf in <live_leaves> '''
 
     # ----------------------------------------------------------------------------------------
-    #Since each B cell now has its own BCR expression level, must calculate B_total
+    #Since each B cell now has its own BCR expression level, would need to calculate B_total
     def sum_of_B(B_n):
-        B_total = scipy.sum(B_n)
+        B_total = numpy.sum(B_n)
         return B_total
-    
+
     def calc_BnA(Kd_n, A, B_n):
         '''
         This calculates the fraction B:A (B bound to A), at equilibrium also referred to as "binding time",
         of all the different Bs in the population given the number of free As in solution.
         '''
-        #changed so B_total is B_n
-        #original expression BnA = B_total/(1+Kd_n/A)
         BnA = B_n/(1+Kd_n/A)
-        return BnA
+        return(BnA)
 
     # ----------------------------------------------------------------------------------------
-    #Changed to use B_n array instead of B_total 
     def return_objective_A(Kd_n, A_total, B_n):
         '''
         The objective function that solves the set of differential equations setup to find the number of free As,
         at equilibrium, given a number of Bs with some affinity listed in Kd_n.
         '''
-        return lambda A: (A_total - (A + scipy.sum(B_n/(1+Kd_n/A))))**2  #is it as simple as replacing B_total with B_n here?
-
+        return lambda A: (A_total - (A + numpy.sum(B_n/(1+Kd_n/A))))**2
     # ----------------------------------------------------------------------------------------
     def calc_binding_time(Kd_n, A_total, B_n):
         '''
         Solves the objective function to find the number of free As and then uses this,
         to calculate the fraction B:A (B bound to A) for all the different Bs.
         '''
-        # B_total = sum_of_B(B_n), just here in case B_total is still needed at some point, but currently only using B_n array
         obj = return_objective_A(Kd_n, A_total, B_n)
         # Different minimizers have been tested and 'L-BFGS-B' was significant faster than anything else:
         obj_min = minimize(obj, A_total, bounds=[[1e-10, A_total]], method='L-BFGS-B', tol=1e-20)
         BnA = calc_BnA(Kd_n, obj_min.x[0], B_n)
+        #print(Kd_n)
+        #print(obj_min.x[0])
+        #print(B_n) 
         # Terminate if the precision is not good enough:
-        assert(BnA.sum()+obj_min.x[0]-A_total < A_total/100)
+        assert(BnA.sum()+obj_min.x[0]-A_total < A_total/100) 
         return BnA
 
     # ----------------------------------------------------------------------------------------
     def trans_BA(BnA):
         '''Transform the fraction B:A (B bound to A) to a poisson lambda between 0 and 2.'''
         # We keep alpha to enable the possibility that there is a minimum lambda_:
-        lambda_ = alpha + (2 - alpha) / (1 + Q*scipy.exp(-beta*BnA))
+        #print(beta)
+        #print(BnA)
+        power_val = -beta*BnA
+        power_val[power_val < -125] = -125
+        #lambda_ = 2*(alpha + (2 - alpha) / (1 + Q*numpy.exp(-beta*BnA))) 
+        lambda_ = 2*(alpha + (2 - alpha) / (1 + Q*numpy.exp(power_val))) ##multiplied by 2 here 
         return [max(lambda_min, l) for l in lambda_]
 
     # ----------------------------------------------------------------------------------------
@@ -156,9 +280,8 @@ def update_lambda_values(live_leaves, A_total, B_total, logi_params, selection_s
 
     # ----------------------------------------------------------------------------------------
     alpha, beta, Q = logi_params
-    Kd_n = scipy.array([l.Kd for l in live_leaves])
-    #Added line to define B_n similarly to Kd_n 
-    B_n = scipy.array([l.B_exp for l in live_leaves])
+    Kd_n = numpy.array([l.Kd for l in live_leaves])
+    B_n = numpy.array([l.B_exp for l in live_leaves])
     BnA = calc_binding_time(Kd_n, A_total, B_n)  # get list of binding time values for each cell
     new_lambdas = trans_BA(BnA)  # convert binding time list to list of poisson lambdas for each cell (which determine number of offspring)
     if selection_strength < 1:
@@ -167,19 +290,19 @@ def update_lambda_values(live_leaves, A_total, B_total, logi_params, selection_s
         leaf.lambda_ = new_lambda
     return new_lambdas
 
-# ---------------------------------------------------------------------------------------- 
-def find_A_total(carry_cap, B_n, f_full, mature_kd, U):
+# ----------------------------------------------------------------------------------------
+def find_A_total(carry_cap, B_total, f_full, mature_kd, U):
     # find the total amount of A necessary for sustaining the specified carrying capacity
-    def A_total_fun(A, some_fixed_B_total, Kd_n): return(A + scipy.sum(some_fixed_B_total/(1+Kd_n/A)))
+    def A_total_fun(A, B_total, Kd_n): return(A + scipy.sum(B_total/(1+Kd_n/A)))
 
     def C_A(A, A_total, f_full, U): return(U * (A_total - A) / f_full)
 
-    def A_obj(carry_cap, some_fixed_B_total, f_full, Kd_n, U):
-            def obj(A): return((carry_cap - C_A(A, A_total_fun(A, some_fixed_B_total, Kd_n), f_full, U))**2)
-            return obj
+    def A_obj(carry_cap, B_total, f_full, Kd_n, U):
+        def obj(A): return((carry_cap - C_A(A, A_total_fun(A, B_total, Kd_n), f_full, U))**2)
+        return obj
 
-    Kd_n = scipy.array([mature_kd] * carry_cap)
-    obj = A_obj(carry_cap, some_fixed_B_total, f_full, Kd_n, U)
+    Kd_n = numpy.array([mature_kd] * carry_cap)
+    obj = A_obj(carry_cap, B_total, f_full, Kd_n, U)
     # Some funny "zero encountered in true_divide" errors are not affecting results so ignore them:
     old_settings = scipy.seterr(all='ignore')  # Keep old settings
     scipy.seterr(divide='ignore')
@@ -193,7 +316,6 @@ def find_A_total(carry_cap, B_n, f_full, mature_kd, U):
 
 # ----------------------------------------------------------------------------------------
 # calculate the parameters for the logistic function, i.e. (alpha, beta, Q)
-#QUESTION: Should we calculate these or directly feed them in as arguments to test our inference capabilities? 
 def find_logistic_params(f_full, U):
     assert(U > 1)
     def T_BA(BA, lparams):
@@ -235,24 +357,123 @@ def find_logistic_params(f_full, U):
     return lparams  # tuple with (alpha, beta, Q)
 
 # ----------------------------------------------------------------------------------------
-def plot_runstats(scatter_value, scatter_index, metric):
+def plot_runstats(tdist_hists, outbase, colors):
+    def make_bounds(tdist_hists):  # tdist_hists: list (over generations) of scipy.hists of min distance to [any] target over leaves
+        # scipy.hist is two arrays: [0] is bin counts, [1] is bin x values (not sure if low, high, or centers)
+        all_counts = None  # sum over generations of number of leaves in each bin (i.e. at each min distance to target sequence)
+        for hist in tdist_hists:
+            if all_counts is None:
+                all_counts = hist[0].copy()
+            else:
+                all_counts += hist[0]
+        imin, imax = None, None
+        for j, count in enumerate(all_counts):
+            if imin is None and count > 0:
+                imin = j
+            elif count > 0:
+                imax = j
+        return(imin, imax)
+
+    tdist_hists = [h for h in tdist_hists if h is not None]  # the initial list of hist is filled with none values to length max(args.obs_times), but then if we stop because of another criterion some of the nones are still there, so i guess just remove them here for plotting
+    pop_size = scipy.array([sum(r[0]) for r in tdist_hists])  # total population size
+    bounds = make_bounds(tdist_hists)  # bin indices of the min and max hamming distances to plot
+    if None in bounds:
+        print('  note: couldn\'t get bounds for runstat hists, so not writing')
+        return
+
     fig = plt.figure()
     ax = plt.subplot(111)
-    ax.scatter(scatter_index, scatter_value)
+    t = scipy.array(list(range(len(pop_size))))  # The x-axis are generations
+    ax.plot(t, pop_size, lw=2, label='all cells')  # Total population size is plotted
+    # Then plot the counts for each hamming distance as a function on generation:
+    for ibin in list(range(*bounds)):
+        color = colors[ibin]
+        ax.plot(t, scipy.array([r[0][ibin] for r in tdist_hists]), lw=2, color=color, label='distance {}'.format(ibin))
+
+    plt.legend(bbox_to_anchor=(1.05, 1), loc=2, borderaxespad=0)
+
+    # Shrink current axis by 20% to make the legend fit:
+    box = ax.get_position()
+    ax.set_position([box.x0, box.y0, box.width * 0.8, box.height])
+
+    plt.ylabel('count')
+    plt.xlabel('GC generation')
+    plt.title('population over time of cells grouped by min. distance to target')
+    fig.savefig(outbase + '.selection_sim.runstats.pdf')
+
+def make_list(array):
+    #print(type(array)) 
+    dummy_list = []
+    for row in array:
+        dummy_list.append(numpy.ndarray.tolist(row))
+        #dummy_list.append(row)
+        #print(row)
+        #print(type(row))
+    return dummy_list
+
+def make_equal_lengths(a):
+    row_lengths = []
+    for row in a:
+        row_lengths.append(len(row))
+        max_length = max(row_lengths)
+    #print(max_length)
+    b = make_list(a)
+    for row in b:
+        while len(row) < max_length:
+            row.append(None)
+#print(row)
+    return b
+
+def sort_it_out(bcell_index):
+    #inf = float("inf")
+    sorted_scatter = []
+    for element in bcell_index:
+        sort_row = sorted(element, key=lambda x: float('inf') if x is None else x)
+        sorted_scatter.append(sort_row)
+    return sorted_scatter
+
+def none_removed(index_sorted):
+    #inf = float("inf")
+    dummy = []
+    for element in index_sorted:
+        sort_row = []
+        for i in element:
+            if not math.isinf(i):
+                sort_row.append(i)
+        dummy.append(sort_row)
+    return dummy
+
+def plot_runstats2(scatter_value, scatter_index, desired_name):
+    fig = plt.figure()
+    ax = plt.subplot(111)
+    x_index = make_equal_lengths(scatter_index)
+    y_index = make_equal_lengths(scatter_value)
+    #print(x_index)
+    #print(y_index)
+    ax.scatter(x_index, y_index)
     #plt.legend(bbox_to_anchor=(1.05, 1), loc=2, borderaxespad=0)
     # Shrink current axis by 20% to make the legend fit:
     #box = ax.get_position()
     #ax.set_position([box.x0, box.y0, box.width * 0.8, box.height])
-    
-    if metric == 'affinity':
-        plt.ylabel('-log(affinity)')
-    elif metric == 'expression':
-        plt.ylabel('expression')
-    else:
-        plt.ylabel('antigen_capture')
+
+    plt.ylabel(desired_name)
     plt.xlabel('GC generation')
     plt.title('distribution of BCR value at each generation')
-    fig.savefig(metric + '.selection_sim.runstats.pdf')
+    fig.savefig('GCsim' + desired_name + '.sim_scatter.pdf')
+
+def plot_runstats3(bcr_value, scatter_index, desired_name):
+    numpy.seterr(under='ignore')
+    fig = plt.figure()
+    ax = plt.subplot(111)
+    what_i_want_to_plot = none_removed(sort_it_out(bcr_value))
+    y_index = []
+    for i in range(len(scatter_index)//5):
+        y_index.append(what_i_want_to_plot[5*i+5])
+    ax.violinplot(y_index)
+    plt.ylabel(desired_name)
+    plt.xlabel('Every 5th GC generation')
+    plt.title('distribution of BCR value at each generation')
+    fig.savefig('GCsim' + desired_name + '.sim_violin.pdf')
 
 # ----------------------------------------------------------------------------------------
 # bash color codes
