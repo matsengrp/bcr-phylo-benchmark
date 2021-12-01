@@ -241,6 +241,8 @@ def update_lambda_values(args, live_leaves, lambda_min=10e-10):
     # ----------------------------------------------------------------------------------------
     alpha, beta, Q = args.logi_params
     Kd_n = scipy.array([l.Kd for l in live_leaves])
+    if args.min_effective_kd is not None:
+        Kd_n = scipy.array([max(k, args.min_effective_kd) for k in Kd_n])
     BnA = calc_binding_time(Kd_n)  # get list of binding time values for each cell
     new_lambdas = trans_BA(BnA)  # convert binding time list to list of poisson lambdas for each cell (which determine number of offspring)
     if args.selection_strength < 1:

@@ -538,6 +538,7 @@ class MutationModel():
 
             if finished:
                 print(termstr)
+                _ = selection_utils.update_lambda_values(args, updated_live_leaves)  # have to set lambda for any newly-born leaves
                 break
 
             if args.obs_times is not None and len(args.obs_times) > 1 and current_time in args.obs_times:
@@ -815,6 +816,7 @@ def main():
     parser.add_argument('--naive_seq2', help='Second seed naive nucleotide sequence. For simulating heavy/light chain co-evolution.')
     parser.add_argument('--naive_kd', type=float, default=100, help='kd of the naive sequence in nano molar.')
     parser.add_argument('--mature_kd', type=float, default=1, help='kd of the mature sequences in nano molar.')
+    parser.add_argument('--min_effective_kd', type=float, help='if set, kd values below this have no further effect on fitness')
     parser.add_argument('--skip_update', type=int, default=100, help='Number of leaves/iterations to perform before updating the binding equilibrium (B:A).\n'
                         'The binding equilibrium at any point in time depends, in principle, on the properties of every leaf/cell, and thus would ideally be updated every time any leaf changes.\n'
                         'However, since each individual leaf typically causes only a small change in the overall equilibrium, a substantial speedup with minimal impact on accuracy can be achieved by updating B:A only after modifying every <--skip-update> leaves.\n'
@@ -870,6 +872,8 @@ def main():
         args.naive_seq = args.naive_seq.upper()
     if args.lambda0 is None:
         args.lambda0 = [max([1, int(.01*len(args.naive_seq))])]
+    if args.min_effective_kd is not None:
+        assert args.min_effective_kd > args.mature_kd and args.min_effective_kd < args.naive_kd
     # if len(args.naive_seq) % 3 != 0:  # this lets you remove the extra lines in GCutils.local_translate(), which is faster, but then the N pads get passed to partis, which confuses things (especially since they can get mutated)
     #     print('  note: padding right side of --naive_seq to multiple of three')
     #     n_pads_added = 3 - (len(args.naive_seq) % 3)
