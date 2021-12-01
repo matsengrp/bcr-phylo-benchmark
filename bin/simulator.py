@@ -464,7 +464,7 @@ class MutationModel():
                     lambda_update_dbg_str = ' '
                     if skip_lambda_n == 0:  # time to update the lambdas for every leaf
                         skip_lambda_n = args.skip_update + 1  # reset it so we don't update again until we've done <args.skip_update> more leaves (+ 1 is so that if args.skip_update is 0 we don't skip at all, i.e. args.skip_update is the number of leaves skipped, *not* the number of leaves *between* updates)
-                        updated_lambda_values = selection_utils.update_lambda_values(updated_live_leaves, args.A_total, args.B_total, args.logi_params, args.selection_strength)  # note that when this updates in the middle of the loop over leaves, it'll set lambda values for any children that have so far been added
+                        updated_lambda_values = selection_utils.update_lambda_values(args, updated_live_leaves)  # note that when this updates in the middle of the loop over leaves, it'll set lambda values for any children that have so far been added
                         updated_mean_kd = numpy.mean([l.Kd for l in updated_live_leaves if l.Kd != float('inf')])  # NOTE that if mean kd deviates by a huge amount from args.mature_kd (probably due to very low selection strength, causing the cells to rapidly drift away from the target sequence) then in order to avoid the cells dying out you'd need to recalculate A_total here with the current mean kd (but it's unclear what you'd really be simulating then, since adding an aribtrarily large amount of new antigen because the population's getting low isn't very realistic)
                         lambda_update_dbg_str = selection_utils.color('blue', 'x')
                     skip_lambda_n -= 1

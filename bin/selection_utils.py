@@ -174,38 +174,38 @@ def calc_kd(node, args):
     return kd
 
 # ----------------------------------------------------------------------------------------
-def update_lambda_values(live_leaves, A_total, B_total, logi_params, selection_strength, lambda_min=10e-10):
+def update_lambda_values(args, live_leaves, lambda_min=10e-10):
     ''' update the lambda_ feature (parameter for the poisson progeny distribution) for each leaf in <live_leaves> '''
 
     # ----------------------------------------------------------------------------------------
-    def calc_BnA(Kd_n, A, B_total):
+    def calc_BnA(Kd_n, A):
         '''
         This calculates the fraction B:A (B bound to A), at equilibrium also referred to as "binding time",
         of all the different Bs in the population given the number of free As in solution.
         '''
-        BnA = B_total/(1+Kd_n/A)
+        BnA = args.B_total/(1+Kd_n/A)
         return(BnA)
 
     # ----------------------------------------------------------------------------------------
-    def return_objective_A(Kd_n, A_total, B_total):
+    def return_objective_A(Kd_n):
         '''
         The objective function that solves the set of differential equations setup to find the number of free As,
         at equilibrium, given a number of Bs with some affinity listed in Kd_n.
         '''
-        return lambda A: (A_total - (A + scipy.sum(B_total/(1+Kd_n/A))))**2
+        return lambda A: (args.A_total - (A + scipy.sum(args.B_total/(1+Kd_n/A))))**2
 
     # ----------------------------------------------------------------------------------------
-    def calc_binding_time(Kd_n, A_total, B_total):
+    def calc_binding_time(Kd_n):
         '''
         Solves the objective function to find the number of free As and then uses this,
         to calculate the fraction B:A (B bound to A) for all the different Bs.
         '''
-        obj = return_objective_A(Kd_n, A_total, B_total)
+        obj = return_objective_A(Kd_n)
         # Different minimizers have been tested and 'L-BFGS-B' was significant faster than anything else:
-        obj_min = minimize(obj, A_total, bounds=[[1e-10, A_total]], method='L-BFGS-B', tol=1e-20)
-        BnA = calc_BnA(Kd_n, obj_min.x[0], B_total)
+        obj_min = minimize(obj, args.A_total, bounds=[[1e-10, args.A_total]], method='L-BFGS-B', tol=1e-20)
+        BnA = calc_BnA(Kd_n, obj_min.x[0])
         # Terminate if the precision is not good enough:
-        assert(BnA.sum()+obj_min.x[0]-A_total < A_total/100)
+        assert(BnA.sum()+obj_min.x[0]-args.A_total < args.A_total/100)
         return BnA
 
     # ----------------------------------------------------------------------------------------
@@ -217,19 +217,19 @@ def update_lambda_values(live_leaves, A_total, B_total, logi_params, selection_s
 
     # ----------------------------------------------------------------------------------------
     # note that since this scales to the existing (kd-determined) mean lambda, if that lambda is decreasing (for instance if selection strength is very low, then sequences drift away from the target very rapidly) then the rescaled lambdas will also decrease
-    def apply_selection_strength_scaling(lambdas):  # if <selection_strength> less than 1, instead of using each cell's Kd-determined lambda value, we draw each cell's lambda from a normal distribution with mean and variance depending on the selection strength, that cell's Kd-determined lambda, and the un-scaled distribution of lambda over cells
+    def apply_selection_strength_scaling(lambdas):  # if <args.selection_strength> less than 1, instead of using each cell's Kd-determined lambda value, we draw each cell's lambda from a normal distribution with mean and variance depending on the selection strength, that cell's Kd-determined lambda, and the un-scaled distribution of lambda over cells
         def getmean(lvals):
             return numpy.mean([l for l in lvals if l > lambda_min])  # mean unscaled lambda of functional cells (unscaled means determined solely by each cell's Kd)
         def getvar(lvals):
             functional_lambdas = [l for l in lvals if l > lambda_min]
             return numpy.std(functional_lambdas, ddof=1 if len(functional_lambdas)>1 else 0)  # mean unscaled variance of functional cells
-        assert selection_strength >= 0. and selection_strength < 1.
+        assert args.selection_strength >= 0. and args.selection_strength < 1.
         lmean, lvar = getmean(lambdas), getvar(lambdas)
         imeanvals, ivarvals = [], []
         for il, ilambda in enumerate(lambdas):  # draw each cell's lambda from a normal (<ilambda> is the unscaled lambda for this cell, i.e. determined solely by this cell's Kd)
             if ilambda > lambda_min:  # functional cells
-                imeanvals.append(lmean + selection_strength * (ilambda - lmean))  # mean of each cell's normal distribution goes from <lmean> to <ilambda> as <selection_strength> goes from 0 to 1
-                ivarvals.append((1. - selection_strength) * lvar)  # this gives a variance equal to <lvar> (which is a somewhat arbitrary choice, but I don't think we care too much to change the overall variance) for <selection_strength> near 0 and 1, but the resulting variance drops to about 0.7 of <lvar> for <selection_strength> near 0.5 # TODO fix this (adding a math.sqrt is a bit better) NOTE this got a lot better after I started treating the infinite-kd cells correclty (now it's like 0.9ish for 0.5
+                imeanvals.append(lmean + args.selection_strength * (ilambda - lmean))  # mean of each cell's normal distribution goes from <lmean> to <ilambda> as <args.selection_strength> goes from 0 to 1
+                ivarvals.append((1. - args.selection_strength) * lvar)  # this gives a variance equal to <lvar> (which is a somewhat arbitrary choice, but I don't think we care too much to change the overall variance) for <args.selection_strength> near 0 and 1, but the resulting variance drops to about 0.7 of <lvar> for <args.selection_strength> near 0.5 # TODO fix this (adding a math.sqrt is a bit better) NOTE this got a lot better after I started treating the infinite-kd cells correclty (now it's like 0.9ish for 0.5
             else:  # cells with (presumably) stop codons
                 imeanvals.append(lambda_min)  # this is a little weird and wasteful, but if we did it differently we'd have to keep track of which indices have what
                 ivarvals.append(0)
@@ -239,11 +239,11 @@ def update_lambda_values(live_leaves, A_total, B_total, logi_params, selection_s
         return [max(lambda_min, l) for l in lambdas]
 
     # ----------------------------------------------------------------------------------------
-    alpha, beta, Q = logi_params
+    alpha, beta, Q = args.logi_params
     Kd_n = scipy.array([l.Kd for l in live_leaves])
-    BnA = calc_binding_time(Kd_n, A_total, B_total)  # get list of binding time values for each cell
+    BnA = calc_binding_time(Kd_n)  # get list of binding time values for each cell
     new_lambdas = trans_BA(BnA)  # convert binding time list to list of poisson lambdas for each cell (which determine number of offspring)
-    if selection_strength < 1:
+    if args.selection_strength < 1:
         new_lambdas = apply_selection_strength_scaling(new_lambdas)
     for new_lambda, leaf in zip(new_lambdas, live_leaves):  # transfer new lambda values to the actual leaves
         leaf.lambda_ = new_lambda
