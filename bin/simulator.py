@@ -113,7 +113,8 @@ class MutationModel():
         node = TreeNode()
         node.add_feature('nuc_seq', nuc_seq)  # NOTE don't use a TranslatedSeq feature since it gets written to pickle files, which then requires importing the class definition
         node.add_feature('aa_seq', aa_seq if aa_seq is not None else self.get_translation(nuc_seq))
-        node.add_feature('naive_distance', hamming_distance(nuc_seq, args.naive_tseq.nuc))  # always nucleotide distance
+        node.add_feature('naive_distance', hamming_distance(nuc_seq, args.naive_tseq.nuc))  # nucleotide distance (but don't want to change the name for backwards compatibility)
+        node.add_feature('shm_aa', hamming_distance(node.aa_seq, args.naive_tseq.aa))  # aa distance
         node.add_feature('time', time)
         node.dist = 0 if parent is None else hamming_distance(nuc_seq, parent.nuc_seq)  # always nucleotide distance (doesn't use add_feature() because it's a builtin ete3 feature)
         node.add_feature('terminated', False)  # set if it's dead (only set if it draws zero children, or if --kill_sampled_intermediates is set and it's sampled at an intermediate time point)
@@ -418,7 +419,7 @@ class MutationModel():
         or using an affinity muturation inspired model for selection.
         '''
 
-        self.sampled_tdist_hists, self.tdist_hists, self.n_mutated_hists = [None], [None], [None]
+        self.sampled_tdist_hists, self.tdist_hists, self.n_nuc_mutated_hists, self.n_aa_mutated_hists = [None], [None], [None], [None]
         target_seqs = None
         if args.selection:
             target_seqs = self.get_targets(args)
@@ -444,7 +445,8 @@ class MutationModel():
 
             self.sampled_tdist_hists.append(None)
             self.tdist_hists.append(None)
-            self.n_mutated_hists.append(None)
+            self.n_nuc_mutated_hists.append(None)
+            self.n_aa_mutated_hists.append(None)
 
             skip_lambda_n = 0  # index keeping track of how many leaves since we last updated all the lambdas
             if static_live_leaves is None:
@@ -516,7 +518,8 @@ class MutationModel():
 
             if args.selection:
                 self.tdist_hists[current_time] = self.get_target_distance_hist(args, updated_live_leaves)
-                self.n_mutated_hists[current_time] = scipy.histogram([l.naive_distance for l in updated_live_leaves], bins=list(numpy.arange(-0.5, (max(args.obs_times) if args.obs_times is not None else current_time) + 0.5)))  # can't have more than one mutation per generation
+                self.n_nuc_mutated_hists[current_time] = scipy.histogram([l.naive_distance for l in updated_live_leaves], bins=list(numpy.arange(-0.5, (max(args.obs_times) if args.obs_times is not None else current_time) + 0.5)))  # can't have more than one mutation per generation
+                self.n_aa_mutated_hists[current_time] = scipy.histogram([l.shm_aa for l in updated_live_leaves], bins=list(numpy.arange(-0.5, (max(args.obs_times) if args.obs_times is not None else current_time) + 0.5)))  # can't have more than one mutation per generation
 
             finished, successful, dbgstr, termstr = self.check_termination(args, current_time, updated_live_leaves)
 
@@ -545,7 +548,9 @@ class MutationModel():
             with open(args.outbase + '_min_aa_target_hdists.p', 'wb') as histfile:
                 pickle.dump(self.tdist_hists, histfile)
             with open(args.outbase + '_n_mutated_nuc_hdists.p', 'wb') as histfile:
-                pickle.dump(self.n_mutated_hists, histfile)
+                pickle.dump(self.n_nuc_mutated_hists, histfile)
+            with open(args.outbase + '_n_mutated_aa_hdists.p', 'wb') as histfile:
+                pickle.dump(self.n_aa_mutated_hists, histfile)
 
         stop_leaves = [l for l in updated_live_leaves if nonfunc_aa(args, l.aa_seq)]
         non_stop_leaves = [l for l in updated_live_leaves if not nonfunc_aa(args, l.aa_seq)]
