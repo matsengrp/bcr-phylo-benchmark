@@ -170,12 +170,12 @@ def calc_kd(node, args):
 
     assert args.mature_kd < args.naive_kd
     tdist = node.target_distance if args.min_target_distance is None else max(node.target_distance, args.min_target_distance)
-    kd = args.mature_kd + (args.naive_kd - args.mature_kd) * (tdist / float(args.target_distance))**args.k_exp  # transformation from distance to kd
+    kd = args.mature_kd + (args.naive_kd - args.mature_kd) * (tdist / float(args.tdist_scale))**args.k_exp  # transformation from distance to kd
 
     return kd
 
 # ----------------------------------------------------------------------------------------
-def update_lambda_values(args, live_leaves, lambda_min=10e-10):
+def update_lambda_values(args, live_leaves, lambda_min=10e-10, debug=False):
     ''' update the lambda_ feature (parameter for the poisson progeny distribution) for each leaf in <live_leaves> '''
 
     # ----------------------------------------------------------------------------------------
@@ -237,22 +237,32 @@ def update_lambda_values(args, live_leaves, lambda_min=10e-10):
                 imeanvals.append(lambda_min)  # this is a little weird and wasteful, but if we did it differently we'd have to keep track of which indices have what
                 ivarvals.append(0)
         lambdas = numpy.random.normal(imeanvals, ivarvals)  # this is about twice as fast as doing them individually, although this fcn is only 10-20% of the total simulation time
-        # if lmean > 0 and lvar > 0:
-        #     print('    %5d   %7.4f  %7.4f --> %7.4f  %7.4f' % (len(lambdas), lmean, lvar, getmean(lambdas) / lmean, getvar(lambdas) / lvar))
+        if debug and lmean > 0 and lvar > 0:  # note: just printing mean/std, which shouldn't (on average) change, since it's harder to print a summary of how the actual values got shuffled around
+            print('    selection strength scaling (%5d values):  mean %7.4f --> %7.4f  std %7.4f --> %7.4f  (ratios: %7.4f   %7.4f)' % (len(lambdas), lmean, getmean(lambdas), lvar, getvar(lambdas), getmean(lambdas) / lmean, getvar(lambdas) / lvar))
         return [max(lambda_min, l) for l in lambdas]
 
     # ----------------------------------------------------------------------------------------
     alpha, beta, Q = args.logi_params
-    Kd_n = scipy.array([l.Kd for l in live_leaves])
+    Kd_n = scipy.array([l.Kd for l in live_leaves])  # get scipy array of kd values from list of live leaves
+    if debug:
+        print('    updating %d lambda values with alpha, beta, Q: %.2f %.2f %.2f' % (len(Kd_n), alpha, beta, Q))
+        initial_lambda_values = [l.lambda_ for l in live_leaves]
     if args.min_effective_kd is not None:
+        if debug:
+            print('      --min_effective_kd: increased %d / %d Kd values to %.0f' % (len([k for k in Kd_n if k < args.min_effective_kd]), len(Kd_n), args.min_effective_kd))
         Kd_n = scipy.array([max(k, args.min_effective_kd) for k in Kd_n])
     BnA = calc_binding_time(Kd_n)  # get list of binding time values for each cell
-    new_lambdas = trans_BA(BnA)  # convert binding time list to list of poisson lambdas for each cell (which determine number of offspring)
+    new_lambdas = trans_BA(BnA)  # convert each cell's binding time to poisson lambda (i.e. mean number of offspring)
     if args.selection_strength < 1:
         new_lambdas = apply_selection_strength_scaling(new_lambdas)
-    for new_lambda, leaf in zip(new_lambdas, live_leaves):  # transfer new lambda values to the actual leaves
-        leaf.lambda_ = new_lambda
-    return new_lambdas
+    for nlambda, leaf in zip(new_lambdas, live_leaves):  # transfer new lambda values to the actual leaves
+        leaf.lambda_ = nlambda
+    if debug:
+        def lstr(l): return color('blue', '-', width=4) if l is None else '%.2f' % l  # the initial lambda is None if these are newly-born leaves, i.e. it's the start of a generation
+        def fstr(l1, l2): return 4*' ' if l1==l2 else color(None if l1 is None else ('green' if l2 > l1 else 'red'), lstr(l2))
+        print('        initial: %s' % '  '.join(lstr(l1) for l1 in initial_lambda_values))
+        print('          final: %s' % '  '.join(fstr(l1, l2) for l1, l2 in zip(initial_lambda_values, new_lambdas)))
+    return new_lambdas  # return new values (only for debug printing)
 
 # ----------------------------------------------------------------------------------------
 def find_A_total(carry_cap, B_total, f_full, mature_kd, U):

@@ -434,11 +434,11 @@ class MutationModel():
             self.tdist_hists[0] = self.get_target_distance_hist(args, tree)  # i guess the first entry in the other two just stays None
 
         if args.debug == 1:
-            print('        end of      live     target dist (%s)          kd            lambda       termination' % args.metric_for_target_distance)
-            print('      generation   leaves      min  mean           min    mean      max  mean        checks')
+            print('        end of      live     target dist (%s)           kd            lambda       termination' % args.metric_for_target_distance)
+            print('      generation   leaves      min  mean            min    mean      max  mean        checks')
         if args.debug > 1:
-            print('       gen   live leaves   (%s: terminated/no children)' % selection_utils.color('red', 'x'))
-            print('             before/after   ileaf   lambda  n children     n mutations            Kd   (%s: updated lambdas)' % selection_utils.color('blue', 'x'))
+            print('       gen   live leaves   (%s: terminated/no children, %s: updated lambdas)' % (selection_utils.color('red', 'x'), selection_utils.color('blue', 'x')))
+            print('             before/after   ileaf   lambda  n children     n mutations            Kd                                Kd / (mean Kd)')
         static_live_leaves, updated_live_leaves = None, None
         while True:
             current_time += 1
@@ -529,7 +529,7 @@ class MutationModel():
                 maxl, meanl = '-', '-'  # NOTE don't use <updated_live_leaves> to get lambda values here, since it's either entirely or partly full on unset values from children that were just added
                 if args.selection and len(updated_live_leaves) > 0:  # NOTE when you get to here, there are either zero lambda values set in <updated_live_leaves> (if lambdas updated only at the start of the loop) or some intermediate number (if they updated also partway through)
                     tmptdvals = [l.target_distance for l in updated_live_leaves]
-                    mintd, meantd = '%2d' % min(tmptdvals), '%3.1f' % numpy.mean(tmptdvals)
+                    mintd, meantd = '%2d' % min(tmptdvals), '%4.1f' % numpy.mean(tmptdvals)
                     tmpkdvals = [l.Kd for l in updated_live_leaves if l.Kd != float('inf')]
                     minkd, meankd = [('%5.1f' % v) for v in (min(tmpkdvals), numpy.mean(tmpkdvals))] if len(tmpkdvals) > 0 else (0, 0)
                     if len(updated_lambda_values) > 0:
@@ -803,7 +803,8 @@ def main():
     parser.add_argument('--carry_cap', type=int, default=1000, help='The carrying capacity of the simulation with selection. This number affects the fixation time of a new mutation.'
                         'Fixation time is approx. log2(carry_cap), e.g. log2(1000) ~= 10.')
     parser.add_argument('--target_count', type=int, default=10, help='The number of target sequences to generate.')
-    parser.add_argument('--target_distance', type=int, default=10, help='Desired distance (using --metric_for_target_distance) between the naive sequence and the target sequences.')
+    parser.add_argument('--target_distance', type=int, default=10, help='Desired distance (using --metric_for_target_distance) between the naive sequence and the target sequence(s). By default serves also as --tdist_scale, but see also help for that arg. Set to 0 for pure negative selection.')
+    parser.add_argument('--tdist_scale', type=int, help='scale over which Kd varies with target distance (denominator over which each target seq\'s target distance is divided). Defaults to --target_distance, but you may want to set it separately for very small --target_distance values (so that small changes in distance don\'t make huge changes to Kd).')
     parser.add_argument('--n_target_clusters', type=int, help='If set, divide the --target_count target sequences into --target_count / --n_target_clusters "clusters" of target sequences, where each cluster consists of one "main" sequence separated from the naive by --target_distance, surrounded by the others in the cluster at radius --target_cluster_distance. If you set numbers that aren\'t evenly divisible, then the clusters won\'t all be the same size, but the total number of targets will always be --target_count')
     parser.add_argument('--target_cluster_distance', type=int, default=1, help='See --n_target_clusters')
     parser.add_argument('--min_target_distance', type=int, help='If set, the target distance used to calculate affinity can never fall below this value, even if the cell\'s sequence is closer than this to a target sequence. This makes it so cells can bounce around within this threshold of distance, rather than being sucked into exactly the target sequence.')
@@ -948,7 +949,10 @@ def main():
         os.makedirs(os.path.dirname(args.outbase))
 
     if args.selection:
-        assert args.target_distance > 0
+        assert args.target_distance >= 0
+        if args.tdist_scale is None:
+            args.tdist_scale = args.target_distance
+        assert args.tdist_scale > 0
         if args.min_target_distance is not None and args.min_target_distance >= args.target_distance:
             raise Exception('--min_target_distance %d has to be less than --target_distance %d' % (args.min_target_distance, args.target_distance))
         assert args.B_total >= args.f_full  # the fully activating fraction on BA must be possible to reach within B_total
