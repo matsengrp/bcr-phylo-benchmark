@@ -102,10 +102,8 @@ class MutationModel():
             node.add_feature('relative_Kd', node.Kd / float(mean_kd) if mean_kd is not None else None)  # kd relative to mean of the current leaves
         else:  # maybe it'd be nicer to remove these from the args.selection/not blocks, but this is kind of clearer
             node.add_feature('lambda_', -1.)
-            #node.add_feature('Kd', selection_utils.calc_kd(node, args))
-            #node.add_feature('B_exp', selection_utils.calc_B_exp(node, args))
-        return node
-
+            node.add_feature('Kd', selection_utils.calc_kd(node, args))
+            node.add_feature('B_exp', selection_utils.calc_B_exp(node, args))
     # ----------------------------------------------------------------------------------------
     @staticmethod
     def disambiguate(sequence):
@@ -370,7 +368,7 @@ class MutationModel():
         '''
 
         self.sampled_tdist_hists, self.tdist_hists, self.n_mutated_hists = [None], [None], [None]
-        self.scatter_index, self.aff_index, self.bcr_exp_index, self.antigen_cap_index = [None],[None],[None],[None] 
+        self.scatter_index, self.aff_index, self.bcr_exp_index, self.antigen_cap_index = [],[],[],[]
         target_seqs = None
         if args.selection:
             target_seqs = self.get_targets(args)
@@ -383,10 +381,11 @@ class MutationModel():
         tree = self.init_node(args, args.naive_tseq.nuc, 0, None, target_seqs, mean_kd=args.naive_kd)
         if args.selection:
             self.tdist_hists[0] = self.get_target_distance_hist(args, tree)  # i guess the first entry in the other two just stays None
-            self.scatter_index[0] = numpy.array([0])
-            self.aff_index[0] = numpy.array([100])
-            self.bcr_exp_index[0] = numpy.array([5000])
-            self.antigen_cap_index[0] = numpy.array([833.3])
+            current_indices = self.get_scatter_plots(args, tree, current_time)
+            self.scatter_index.append(current_indices[1])
+            self.aff_index.append(current_indices[0])
+            self.bcr_exp_index.append(current_indices[2])
+            self.antigen_cap_index.append(current_indices[3])
         if args.debug == 1:
             print('        end of      live     target dist (%s)          kd            lambda       termination' % args.metric_for_target_distance)
             print('      generation   leaves      min  mean           min    mean      max  mean        checks')
@@ -394,16 +393,40 @@ class MutationModel():
             print('       gen   live leaves   (%s: terminated/no children)' % selection_utils.color('red', 'x'))
             print('             before/after   ileaf   lambda  n children     n mutations            Kd   (%s: updated lambdas)' % selection_utils.color('blue', 'x'))
         static_live_leaves, updated_live_leaves = None, None
+        if args.n_initial_seqs > 1:
+            current_time = 1
+            self.n_unterminated_leaves = args.n_initial_seqs
+            static_live_leaves = [l for l in tree.iter_leaves() if not l.terminated]  # NOTE this is out of date as soon as we've added any children in the loop, or killed anybody with no children (but we need it to iterate over, at least as currently set up)
+            updated_live_leaves = [l for l in static_live_leaves]
+            for leaf in static_live_leaves:
+                updated_live_leaves.remove(leaf)
+                for _ in range(args.n_initial_seqs):
+                    if args.naive_seq2 is not None:  # for paired heavy/light we mutate them separately with their own mutation rate
+                        mfos = [self.mutate(get_pair_seq(leaf.nuc_seq, args.pair_bounds, iseq), args.lambda0[iseq]) for iseq in range(len(args.lambda0))]  # NOTE doesn't pass or get aa_seq, but the only result of that should be that self.init_node() has to calculate it
+                        mutated_sequence = ''.join(m['nuc_seq'] for m in mfos)
+                    else:
+                        mfo = self.mutate(leaf.nuc_seq, args.lambda0[0], aa_seq=leaf.aa_seq)
+                        if args.debug > 1:
+                            n_mutation_list.append(mfo['n_muts'])
+                    child = self.init_node(args, mfo['nuc_seq'], current_time, leaf, target_seqs, aa_seq=mfo['aa_seq'], mean_kd=args.naive_kd)
+                    if args.selection and args.debug > 1:
+                        kd_list.append(child.Kd)
+                    leaf.add_child(child)
+                    updated_live_leaves.append(child)
+            if args.selection:
+                self.tdist_hists.append(self.get_target_distance_hist(args, updated_live_leaves))
+                current_indices = self.get_scatter_plots(args, self.choose_leaves_to_sample(args, updated_live_leaves, self.n_unterminated_leaves), current_time)
+                self.scatter_index.append(current_indices[1])
+                self.aff_index.append(current_indices[0])
+                self.bcr_exp_index.append(current_indices[2])
+                self.antigen_cap_index.append(current_indices[3])
+                self.n_mutated_hists.append(numpy.histogram([l.naive_distance for l in updated_live_leaves], bins=list(numpy.arange(-0.5, (max(args.obs_times) if args.obs_times is not None else current_time) + 0.5))))
         while True:
             current_time += 1
 
             self.sampled_tdist_hists.append(None)
             self.tdist_hists.append(None)
             self.n_mutated_hists.append(None)
-            self.scatter_index.append(None)
-            self.aff_index.append(None) 
-            self.bcr_exp_index.append(None)
-            self.antigen_cap_index.append(None)
             skip_lambda_n = 0  # index keeping track of how many leaves since we last updated all the lambdas
             if static_live_leaves is None:
                 static_live_leaves = [l for l in tree.iter_leaves() if not l.terminated]  # NOTE this is out of date as soon as we've added any children in the loop, or killed anybody with no children (but we need it to iterate over, at least as currently set up)
@@ -474,11 +497,11 @@ class MutationModel():
 
             if args.selection:
                 self.tdist_hists[current_time] = self.get_target_distance_hist(args, updated_live_leaves)
-                current_indices = self.get_scatter_plots(args, updated_live_leaves, current_time)
-                self.scatter_index[current_time] = current_indices[1]
-                self.aff_index[current_time] = current_indices[0]
-                self.bcr_exp_index[current_time] = current_indices[2]
-                self.antigen_cap_index[current_time] = current_indices[3]
+                current_indices = self.get_scatter_plots(args, self.choose_leaves_to_sample(args, updated_live_leaves, min(100,self.n_unterminated_leaves//5)), current_time)
+                self.scatter_index.append(current_indices[1])
+                self.aff_index.append(current_indices[0])
+                self.bcr_exp_index.append(current_indices[2])
+                self.antigen_cap_index.append(current_indices[3])
                 self.n_mutated_hists[current_time] = numpy.histogram([l.naive_distance for l in updated_live_leaves], bins=list(numpy.arange(-0.5, (max(args.obs_times) if args.obs_times is not None else current_time) + 0.5)))  # can't have more than one mutation per generation
 
             finished, successful, dbgstr, termstr = self.check_termination(args, current_time, updated_live_leaves)
@@ -517,8 +540,9 @@ class MutationModel():
                 pickle.dump(self.bcr_exp_index, histfile)
             with open(args.outbase + '_antigen_capture_index.p', 'wb') as histfile:
                 pickle.dump(self.antigen_cap_index, histfile)
-        #print(self.bcr_exp_index)
-        #print(self.antigen_cap_index)
+        print(self.aff_index)
+        print(self.bcr_exp_index)
+        print(self.antigen_cap_index)
         stop_leaves = [l for l in updated_live_leaves if has_stop_aa(l.aa_seq)]
         non_stop_leaves = [l for l in updated_live_leaves if not has_stop_aa(l.aa_seq)]
         if len(stop_leaves) > 0:
@@ -760,6 +784,7 @@ def main():
     parser.add_argument('--substitution_file', default=file_dir+'/../motifs/Substitution_S5F.csv', help='Path to substitution model file.')
     parser.add_argument('--no_context', action='store_true', help='Disable context dependence, i.e. use a uniform mutability and substitution.')
     parser.add_argument('--selection', action='store_true', help='If set, simulate with selection (otherwise neutral). Requires that you set --obs_times, and therefore that you *not* set --n_final_seqs.')
+    parser.add_argument('--n_initial_seqs', type=int, help='If set, begins the germinal center at generation 1 with this many seqs')
     parser.add_argument('--n_final_seqs', type=int, help='If set, simulation stops when we\'ve reached this number of sequences. Note that because sequences with stop codons are subsequently removed, and because more than one sequence is added per iteration, we don\'t necessarily output exactly this many. (If --n_to_sample is also set, then we simulate until we have --n_final_seqs, then downsample to --n_to_sample).')
     parser.add_argument('--obs_times', type=int, nargs='+', help='If set, simulation stops when we\'ve reached this many generations. If more than one value is specified, the largest value is the final observation time (and stopping criterion), and earlier values are used as additional, intermediate sampling times')
     parser.add_argument('--stop_dist', type=int, help='If set, simulation stops when any simulated sequence is closer than this hamming distance from any of the target sequences, according to --metric_for_target_distance.')
@@ -808,6 +833,8 @@ def main():
     parser.add_argument('--verbose', action='store_true', help='DEPRECATED use --debug')
     parser.add_argument('--n_to_downsample', type=int, nargs='+', help='DEPRECATED use --n_to_sample')
     parser.add_argument('--uid_str_len', type=int, default=4, help='Number of random lowercase letters to use to construct each node\'s names.')
+    parser.add_argument('--function_target_distance', action='store_true', help='If set, calculate Kd using a function of hamming distance to target sequences')
+    parser.add_argument('--torchdms', action='store_true', help='If set, calculate Kd using a torchDMS model for CGG antigen')
     # parser.add_argument('--n_pads_added', type=int, default=0, help='INTERNAL USE ONLY')
 
     args = parser.parse_args()
