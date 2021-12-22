@@ -161,44 +161,24 @@ def target_distance_fcn(args, this_seq, target_seqs):
     return itarget, tdist
 
 # ----------------------------------------------------------------------------------------
-def count_aa(aa_seq,which_aa):
-    list_of_aa = list(aa_seq)
-    res1 = []
-    for i in range(len(list_of_aa)):
-        if list_of_aa[i] == which_aa:
-            res1.append(i)
-    return len(res1)
-
-def count_not_that_aa(aa_seq,which_aa):
-    list_of_aa = list(aa_seq)
-    res1 = []
-    for i in range(len(list_of_aa)):
-        if list_of_aa[i] != which_aa:
-            res1.append(i)
-    return len(res1)
-
 def calc_kd(node, args):
     if has_stop_aa(node.aa_seq):  # nonsense sequences have zero affinity/infinite kd
         return float('inf')
-    if not args.selection:
-        return 1.
-
-    #tdist = node.target_distance if args.min_target_distance is None else max(node.target_distance, args.min_target_distance)
-    #kd = args.mature_kd + (args.naive_kd - args.mature_kd) * (tdist / float(args.target_distance))**args.k_exp  # transformation from distance to kd
-    #kd = 100 - 3*min(count_not_that_aa(node.aa_seq,'A'),33)
-    kd = 100 - 12*min(count_aa(node.aa_seq,'L'),9)
+    elif args.function_target_distance:
+        kd = args.mature_kd + (args.naive_kd - args.mature_kd) * (tdist / float(args.target_distance))**args.k_exp  # transformation from distance to kd
+    elif args.torchdms:
+        kd = 100 - 3*min(node.aa_seq.count('A'),33) ### arbitrary sequence to function mapping until we implement the torchdms api 
+    else:  ## if no tags are specified, implement a neutral simulation 
+        kd = args.mature_kd
     return kd
 
-def calc_B_exp(node, args):
+def calc_B_exp(node, args):   
     if has_stop_aa(node.aa_seq):  # nonsense sequences have no production 
         B_exp = 0
-    if not args.selection:
-        return 10000
-    #B_exp = 5000 + 250*min(count_aa(node.aa_seq,'T'),15)
-    #B_exp = 5000 + 250*min(count_aa(node.aa_seq,'L'),15)
-    B_exp = 5000
-    if B_exp == 0:
-        print(node.aa_seq)
+    elif args.torchdms:
+        B_exp = args.B_total + 500*min(node.aa_seq.count('A'),10)  ### arbitrary sequence to function mapping until we implement the torchdms api
+    else:  ## for neutral simulation or the target_distance function simulation, use a fixed amount (args.B_total default is 10000) of BCR  
+        B_exp = args.B_total
     return B_exp
 
 # ----------------------------------------------------------------------------------------
@@ -250,9 +230,8 @@ def update_lambda_values(live_leaves, A_total, B_total, logi_params, selection_s
         #print(beta)
         #print(BnA)
         power_val = -beta*BnA
-        power_val[power_val < -125] = -125
-        #lambda_ = 2*(alpha + (2 - alpha) / (1 + Q*numpy.exp(-beta*BnA))) 
-        lambda_ = 2*(alpha + (2 - alpha) / (1 + Q*numpy.exp(power_val))) ##multiplied by 2 here 
+        power_val[power_val < -125] = -125  
+        lambda_ = alpha + (2 - alpha) / (1 + Q*numpy.exp(power_val))  
         return [max(lambda_min, l) for l in lambda_]
 
     # ----------------------------------------------------------------------------------------
