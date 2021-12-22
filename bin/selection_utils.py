@@ -21,6 +21,7 @@ import warnings
 import os
 import csv
 import math
+import sys
 warnings.filterwarnings('ignore', 'The iteration is not making good progress')  # scipy.optimize.fsolve() is throwing this. I think it's telling us that our initial guess isn't very good, but as far as I can tell (without understanding kristian's code here) it ends up at a fine solution in the end, so maybe it's ok to turn off this warning
 
 from GCutils import nonfunc_aa, hamming_distance, local_translate
@@ -216,10 +217,12 @@ def update_lambda_values(args, live_leaves, lambda_min=10e-10):
         return [max(lambda_min, l) for l in lambda_]
 
     # ----------------------------------------------------------------------------------------
-    # note that since this scales to the existing (kd-determined) mean lambda, if that lambda is decreasing (for instance if selection strength is very low, then sequences drift away from the target very rapidly) then the rescaled lambdas will also decrease
     def apply_selection_strength_scaling(lambdas):  # if <args.selection_strength> less than 1, instead of using each cell's Kd-determined lambda value, we draw each cell's lambda from a normal distribution with mean and variance depending on the selection strength, that cell's Kd-determined lambda, and the un-scaled distribution of lambda over cells
         def getmean(lvals):
-            return numpy.mean([l for l in lvals if l > lambda_min])  # mean unscaled lambda of functional cells (unscaled means determined solely by each cell's Kd)
+            mval = numpy.mean([l for l in lvals if l > lambda_min])  # mean unscaled lambda of functional cells (unscaled means determined solely by each cell's Kd)
+            if mval <= 1 and len(lambdas) < args.carry_cap:  # if mean lambda less than one and we have too few leaves, increase it (i.e. if all the cells have poor enough affinity that they can't hold onto antigen, so the population is dying out)
+                mval = min(2, args.carry_cap / float(len(lambdas)))  # how it used to be, and why we now do this: note that since this scales to the existing (kd-determined) mean lambda, if that lambda is decreasing (for instance if selection strength is very low, then sequences drift away from the target very rapidly) then the rescaled lambdas will also decrease
+            return mval
         def getvar(lvals):
             functional_lambdas = [l for l in lvals if l > lambda_min]
             return numpy.std(functional_lambdas, ddof=1 if len(functional_lambdas)>1 else 0)  # mean unscaled variance of functional cells
