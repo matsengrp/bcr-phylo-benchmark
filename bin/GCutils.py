@@ -15,26 +15,24 @@ try:
 except:
     import pickle
 
-try:
-    import jellyfish
-
-    def hamming_distance(s1, s2):
-        if s1 == s2:
-            return 0
-        else:
-            return jellyfish.hamming_distance(unicode(s1), unicode(s2))
-except:
-    def hamming_distance(seq1, seq2):
-        '''Hamming distance between two sequences of equal length'''
-        return sum(x != y for x, y in zip(seq1, seq2))
-    print('Couldn\'t find the python module "jellyfish" which is used for fast string comparison. Falling back to pure python function.')
-
 global ISO_TYPE_ORDER
 global ISO_TYPE_charORDER
 global ISO_SHORT
 ISO_TYPE_ORDER = {'IgM': 1, 'IgD': 1, 'IgG': 2, 'IgGA': 2, 'IgGb': 2, 'IgE': 3, 'IgA': 4}
 ISO_TYPE_charORDER = {'M': 1, 'D': 2, 'G': 3, 'E': 4, 'A': 5}
 ISO_SHORT = {'IgM': 'M', 'IgD': 'D', 'IgG': 'G', 'IgGA': 'G', 'IgGb': 'G', 'IgE': 'E', 'IgA': 'A'}
+
+# ----------------------------------------------------------------------------------------
+def hamming_distance(seq1, seq2, weights=None):  # NOTE doesn't check for/handle ambiguous bases
+    assert len(seq1) == len(seq2)
+    if weights is None:
+        return sum(x != y for x, y in zip(seq1, seq2))
+    else:
+        if len(weights) != len(seq1):
+            raise Exception('weight len %d not same as seq len %d' % (len(weights), len(seq1)))
+        if abs(len(seq1) - sum(weights)) > 1e-6:
+            raise Exception('weights in hamming_distance() don\'t add to seq len %d: %f' % (len(seq1), sum(weights)))
+        return sum(w * (x != y) for x, y, w in zip(seq1, seq2, weights))
 
 # ----------------------------------------------------------------------------------------
 def local_translate(seq):

@@ -115,7 +115,7 @@ for sdtype, sdinfo in sdists.items():
         sdinfo[bound] = __builtins__[bound](vals)
 
 # ----------------------------------------------------------------------------------------
-def aa_inverse_similarity(aa1, aa2, sdtype, dont_rescale=False):
+def aa_inverse_similarity(aa1, aa2, sdtype, dont_rescale=False, weight=None):
     if sdtype == 'ascii':
         return_val = aa_ascii_code_distance(aa1, aa2)
     elif sdtype == 'blosum':
@@ -125,6 +125,8 @@ def aa_inverse_similarity(aa1, aa2, sdtype, dont_rescale=False):
     if not dont_rescale:  # rescale the differences in ascii codes or blosum values for the aa letters to the range [sdists[sdtype]['scale_min'], sdists[sdtype]['scale_max']] (so the mean is around one, so it's similar to the hamming distance)
         sdfo = sdists[sdtype]
         return_val = sdfo['scale_min'] + (return_val - sdfo['min']) * (sdfo['scale_max'] - sdfo['scale_min']) / float(sdfo['max'] - sdfo['min'])
+    if weight is not None:
+        return_val *= weight
     return return_val
 
 # ----------------------------------------------------------------------------------------
@@ -149,13 +151,14 @@ def plot_sdists():
 # ----------------------------------------------------------------------------------------
 def target_distance_fcn(args, this_seq, target_seqs):
     if args.metric_for_target_distance == 'aa':
-        tdists = [(i, hamming_distance(this_seq.dseq('aa'), t.dseq('aa'))) for i, t in enumerate(target_seqs)]  # this is annoyingly complicated because we want to also return *which* target sequence was the closest one, which we have to do here now (instead of afterward) since it depends on which metric we're using
+        tdists = [(i, hamming_distance(this_seq.dseq('aa'), t.dseq('aa'), weights=args.tdist_weights)) for i, t in enumerate(target_seqs)]  # this is annoyingly complicated because we want to also return *which* target sequence was the closest one, which we have to do here now (instead of afterward) since it depends on which metric we're using
     elif args.metric_for_target_distance == 'nuc':
-        tdists = [(i, hamming_distance(this_seq.dseq('nuc'), t.dseq('nuc'))) for i, t in enumerate(target_seqs)]
+        tdists = [(i, hamming_distance(this_seq.dseq('nuc'), t.dseq('nuc'), weights=args.tdist_weights)) for i, t in enumerate(target_seqs)]
     elif 'aa-sim' in args.metric_for_target_distance:
         assert len(args.metric_for_target_distance.split('-')) == 3
         sdtype = args.metric_for_target_distance.split('-')[2]
-        tdists = [(i, sum(aa_inverse_similarity(aa1, aa2, sdtype) for aa1, aa2 in zip(this_seq.dseq('aa'), t.dseq('aa')) if aa1 != aa2)) for i, t in enumerate(target_seqs)]
+        tmpweights = [None for _ in this_seq.dseq('aa')] if args.tdist_weights is None else args.tdist_weights
+        tdists = [(i, sum(aa_inverse_similarity(aa1, aa2, sdtype, weight=w) for aa1, aa2, w in zip(this_seq.dseq('aa'), t.dseq('aa'), tmpweights) if aa1 != aa2)) for i, t in enumerate(target_seqs)]
     else:
         raise Exception('unsupported --metric_for_target_distance \'%s\'' % args.metric_for_target_distance)
     itarget, tdist = min(tdists, key=operator.itemgetter(1))
@@ -253,7 +256,7 @@ def update_lambda_values(args, live_leaves, lambda_min=10e-10, debug=False):
         Kd_n = scipy.array([max(k, args.min_effective_kd) for k in Kd_n])
     BnA = calc_binding_time(Kd_n)  # get list of binding time values for each cell
     new_lambdas = trans_BA(BnA)  # convert each cell's binding time to poisson lambda (i.e. mean number of offspring)
-    if args.selection_strength < 1:
+    if args.selection_strength < 1 and len(new_lambdas) > 0:
         new_lambdas = apply_selection_strength_scaling(new_lambdas)
     for nlambda, leaf in zip(new_lambdas, live_leaves):  # transfer new lambda values to the actual leaves
         leaf.lambda_ = nlambda

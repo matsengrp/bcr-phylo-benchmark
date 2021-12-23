@@ -809,6 +809,7 @@ def main():
     parser.add_argument('--target_cluster_distance', type=int, default=1, help='See --n_target_clusters')
     parser.add_argument('--min_target_distance', type=int, help='If set, the target distance used to calculate affinity can never fall below this value, even if the cell\'s sequence is closer than this to a target sequence. This makes it so cells can bounce around within this threshold of distance, rather than being sucked into exactly the target sequence.')
     parser.add_argument('--metric_for_target_distance', default='aa', choices=['aa', 'nuc', 'aa-sim-ascii', 'aa-sim-blosum'], help='Metric to use to calculate the distance to each target sequence (aa: use amino acid distance, i.e. only non-synonymous mutations count, nuc: use nucleotide distance, aa-sim: amino acid distance, but where different pairs of amino acids are different distances apart, with either ascii-code-based or blosum-based distances).')
+    parser.add_argument('--tdist_weights', help='By default, each position in the sequence has equal weight in target hamming distance calculation; if set, this configures to give unequal weights. Can be one of 1. \'random-uniform\' generated from uniform random distribution in interval [0, 1] (then normalized to 1), 2. list of weights with length equal to naive sequence (must sum to 1)')
     parser.add_argument('--aa_paratope_positions', help='amino acid indices that should be considered as part of the paratope, i.e. that count toward the target distance (non-paratope positions are ignored for purposes of the target distance). Three ways to specify (f=<f>, N=<N>, i=<i>): f=<f> sets a fraction of positions chosen at random, if <f> is 1 it uses all remaining positions; N=<N> same as f= but sets absolute number; i=<i> specify exact positions, as a comma-separated list, where each entry in list is either a single position or a python-style slice, e.g. i=0,3,5:10 would use indices 0, 3, 5, 6, 7, 8, 9 (use \'len\' to specify the end of the sequence).')
     parser.add_argument('--aa_struct_positions', help='amino acid indices to treat as \'structural\' positions that are either only allowed synonymous mutations (default) or forbidden mutation entirely (if --dont_mutate_struct_positions is set). Specified as for --aa_paratope_positions (which is set first, and whose positions are automatically excluded from consideratoin for --aa_struct_positions).')
     parser.add_argument('--dont_mutate_struct_positions', action='store_true', help='if --aa_paratope_positions is set, by default we allow synonymous mutations at these positions, but this forbids mutations entirely (and is much faster)')
@@ -955,6 +956,19 @@ def main():
         assert args.tdist_scale > 0
         if args.min_target_distance is not None and args.min_target_distance >= args.target_distance:
             raise Exception('--min_target_distance %d has to be less than --target_distance %d' % (args.min_target_distance, args.target_distance))
+        if args.tdist_weights is not None:
+            if args.metric_for_target_distance in ['aa', 'aa-sim-ascii', 'aa-sim-blosum']:
+                slen = len(args.naive_tseq.aa) if args.aa_paratope_positions is None else len(args.aa_paratope_positions)
+            elif args.metric_for_target_distance in ['nuc']:
+                slen = len(args.naive_tseq.nuc) if args.nuc_paratope_positions is None else len(args.nuc_paratope_positions)
+            else:
+                assert False
+            if args.tdist_weights == 'random-uniform':
+                args.tdist_weights = numpy.random.uniform(0, 1, size=slen)
+                tmptot = sum(args.tdist_weights)
+                args.tdist_weights = [slen * w / float(tmptot) for w in args.tdist_weights]
+            assert len(args.tdist_weights) == slen
+            print('    --tdist_weights: %d values from %.3f to %.3f with mean %.3f and std %.3f' % (len(args.tdist_weights), min(args.tdist_weights), max(args.tdist_weights), numpy.mean(args.tdist_weights), numpy.std(args.tdist_weights)))
         assert args.B_total >= args.f_full  # the fully activating fraction on BA must be possible to reach within B_total
         args.A_total = selection_utils.find_A_total(args.carry_cap, args.B_total, args.f_full, args.mature_kd, args.U)  # find the total amount of A necessary for sustaining the specified carrying capacity
         args.logi_params = selection_utils.find_logistic_params(args.f_full, args.U)  # calculate the parameters for the logistic function
