@@ -421,7 +421,12 @@ class MutationModel():
         self.intermediate_sampled_nodes = []  # actual intermediate-sampled nodes
         self.intermediate_sampled_lineage_nodes = set()  # any nodes ancestral to intermediate-sampled nodes (we keep track of these so we know not to prune them)
         self.nodes_to_detach = set()
-        tree = self.init_node(args, args.naive_tseq.nuc, 0, None, target_seqs, mean_kd=args.naive_kd)
+        tree = self.init_node(args, args.naive_tseq.nuc, current_time, None, target_seqs, aa_seq=args.naive_tseq.aa, mean_kd=args.naive_kd)
+        if args.n_initial_seqs is not None:
+            for _ in range(args.n_initial_seqs):
+                child = self.init_node(args, args.naive_tseq.nuc, current_time, tree, target_seqs, aa_seq=args.naive_tseq.aa, mean_kd=args.naive_kd)
+                tree.add_child(child)
+            print('    --n_initial_seqs: added %d initial naive seqs below root' % args.n_initial_seqs)
         self.tdist_hists[0] = self.get_target_distance_hist(args, tree)  # i guess the first entry in the other two just stays None
 
         if args.debug == 1:
@@ -771,6 +776,7 @@ def main():
     parser.add_argument('--carry_cap', type=int, default=1000, help='The carrying capacity of the simulation with selection. This number affects the fixation time of a new mutation. Fixation time is approx. log2(carry_cap), e.g. log2(1000) ~= 10.')
     parser.add_argument('--selection_strength', type=float, default=1., help='Value in [0, 1] specifying the relative strength of selection, i.e. the extent to which fitness (in the form of the lambda value for each cell\'s poisson distribution from which its N offspring is drawn) is determined by affinity (strength of 1 is entirely affinity) vs by chance (strength of 0 is entirely chance). See also --no_selection.')
     parser.add_argument('--no_selection', action='store_true', help='Give all sequences the same kd value (i.e. neutral evolution). Similar to --selection_strength 0, although the latter gives a wider N offspring distribution since kd varies among sequences.')
+    parser.add_argument('--n_initial_seqs', type=int, default=1, help='Number of initial naive sequences.')
     parser.add_argument('--mutability_file', default=file_dir+'/../motifs/Mutability_S5F.csv', help='Path to mutability model file.')
     parser.add_argument('--substitution_file', default=file_dir+'/../motifs/Substitution_S5F.csv', help='Path to substitution model file.')
     parser.add_argument('--no_context', action='store_true', help='Disable context dependence, i.e. use a uniform mutability and substitution. This is vastly faster.')
