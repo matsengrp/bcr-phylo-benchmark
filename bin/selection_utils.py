@@ -168,8 +168,8 @@ def target_distance_fcn(args, this_seq, target_seqs):
 def calc_kd(node, args):
     if nonfunc_aa(args, node.aa_seq):  # nonsense sequences have zero affinity/infinite kd
         return float('inf')
-    if not args.selection:
-        return 1.
+    if args.no_selection:
+        return args.mature_kd
 
     assert args.mature_kd < args.naive_kd
     tdist = node.target_distance if args.min_target_distance is None else max(node.target_distance, args.min_target_distance)
