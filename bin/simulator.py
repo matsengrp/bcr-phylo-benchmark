@@ -422,10 +422,10 @@ class MutationModel():
         self.intermediate_sampled_lineage_nodes = set()  # any nodes ancestral to intermediate-sampled nodes (we keep track of these so we know not to prune them)
         self.nodes_to_detach = set()
         tree = self.init_node(args, args.naive_tseq.nuc, current_time, None, target_seqs, aa_seq=args.naive_tseq.aa, mean_kd=args.naive_kd)
-        if args.n_initial_seqs is not None:
+        if args.n_initial_seqs > 1:
+            _ = selection_utils.update_lambda_values(args, [tree])
             for _ in range(args.n_initial_seqs):
-                child = self.init_node(args, args.naive_tseq.nuc, current_time, tree, target_seqs, aa_seq=args.naive_tseq.aa, mean_kd=args.naive_kd)
-                tree.add_child(child)
+                tree.add_child(self.init_node(args, args.naive_tseq.nuc, current_time, tree, target_seqs, aa_seq=args.naive_tseq.aa, mean_kd=args.naive_kd))
             print('    --n_initial_seqs: added %d initial naive seqs below root' % args.n_initial_seqs)
         self.tdist_hists[0] = self.get_target_distance_hist(args, tree)  # i guess the first entry in the other two just stays None
 
