@@ -3,8 +3,7 @@ channels:
   - conda-forge
   - defaults
 dependencies:
-  - nestly
-  - python=2.7.12=1
+  - python=2.7
   - pip
   - pyqt
   - pip:
@@ -13,6 +12,7 @@ dependencies:
     - dendropy
     - ete3==3.0.0b35
     - matplotlib
+    - nestly
     - numpy
     - pandas
     - scipy
