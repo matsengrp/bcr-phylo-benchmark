@@ -1,7 +1,6 @@
 name: bpb
 channels:
   - conda-forge
-  - cswarth
   - defaults
 dependencies:
   - ca-certificates=2016.9.26=0
@@ -80,5 +79,3 @@ dependencies:
     - tensorflow==1.5.0
     - tensorflow-tensorboard==1.5.1
     - werkzeug==0.14.1
-prefix: /opt/conda/envs/bpb
-
