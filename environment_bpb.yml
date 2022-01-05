@@ -10,7 +10,7 @@ dependencies:
     - biopython==1.76
     - colored_traceback
     - dendropy
-    - ete3==3.0.0b35
+    - ete3
     - matplotlib
     - nestly
     - numpy
