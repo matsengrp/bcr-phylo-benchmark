@@ -3,19 +3,21 @@ channels:
   - conda-forge
   - defaults
 dependencies:
-  - jellyfish=0.5.6=py27_0
-  - nestly=0.6=py27_0
+  - jellyfish
+  - nestly
   - python=2.7.12=1
   - pip
+  - pyqt
   - pip:
-    - biopython==1.68
-    - dendropy==3.12.3
+    - biopython==1.76
+    - colored_traceback
+    - dendropy
     - ete3==3.0.0b35
-    - matplotlib==2.0.0
-    - numpy==1.14.1
-    - pandas==0.19.2
-    - scipy==0.18.1
-    - scons==2.5.1
-    - seaborn==0.7.1
-    - seqmagick==0.6.2
-    - statsmodels==0.8.0
+    - matplotlib
+    - numpy
+    - pandas
+    - scipy
+    - scons
+    - seaborn
+    - seqmagick
+    - statsmodels
