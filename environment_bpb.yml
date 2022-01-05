@@ -3,7 +3,6 @@ channels:
   - conda-forge
   - defaults
 dependencies:
-  - jellyfish
   - nestly
   - python=2.7.12=1
   - pip
