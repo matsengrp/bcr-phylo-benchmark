@@ -488,19 +488,24 @@ class MutationModel():
 
                 if args.debug > 1:
                     n_mutation_list, kd_list = [], []
-                for _ in range(n_children):
+
+                def make_child_of_parent(parent):
                     if args.naive_seq2 is not None:  # for paired heavy/light we mutate them separately with their own mutation rate
-                        mfos = [self.mutate(args, get_pair_seq(leaf.nuc_seq, args.pair_bounds, iseq), args.lambda0[iseq], skip_stops=args.skip_stops_when_mutating, dont_mutate_struct_positions=args.dont_mutate_struct_positions) for iseq in range(len(args.lambda0))]  # NOTE doesn't pass or get aa_seq, but the only result of that should be that self.init_node() has to calculate it
+                        mfos = [self.mutate(args, get_pair_seq(parent.nuc_seq, args.pair_bounds, iseq), args.lambda0[iseq], skip_stops=args.skip_stops_when_mutating, dont_mutate_struct_positions=args.dont_mutate_struct_positions) for iseq in range(len(args.lambda0))]  # NOTE doesn't pass or get aa_seq, but the only result of that should be that self.init_node() has to calculate it
                         mutated_sequence = ''.join(m['nuc_seq'] for m in mfos)
                     else:
-                        mfo = self.mutate(args, leaf.nuc_seq, args.lambda0[0], aa_seq=leaf.aa_seq, skip_stops=args.skip_stops_when_mutating, dont_mutate_struct_positions=args.dont_mutate_struct_positions)
+                        mfo = self.mutate(args, parent.nuc_seq, args.lambda0[0], aa_seq=parent.aa_seq, skip_stops=args.skip_stops_when_mutating, dont_mutate_struct_positions=args.dont_mutate_struct_positions)
                         if args.debug > 1:
                             n_mutation_list.append(mfo['n_muts'])
-                    child = self.init_node(args, mfo['nuc_seq'], current_time, leaf, target_seqs, aa_seq=mfo['aa_seq'], mean_kd=updated_mean_kd)
+                    return self.init_node(args, mfo['nuc_seq'], current_time, parent, target_seqs, aa_seq=mfo['aa_seq'], mean_kd=updated_mean_kd)
+
+                for _ in range(n_children):
+                    child = make_child_of_parent(leaf)
                     if args.debug > 1:
                         kd_list.append(child.Kd)
                     leaf.add_child(child)
                     updated_live_leaves.append(child)
+
                 if args.debug > 1:
                     terminated_dbg_str = selection_utils.color('red', 'x') if n_children == 0 else ' '
                     n_mutation_str_list = [('%d' % n) if n > 0 else '-' for n in n_mutation_list]
@@ -763,7 +768,7 @@ def main():
     formatter_class = MultiplyInheritedFormatter
     help_str = '''
     Simulate germinal center dynamics starting from naive sequence[s], with mutation probabilities according to a user defined motif model e.g. S5F.
-    Each cell\'s number of offspring is drawn from a poisson distribution with lambda parameter determined by the hamming distance to any of a list f "target" sequences (representing hypothetically 
+    Each cell\'s number of offspring is drawn from a poisson distribution with lambda parameter determined by the hamming distance to any of a list f "target" sequences (representing hypothetically
     optimal antibodies) such that the closer a sequence gets to any of the targets, the higher its fitness (and the closer lambda gets to 2). Similarly, when the sequence is far away from any target, lambda approaches 0.
     Completion is determined by %d stopping criteria arguments: %s (see below).
     Set --debug to 1 or 2 to print info on simulation progress.
