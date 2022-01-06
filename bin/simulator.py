@@ -499,12 +499,36 @@ class MutationModel():
                             n_mutation_list.append(mfo['n_muts'])
                     return self.init_node(args, mfo['nuc_seq'], current_time, parent, target_seqs, aa_seq=mfo['aa_seq'], mean_kd=updated_mean_kd)
 
-                for _ in range(n_children):
-                    child = make_child_of_parent(leaf)
-                    if args.debug > 1:
-                        kd_list.append(child.Kd)
-                    leaf.add_child(child)
-                    updated_live_leaves.append(child)
+                def generate_random_tree(n_leaves):
+                    node = TreeNode()
+                    node.populate(n_leaves)
+                    return node
+
+                # Our strategy is to build a random bifurcating tree with the right
+                # number of leaves, and then only use it as a tool for generating and
+                # adding children. Because we don't actually incorporate this tree, we
+                # call it a "fake tree".
+                fake_tree = generate_random_tree(n_children)
+                # We will equip the fake tree with the actual nodes of interest.
+                fake_tree.actual_node = leaf
+
+                # if n_children > 1:
+                #     import pdb
+                #     pdb.set_trace()
+
+                for fake_node in fake_tree.traverse("preorder"):
+                    if fake_node == fake_tree:
+                        continue  # Skip the root.
+                    parent = fake_node.up.actual_node
+                    # Make the actual child of the parent.
+                    child = make_child_of_parent(parent)
+                    parent.add_child(child)
+                    fake_node.actual_node = child
+                    if fake_node.is_leaf():
+                        # Only append the leaves of the tree to the active set.
+                        if args.debug > 1:
+                            kd_list.append(child.Kd)
+                        updated_live_leaves.append(child)
 
                 if args.debug > 1:
                     terminated_dbg_str = selection_utils.color('red', 'x') if n_children == 0 else ' '
