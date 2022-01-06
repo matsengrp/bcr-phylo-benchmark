@@ -512,14 +512,19 @@ class MutationModel():
                 # We will equip the fake tree with the actual nodes of interest.
                 fake_tree.actual_node = leaf
 
-                # if n_children > 1:
-                #     import pdb
-                #     pdb.set_trace()
-
                 for fake_node in fake_tree.traverse("preorder"):
                     if fake_node == fake_tree:
-                        continue  # Skip the root.
-                    parent = fake_node.up.actual_node
+                        # Handle the case of the root.
+                        if len(fake_tree.children) > 1:
+                            continue  # Skip the root if we have an actual bifurcating tree.
+                        else:
+                            # We have some ugliness here because ete doesn't properly
+                            # traverse a tree consisting of a single child. In that case
+                            # we just want a single child with the original leaf as a
+                            # parent.
+                            parent = fake_tree.actual_node
+                    else:
+                        parent = fake_node.up.actual_node
                     # Make the actual child of the parent.
                     child = make_child_of_parent(parent)
                     parent.add_child(child)
