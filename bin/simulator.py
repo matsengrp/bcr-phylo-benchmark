@@ -499,41 +499,47 @@ class MutationModel():
                             n_mutation_list.append(mfo['n_muts'])
                     return self.init_node(args, mfo['nuc_seq'], current_time, parent, target_seqs, aa_seq=mfo['aa_seq'], mean_kd=updated_mean_kd)
 
-                def generate_random_tree(n_leaves):
-                    node = TreeNode()
-                    node.populate(n_leaves)
-                    return node
+                def add_to_live(child):
+                    "Add a child to the live set."
+                    if args.debug > 1:
+                        kd_list.append(child.Kd)
+                    updated_live_leaves.append(child)
 
-                # Our strategy is to build a random bifurcating tree with the right
-                # number of leaves, and then only use it as a tool for generating and
-                # adding children. Because we don't actually incorporate this tree, we
-                # call it a "fake tree".
-                fake_tree = generate_random_tree(n_children)
-                # We will equip the fake tree with the actual nodes of interest.
-                fake_tree.actual_node = leaf
+                if args.multifurcating_tree or n_children == 1:
+                    # Original behavior: make a multifurcation with the desired number
+                    # of children.
+                    # We also use this strategy for a single child because ete doesn't
+                    # correctly traverse a tree consisting of a single child.
+                    for _ in range(n_children):
+                        child = make_child_of_parent(leaf)
+                        leaf.add_child(child)
+                        add_to_live(child)
+                else:
+                    # Resolve tree into a random bifurcating tree.
 
-                for fake_node in fake_tree.traverse("preorder"):
-                    if fake_node == fake_tree:
-                        # Handle the case of the root.
-                        if len(fake_tree.children) > 1:
-                            continue  # Skip the root if we have an actual bifurcating tree.
-                        else:
-                            # We have some ugliness here because ete doesn't properly
-                            # traverse a tree consisting of a single child. In that case
-                            # we just want a single child with the original leaf as a
-                            # parent.
-                            parent = fake_tree.actual_node
-                    else:
+                    def generate_random_tree(n_leaves):
+                        node = TreeNode()
+                        node.populate(n_leaves)
+                        return node
+
+                    # Our strategy is to build a random bifurcating tree with the right
+                    # number of leaves, and then only use it as a tool for generating and
+                    # adding children. Because we don't actually incorporate this tree, we
+                    # call it a "fake tree".
+
+                    fake_tree = generate_random_tree(n_children)
+                    # We will equip the fake tree with the actual nodes of interest.
+                    fake_tree.actual_node = leaf
+
+                    for fake_node in fake_tree.traverse("preorder"):
+                        if fake_node == fake_tree:
+                            continue # Skip the root.
                         parent = fake_node.up.actual_node
-                    # Make the actual child of the parent.
-                    child = make_child_of_parent(parent)
-                    parent.add_child(child)
-                    fake_node.actual_node = child
-                    if fake_node.is_leaf():
-                        # Only append the leaves of the tree to the active set.
-                        if args.debug > 1:
-                            kd_list.append(child.Kd)
-                        updated_live_leaves.append(child)
+                        child = make_child_of_parent(parent)
+                        parent.add_child(child)
+                        fake_node.actual_node = child
+                        if fake_node.is_leaf():
+                            add_to_live(child)
 
                 if args.debug > 1:
                     terminated_dbg_str = selection_utils.color('red', 'x') if n_children == 0 else ' '
@@ -826,6 +832,7 @@ def main():
     parser.add_argument('--obs_times', type=int, nargs='+', help='If set, simulation stops when we\'ve reached this many generations. If more than one value is specified, the largest value is the final observation time (and stopping criterion), and earlier values are used as additional, intermediate sampling times')
     parser.add_argument('--stop_dist', type=int, help='If set, simulation stops when any simulated sequence is closer than this hamming distance from any of the target sequences, according to --metric_for_target_distance.')
     parser.add_argument('--n_tries', type=int, default=10, help='If the tree terminates before the specified stopping criteria are met, set larger than 1 to keep trying (effectively, with different --random_seed).')
+    parser.add_argument('--multifurcating_tree', action='store_true', help='Allow a burst of reproduction to create a multifurcating tree.')
     parser.add_argument('--n_to_sample', type=int, nargs='+', help='Number of cells to sample from the final generation (if one value), or at each generation specified in --obs-times (if same length as --obs_times, and both are set). If --obs_times is set and has more than one value, but --n_to_sample is length one, this same value is applied to each time in --obs_times.')
     parser.add_argument('--kill_sampled_intermediates', action='store_true', help='kill intermediate sequences as they are sampled')
     parser.add_argument('--observe_common_ancestors', action='store_true', help='If set, after deciding which nodes to observe (write to file) according to other options, we then also select the most recent common ancestor for every pair of those nodes (the idea is that this gets you the nodes that you would reconstruct with a phylogenetic program). NOTE histograms written to disk currently don\'t include these.')
