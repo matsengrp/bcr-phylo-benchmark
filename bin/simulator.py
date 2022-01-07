@@ -109,7 +109,17 @@ class MutationModel():
         return self.translation_cache[nuc_seq]
 
     # ----------------------------------------------------------------------------------------
-    def init_node(self, args, nuc_seq, time, parent, target_seqs=None, aa_seq=None, mean_kd=None):
+    def init_node(self, args, time, parent, target_seqs, mutate=False, nuc_seq=None, aa_seq=None, mean_kd=None, skip_stops=False, dont_mutate_struct_positions=False, n_mutation_list=None):
+        if mutate:  # if set, we get <nuc_seq> by mutating parent's nuc seq; otherwise <nuc_seq> must be specified (e.g. for root of tree)
+            assert nuc_seq is None and aa_seq is None
+            kwargs = {'skip_stops' : skip_stops, 'dont_mutate_struct_positions' : dont_mutate_struct_positions}
+            if args.naive_seq2 is not None:  # for paired heavy/light we mutate them separately with their own mutation rate
+                mfos = [self.mutate(args, get_pair_seq(parent.nuc_seq, args.pair_bounds, iseq), args.lambda0[iseq], **kwargs) for iseq in range(len(args.lambda0))]  # NOTE doesn't pass or get aa_seq, but the only result of that should be that self.init_node() has to calculate it
+            else:
+                mfo = self.mutate(args, parent.nuc_seq, args.lambda0[0], aa_seq=parent.aa_seq, **kwargs)
+                if args.debug > 1:
+                    n_mutation_list.append(mfo['n_muts'])
+            nuc_seq, aa_seq = [mfo[k+'_seq'] for k in ['nuc', 'aa']]
         node = TreeNode()
         node.add_feature('nuc_seq', nuc_seq)  # NOTE don't use a TranslatedSeq feature since it gets written to pickle files, which then requires importing the class definition
         node.add_feature('aa_seq', aa_seq if aa_seq is not None else self.get_translation(nuc_seq))
@@ -421,11 +431,11 @@ class MutationModel():
         self.intermediate_sampled_nodes = []  # actual intermediate-sampled nodes
         self.intermediate_sampled_lineage_nodes = set()  # any nodes ancestral to intermediate-sampled nodes (we keep track of these so we know not to prune them)
         self.nodes_to_detach = set()
-        tree = self.init_node(args, args.naive_tseq.nuc, current_time, None, target_seqs, aa_seq=args.naive_tseq.aa, mean_kd=args.naive_kd)
+        tree = self.init_node(args, current_time, None, target_seqs, nuc_seq=args.naive_tseq.nuc, aa_seq=args.naive_tseq.aa, mean_kd=args.naive_kd)
         if args.n_initial_seqs > 1:
             _ = selection_utils.update_lambda_values(args, [tree])
             for _ in range(args.n_initial_seqs):
-                tree.add_child(self.init_node(args, args.naive_tseq.nuc, current_time, tree, target_seqs, aa_seq=args.naive_tseq.aa, mean_kd=args.naive_kd))
+                tree.add_child(self.init_node(args, current_time, tree, target_seqs, nuc_seq=args.naive_tseq.nuc, aa_seq=args.naive_tseq.aa, mean_kd=args.naive_kd))
             print('    --n_initial_seqs: added %d initial naive seqs below root' % args.n_initial_seqs)
         self.tdist_hists[0] = self.get_target_distance_hist(args, tree)  # i guess the first entry in the other two just stays None
 
@@ -464,8 +474,7 @@ class MutationModel():
                     lambda_update_dbg_str = selection_utils.color('blue', 'x')
                 skip_lambda_n -= 1
 
-                def get_n_children():
-                    return numpy.random.poisson(leaf.lambda_)
+                def get_n_children(): return numpy.random.poisson(leaf.lambda_)
                 n_children = get_n_children()
                 if nonfunc_aa(args, leaf.aa_seq) and n_children > 0:  # shouldn't happen any more (it was a bug when I added selection strength scaling), but let's leave this here just in case
                     print('    %s non-zero children for leaf with stop codon' % selection_utils.color('red', 'error'))
@@ -489,57 +498,33 @@ class MutationModel():
                 if args.debug > 1:
                     n_mutation_list, kd_list = [], []
 
-                def make_child_of_parent(parent):
-                    if args.naive_seq2 is not None:  # for paired heavy/light we mutate them separately with their own mutation rate
-                        mfos = [self.mutate(args, get_pair_seq(parent.nuc_seq, args.pair_bounds, iseq), args.lambda0[iseq], skip_stops=args.skip_stops_when_mutating, dont_mutate_struct_positions=args.dont_mutate_struct_positions) for iseq in range(len(args.lambda0))]  # NOTE doesn't pass or get aa_seq, but the only result of that should be that self.init_node() has to calculate it
-                        mutated_sequence = ''.join(m['nuc_seq'] for m in mfos)
-                    else:
-                        mfo = self.mutate(args, parent.nuc_seq, args.lambda0[0], aa_seq=parent.aa_seq, skip_stops=args.skip_stops_when_mutating, dont_mutate_struct_positions=args.dont_mutate_struct_positions)
-                        if args.debug > 1:
-                            n_mutation_list.append(mfo['n_muts'])
-                    return self.init_node(args, mfo['nuc_seq'], current_time, parent, target_seqs, aa_seq=mfo['aa_seq'], mean_kd=updated_mean_kd)
-
-                def add_to_live(child):
-                    "Add a child to the live set."
+                # ----------------------------------------------------------------------------------------
+                def add_child(parent):
+                    child = self.init_node(args, current_time, parent, target_seqs, mutate=True, mean_kd=updated_mean_kd, skip_stops=args.skip_stops_when_mutating, dont_mutate_struct_positions=args.dont_mutate_struct_positions, n_mutation_list=n_mutation_list)
+                    parent.add_child(child)
+                    return child
+                # ----------------------------------------------------------------------------------------
+                def add_leaf(child):
                     if args.debug > 1:
                         kd_list.append(child.Kd)
                     updated_live_leaves.append(child)
-
-                if args.multifurcating_tree or n_children == 1:
-                    # Original behavior: make a multifurcation with the desired number
-                    # of children.
-                    # We also use this strategy for a single child because ete doesn't
-                    # correctly traverse a tree consisting of a single child.
+                # ----------------------------------------------------------------------------------------
+                if args.multifurcating_tree or n_children == 1:  # use this strategy also for a single child since ete doesn't correctly traverse a tree consisting of a single child
                     for _ in range(n_children):
-                        child = make_child_of_parent(leaf)
-                        leaf.add_child(child)
-                        add_to_live(child)
-                else:
-                    # Resolve tree into a random bifurcating tree.
-
-                    def generate_random_tree(n_leaves):
-                        node = TreeNode()
-                        node.populate(n_leaves)
-                        return node
-
-                    # Our strategy is to build a random bifurcating tree with the right
-                    # number of leaves, and then only use it as a tool for generating and
-                    # adding children. Because we don't actually incorporate this tree, we
-                    # call it a "fake tree".
-
-                    fake_tree = generate_random_tree(n_children)
-                    # We will equip the fake tree with the actual nodes of interest.
+                        child = add_child(leaf)
+                        add_leaf(child)
+                else:  # default: resolve tree into a random bifurcating tree
+                    fake_tree = TreeNode()
+                    fake_tree.populate(n_children)  # build a random bifurcating tree with the right number of leaves, but only use it as a tool for generating and adding children
                     fake_tree.actual_node = leaf
-
                     for fake_node in fake_tree.traverse("preorder"):
-                        if fake_node == fake_tree:
-                            continue # Skip the root.
+                        if fake_node == fake_tree:  # skip the root
+                            continue
                         parent = fake_node.up.actual_node
-                        child = make_child_of_parent(parent)
-                        parent.add_child(child)
+                        child = add_child(parent)
                         fake_node.actual_node = child
                         if fake_node.is_leaf():
-                            add_to_live(child)
+                            add_leaf(child)
 
                 if args.debug > 1:
                     terminated_dbg_str = selection_utils.color('red', 'x') if n_children == 0 else ' '
@@ -832,7 +817,7 @@ def main():
     parser.add_argument('--obs_times', type=int, nargs='+', help='If set, simulation stops when we\'ve reached this many generations. If more than one value is specified, the largest value is the final observation time (and stopping criterion), and earlier values are used as additional, intermediate sampling times')
     parser.add_argument('--stop_dist', type=int, help='If set, simulation stops when any simulated sequence is closer than this hamming distance from any of the target sequences, according to --metric_for_target_distance.')
     parser.add_argument('--n_tries', type=int, default=10, help='If the tree terminates before the specified stopping criteria are met, set larger than 1 to keep trying (effectively, with different --random_seed).')
-    parser.add_argument('--multifurcating_tree', action='store_true', help='Allow a burst of reproduction to create a multifurcating tree.')
+    parser.add_argument('--multifurcating_tree', action='store_true', help='At each time step, each leaf draws some number of offspring N. By default we resolve these N offspring into a bifurcating tree along which we mutate; but if this argument is set we instead add these offspring as a single multifurcation event and mutate on the resulting star tree.')
     parser.add_argument('--n_to_sample', type=int, nargs='+', help='Number of cells to sample from the final generation (if one value), or at each generation specified in --obs-times (if same length as --obs_times, and both are set). If --obs_times is set and has more than one value, but --n_to_sample is length one, this same value is applied to each time in --obs_times.')
     parser.add_argument('--kill_sampled_intermediates', action='store_true', help='kill intermediate sequences as they are sampled')
     parser.add_argument('--observe_common_ancestors', action='store_true', help='If set, after deciding which nodes to observe (write to file) according to other options, we then also select the most recent common ancestor for every pair of those nodes (the idea is that this gets you the nodes that you would reconstruct with a phylogenetic program). NOTE histograms written to disk currently don\'t include these.')
