@@ -57,11 +57,6 @@ def parse_ipos_arg(argstr, aa_seq, exclude_positions=None):
     return ipositions
 
 # ----------------------------------------------------------------------------------------
-# For paired heavy/light, the sequences are stored sequentially in one string. This fcn is for extracting them.
-def get_pair_seq(joint_seq, pair_bounds, iseq):
-    return joint_seq[pair_bounds[iseq][0] : pair_bounds[iseq][1]]
-
-# ----------------------------------------------------------------------------------------
 class MutationModel():
     # ----------------------------------------------------------------------------------------
     def __init__(self, args, mutation_order=True):
@@ -112,13 +107,9 @@ class MutationModel():
     def init_node(self, args, time, parent, target_seqs, mutate=False, nuc_seq=None, aa_seq=None, mean_kd=None, skip_stops=False, dont_mutate_struct_positions=False, n_mutation_list=None):
         if mutate:  # if set, we get <nuc_seq> by mutating parent's nuc seq; otherwise <nuc_seq> must be specified (e.g. for root of tree)
             assert nuc_seq is None and aa_seq is None
-            kwargs = {'skip_stops' : skip_stops, 'dont_mutate_struct_positions' : dont_mutate_struct_positions}
-            if args.naive_seq2 is not None:  # for paired heavy/light we mutate them separately with their own mutation rate
-                mfos = [self.mutate(args, get_pair_seq(parent.nuc_seq, args.pair_bounds, iseq), args.lambda0[iseq], **kwargs) for iseq in range(len(args.lambda0))]  # NOTE doesn't pass or get aa_seq, but the only result of that should be that self.init_node() has to calculate it
-            else:
-                mfo = self.mutate(args, parent.nuc_seq, args.lambda0[0], aa_seq=parent.aa_seq, **kwargs)
-                if args.debug > 1:
-                    n_mutation_list.append(mfo['n_muts'])
+            mfo = self.mutate(args, parent.nuc_seq, args.lambda0, aa_seq=parent.aa_seq, skip_stops=skip_stops, dont_mutate_struct_positions=dont_mutate_struct_positions)
+            if args.debug > 1:
+                n_mutation_list.append(mfo['n_muts'])
             nuc_seq, aa_seq = [mfo[k+'_seq'] for k in ['nuc', 'aa']]
         node = TreeNode()
         node.add_feature('nuc_seq', nuc_seq)  # NOTE don't use a TranslatedSeq feature since it gets written to pickle files, which then requires importing the class definition
@@ -500,7 +491,7 @@ class MutationModel():
 
                 # ----------------------------------------------------------------------------------------
                 def add_child(parent):
-                    child = self.init_node(args, current_time, parent, target_seqs, mutate=True, mean_kd=updated_mean_kd, skip_stops=args.skip_stops_when_mutating, dont_mutate_struct_positions=args.dont_mutate_struct_positions, n_mutation_list=n_mutation_list)
+                    child = self.init_node(args, current_time, parent, target_seqs, mutate=True, mean_kd=updated_mean_kd, skip_stops=args.skip_stops_when_mutating, dont_mutate_struct_positions=args.dont_mutate_struct_positions, n_mutation_list=n_mutation_list if args.debug>1 else None)
                     parent.add_child(child)
                     return child
                 # ----------------------------------------------------------------------------------------
@@ -735,19 +726,11 @@ def run_simulation(args):
         raise Exception('didn\'t succeed in making a tree with the specified parameters after %d tries (try setting --n_tries to a larger value)' % args.n_tries)
 
     # write observed sequences to fasta file(s)
-    if args.naive_seq2 is not None:
-        fhandles = [open('%s_seq%d.fasta' % (args.outbase, iseq + 1), 'w') for iseq in range(2)]
-        for iseq, fh in enumerate(fhandles):
-            fh.write('>%s\n%s\n' % (tree.name, get_pair_seq(args.naive_tseq.nuc, args.pair_bounds, iseq)))  # NOTE not trimming off the n_pads_added stuff, it's too hard with the multiple sequences concatenated
+    with open('%s.fasta' % args.outbase, 'w') as fh:
+        if args.observe_common_ancestors:
+            fh.write('>%s\n%s\n' % (tree.name, args.naive_tseq.nuc))  # [:len(args.naive_tseq.nuc) - args.n_pads_added]))
         for node in [n for n in tree.iter_descendants() if n.frequency != 0]:  # NOTE doesn't iterate over root node
-            for iseq, fh in enumerate(fhandles):
-                fh.write('>%s\n%s\n' % (node.name, get_pair_seq(node.nuc_seq, args.pair_bounds, iseq)))
-    else:
-        with open('%s.fasta' % args.outbase, 'w') as fh:
-            if args.observe_common_ancestors:
-                fh.write('>%s\n%s\n' % (tree.name, args.naive_tseq.nuc))  # [:len(args.naive_tseq.nuc) - args.n_pads_added]))
-            for node in [n for n in tree.iter_descendants() if n.frequency != 0]:  # NOTE doesn't iterate over root node
-                fh.write('>%s\n%s\n' % (node.name, node.nuc_seq))  # [:len(node.nuc_seq) - args.n_pads_added]))
+            fh.write('>%s\n%s\n' % (node.name, node.nuc_seq))  # [:len(node.nuc_seq) - args.n_pads_added]))
 
     # write some summary statistics
     frequency, distance_from_naive, degree = zip(*[(node.frequency,
@@ -805,7 +788,7 @@ def main():
     parser.add_argument('--mutability_file', default=file_dir+'/../motifs/Mutability_S5F.csv', help='Path to mutability model file.')
     parser.add_argument('--substitution_file', default=file_dir+'/../motifs/Substitution_S5F.csv', help='Path to substitution model file.')
     parser.add_argument('--no_context', action='store_true', help='Disable context dependence, i.e. use a uniform mutability and substitution. This is vastly faster.')
-    parser.add_argument('--lambda0', type=float, default=[0.365], nargs='*', help='Baseline sequence mutation rate. If --naive_seq2 is set, either pass two values here, or a single value which will be used for both heavy and light.')
+    parser.add_argument('--lambda0', type=float, default=0.365, help='Baseline sequence mutation rate')
     parser.add_argument('--target_sequence_lambda0', type=float, default=0.1, help='baseline mutation rate used for generating target sequences (you shouldn\'t need to change this)')
     parser.add_argument('--aa_paratope_positions', help='amino acid indices that should be considered as part of the paratope, i.e. that count toward the target distance (non-paratope positions are ignored for purposes of the target distance). Three ways to specify (f=<f>, N=<N>, i=<i>): f=<f> sets a fraction of positions chosen at random, if <f> is 1 it uses all remaining positions; N=<N> same as f= but sets absolute number; i=<i> specify exact positions, as a comma-separated list, where each entry in list is either a single position or a python-style slice, e.g. i=0,3,5:10 would use indices 0, 3, 5, 6, 7, 8, 9 (use \'len\' to specify the end of the sequence).')
     parser.add_argument('--aa_struct_positions', help='amino acid indices to treat as \'structural\' positions that are either only allowed synonymous mutations (default) or forbidden mutation entirely (if --dont_mutate_struct_positions is set). Specified as for --aa_paratope_positions (which is set first, and whose positions are automatically excluded from consideratoin for --aa_struct_positions).')
@@ -848,7 +831,6 @@ def main():
                         'The binding equilibrium at any point in time depends, in principle, on the properties of every leaf/cell, and thus would ideally be updated every time any leaf changes.\n'
                         'However, since each individual leaf typically causes only a small change in the overall equilibrium, a substantial speedup with minimal impact on accuracy can be achieved by updating B:A only after modifying every <--skip-update> leaves.\n'
                         '(skip_update < carry_cap/10 recommended.)')
-    parser.add_argument('--naive_seq2', help='Second seed naive nucleotide sequence. For simulating heavy/light chain co-evolution.')
     parser.add_argument('--plotAA', action='store_true', help='Plot trees with collapsing and coloring on amino acid level.')
     parser.add_argument('--no_plot', action='store_true', help='don\'t write any plots (they\'re pretty slow), although we stil write some .p historgrams (see --dont_write_hists).')
     parser.add_argument('--dont_write_hists', action='store_true', help='don\'t write any of the .p histograms (they\'re much larger than the fasta + tree files that we really care about)')
@@ -948,20 +930,6 @@ def main():
     if args.obs_times is not None:
         if args.obs_times != sorted(args.obs_times):
             raise Exception('--obs_times must be sorted (we could sort them here, but then you might think you didn\'t need to worry about the order of --n_to_sample being the same)')
-
-    if args.naive_seq2 is not None:
-        assert args.aa_struct_positions is None  # needs implementing
-        # print('%s not padding naive_seq2 to length multiple of 3' % color('red', 'warning:'))
-        if len(args.lambda0) == 1:  # Use the same mutation rate on both sequences
-            args.lambda0 = [args.lambda0[0], args.lambda0[0]]
-        elif len(args.lambda0) != 2:
-            raise Exception('--lambda0 (set to \'%s\') has to have either two values (if --naive_seq2 is set) or one value (if it isn\'t).' % args.lambda0)
-        if len(args.naive_tseq.nuc) % 3 != 0:  # have to pad first one out to a full codon so we don't think there's a bunch of stop codons in the second sequence
-            args.naive_tseq.nuc += 'N' * (3 - len(args.naive_tseq.nuc) % 3)
-        args.pair_bounds = ((0, len(args.naive_tseq.nuc)), (len(args.naive_tseq.nuc), len(args.naive_tseq.nuc + args.naive_seq2)))  # bounds to allow mashing the two sequences toegether as one string
-        args.naive_tseq = TranslatedSeq(args, args.naive_tseq.nuc + args.naive_seq2.upper())  # merge the two seqeunces to simplify future dealing with the pair:
-        # if nonfunc_nuc(XXX needs testing args, args.naive_tseq.nuc):
-        #     raise Exception('stop codon in --naive_seq2 (this isn\'t necessarily otherwise forbidden, but it\'ll quickly end you in a thicket of infinite loops, so should be corrected).')
 
     if os.path.dirname(args.outbase) == '':
         args.outbase = os.getcwd() + '/' + args.outbase
