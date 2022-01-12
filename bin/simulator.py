@@ -104,7 +104,7 @@ class MutationModel():
         return self.translation_cache[nuc_seq]
 
     # ----------------------------------------------------------------------------------------
-    def init_node(self, args, time, target_seqs, mutate=False, tseq=None, parent=None, mean_kd=None, n_binary_steps=None, skip_stops=False, dont_mutate_struct_positions=False):
+    def init_node(self, args, time, mutate=False, tseq=None, parent=None, mean_kd=None, n_binary_steps=None, skip_stops=False, dont_mutate_struct_positions=False):
         if mutate:  # if set, we get <nuc_seq> by mutating parent's nuc seq; otherwise <nuc_seq> must be specified (e.g. for root of tree)
             assert tseq is None and parent is not None
             mfo = self.mutate(args, parent.nuc_seq, args.lambda0, aa_seq=parent.aa_seq, skip_stops=skip_stops, dont_mutate_struct_positions=dont_mutate_struct_positions)
@@ -122,12 +122,56 @@ class MutationModel():
         node.add_feature('terminated', False)  # set if it's dead (only set if it draws zero children, or if --kill_sampled_intermediates is set and it's sampled at an intermediate time point)
         node.add_feature('frequency', 0)  # observation frequency, is set to either 1 or 0 in set_observation_frequencies_and_names(), then when the collapsed tree is constructed it can get bigger than 1 when the frequencies of nodes connected by zero-length branches are summed
         node.add_feature('lambda_', None)  # set in selection_utils.update_lambda_values() (i.e. is modified every few generations)
-        itarget, tdist = target_distance_fcn(args, tseq, target_seqs)
+        itarget, tdist = target_distance_fcn(args, tseq, self.target_seqs)
         node.add_feature('target_index', itarget)
         node.add_feature('target_distance', tdist)  # nuc or aa distance, depending on args
         node.add_feature('Kd', selection_utils.calc_kd(node, args))
         node.add_feature('relative_Kd', node.Kd / float(mean_kd) if mean_kd is not None else None)  # kd relative to mean of the current leaves
         return node
+
+    # ----------------------------------------------------------------------------------------
+    def add_children(self, args, n_children, leaf, current_time, updated_mean_kd, updated_live_leaves, static_live_leaves, lambda_update_dbg_str):  # add <n_children> children to <leaf>, maybe using intermediate fake binary tree
+        # ----------------------------------------------------------------------------------------
+        def add_child(parent, n_binary_steps=None):
+            child = self.init_node(args, current_time, mutate=True, parent=parent, mean_kd=updated_mean_kd, n_binary_steps=n_binary_steps,
+                                   skip_stops=args.skip_stops_when_mutating, dont_mutate_struct_positions=args.dont_mutate_struct_positions)
+            parent.add_child(child)
+            return child
+        # ----------------------------------------------------------------------------------------
+        def add_leaf(child):
+            if args.debug > 1:
+                kd_list.append(child.Kd)
+                n_mutation_list.append(hamming_distance(child.nuc_seq, leaf.nuc_seq))
+                n_bstep_list.append(child.n_binary_steps)
+            updated_live_leaves.append(child)
+        # ----------------------------------------------------------------------------------------
+        if args.debug > 1:
+            n_bstep_list, n_mutation_list, kd_list = [], [], []
+        if args.multifurcating_tree or n_children == 1:  # use this strategy also for a single child since ete doesn't correctly traverse a tree consisting of a single child
+            for _ in range(n_children):
+                child = add_child(leaf)
+                add_leaf(child)
+        else:  # default: resolve tree into a random bifurcating tree
+            fake_tree = TreeNode()
+            fake_tree.populate(n_children)  # build a random bifurcating tree with the right number of leaves, but only use it as a tool for generating and adding children (note that all branches have length 1, but branch length anyway has no effect on the subsequent number of mutations)
+            fake_tree.actual_node = leaf  # .actual_node attribute keeps track of the ete node that we made that has actual sequences + whatnot in it (rather than the empty one in the fake tree)
+            for fake_node in fake_tree.traverse("preorder"):
+                if fake_node == fake_tree:  # skip the root
+                    continue
+                parent = fake_node.up.actual_node
+                child = add_child(parent, n_binary_steps=fake_node.get_distance(fake_tree))
+                fake_node.actual_node = child
+                if fake_node.is_leaf():
+                    add_leaf(child)
+
+        if args.debug > 1:
+            terminated_dbg_str = selection_utils.color('red', 'x') if n_children == 0 else ' '
+            n_bstep_str_list = '' if args.multifurcating_tree else [('%d' % n) if n > 0 else '-' for n in n_bstep_list]
+            n_mutation_str_list = [('%d' % n) if n > 0 else '-' for n in n_mutation_list]
+            kd_str_list = ['%.0f' % kd for kd in kd_list]
+            rel_kd_str_list = ['%.2f' % (kd / updated_mean_kd) for kd in kd_list]
+            pre_leaf_str = '' if static_live_leaves.index(leaf) == 0 else ('%12s %3d' % ('', len(updated_live_leaves)))
+            print(('      %s    %4d      %5.2f  %3d  %s%s          %-14s          %-14s       %-28s      %-28s') % (pre_leaf_str, static_live_leaves.index(leaf), leaf.lambda_, n_children, lambda_update_dbg_str, terminated_dbg_str, ' '.join(n_bstep_str_list), ' '.join(n_mutation_str_list), ' '.join(kd_str_list), ' '.join(rel_kd_str_list)))
 
     # ----------------------------------------------------------------------------------------
     @staticmethod
@@ -416,18 +460,18 @@ class MutationModel():
         '''
 
         self.sampled_tdist_hists, self.tdist_hists, self.n_nuc_mutated_hists, self.n_aa_mutated_hists = [None], [None], [None], [None]
-        target_seqs = self.get_targets(args)
+        self.target_seqs = self.get_targets(args)
 
         current_time = 0
         self.n_unterminated_leaves = 1
         self.intermediate_sampled_nodes = []  # actual intermediate-sampled nodes
         self.intermediate_sampled_lineage_nodes = set()  # any nodes ancestral to intermediate-sampled nodes (we keep track of these so we know not to prune them)
         self.nodes_to_detach = set()
-        tree = self.init_node(args, current_time, target_seqs, tseq=args.naive_tseq, mean_kd=args.naive_kd)
+        tree = self.init_node(args, current_time, tseq=args.naive_tseq, mean_kd=args.naive_kd)
         if args.n_initial_seqs > 1:
             _ = selection_utils.update_lambda_values(args, [tree])
             for _ in range(args.n_initial_seqs):
-                tree.add_child(self.init_node(args, current_time, target_seqs, tseq=args.naive_tseq, mean_kd=args.naive_kd))
+                tree.add_child(self.init_node(args, current_time, tseq=args.naive_tseq, mean_kd=args.naive_kd))
             print('    --n_initial_seqs: added %d initial naive seqs below root' % args.n_initial_seqs)
         self.tdist_hists[0] = self.get_target_distance_hist(args, tree)  # i guess the first entry in the other two just stays None
 
@@ -487,48 +531,7 @@ class MutationModel():
                     if len(static_live_leaves) == 1:
                         print('  terminating only leaf in tree (it has no children)')
 
-                if args.debug > 1:
-                    n_bstep_list, n_mutation_list, kd_list = [], [], []
-
-                # ----------------------------------------------------------------------------------------
-                def add_child(parent, n_binary_steps=None):
-                    child = self.init_node(args, current_time, target_seqs, mutate=True, parent=parent, mean_kd=updated_mean_kd, n_binary_steps=n_binary_steps,
-                                           skip_stops=args.skip_stops_when_mutating, dont_mutate_struct_positions=args.dont_mutate_struct_positions)
-                    parent.add_child(child)
-                    return child
-                # ----------------------------------------------------------------------------------------
-                def add_leaf(child):
-                    if args.debug > 1:
-                        kd_list.append(child.Kd)
-                        n_mutation_list.append(child.dist)
-                        n_bstep_list.append(child.n_binary_steps)
-                    updated_live_leaves.append(child)
-                # ----------------------------------------------------------------------------------------
-                if args.multifurcating_tree or n_children == 1:  # use this strategy also for a single child since ete doesn't correctly traverse a tree consisting of a single child
-                    for _ in range(n_children):
-                        child = add_child(leaf)
-                        add_leaf(child)
-                else:  # default: resolve tree into a random bifurcating tree
-                    fake_tree = TreeNode()
-                    fake_tree.populate(n_children)  # build a random bifurcating tree with the right number of leaves, but only use it as a tool for generating and adding children (note that all branches have length 1, but branch length anyway has no effect on the subsequent number of mutations)
-                    fake_tree.actual_node = leaf  # .actual_node attribute keeps track of the ete node that we made that has actual sequences + whatnot in it (rather than the empty one in the fake tree)
-                    for fake_node in fake_tree.traverse("preorder"):
-                        if fake_node == fake_tree:  # skip the root
-                            continue
-                        parent = fake_node.up.actual_node
-                        child = add_child(parent, n_binary_steps=fake_node.get_distance(fake_tree))
-                        fake_node.actual_node = child
-                        if fake_node.is_leaf():
-                            add_leaf(child)
-
-                if args.debug > 1:
-                    terminated_dbg_str = selection_utils.color('red', 'x') if n_children == 0 else ' '
-                    n_bstep_str_list = '' if args.multifurcating_tree else [('%d' % n) if n > 0 else '-' for n in n_bstep_list]
-                    n_mutation_str_list = [('%d' % n) if n > 0 else '-' for n in n_mutation_list]
-                    kd_str_list = ['%.0f' % kd for kd in kd_list]
-                    rel_kd_str_list = ['%.2f' % (kd / updated_mean_kd) for kd in kd_list]
-                    pre_leaf_str = '' if static_live_leaves.index(leaf) == 0 else ('%12s %3d' % ('', len(updated_live_leaves)))
-                    print(('      %s    %4d      %5.2f  %3d  %s%s          %-14s          %-14s       %-28s      %-28s') % (pre_leaf_str, static_live_leaves.index(leaf), leaf.lambda_, n_children, lambda_update_dbg_str, terminated_dbg_str, ' '.join(n_bstep_str_list), ' '.join(n_mutation_str_list), ' '.join(kd_str_list), ' '.join(rel_kd_str_list)))
+                self.add_children(args, n_children, leaf, current_time, updated_mean_kd, updated_live_leaves, static_live_leaves, lambda_update_dbg_str)
 
             self.tdist_hists[current_time] = self.get_target_distance_hist(args, updated_live_leaves)
             self.n_nuc_mutated_hists[current_time] = scipy.histogram([l.naive_distance for l in updated_live_leaves], bins=list(numpy.arange(-0.5, (max(args.obs_times) if args.obs_times is not None else current_time) + 0.5)))  # can't have more than one mutation per generation
