@@ -118,7 +118,7 @@ class MutationModel():
         node.add_feature('shm_aa', hamming_distance(node.aa_seq, args.naive_tseq.aa))  # aa distance
         node.add_feature('time', time)
         node.dist = mfo['n_muts'] if mutate else 0  # always nucleotide distance (doesn't use add_feature() because it's a builtin ete3 feature)
-        node.add_feature('n_binary_steps', n_binary_steps)
+        node.add_feature('n_binary_steps', n_binary_steps)  # only used for dbg at the moment
         node.add_feature('terminated', False)  # set if it's dead (only set if it draws zero children, or if --kill_sampled_intermediates is set and it's sampled at an intermediate time point)
         node.add_feature('frequency', 0)  # observation frequency, is set to either 1 or 0 in set_observation_frequencies_and_names(), then when the collapsed tree is constructed it can get bigger than 1 when the frequencies of nodes connected by zero-length branches are summed
         node.add_feature('lambda_', None)  # set in selection_utils.update_lambda_values() (i.e. is modified every few generations)
@@ -132,13 +132,11 @@ class MutationModel():
     # ----------------------------------------------------------------------------------------
     def add_children(self, args, n_children, leaf, current_time, updated_mean_kd, updated_live_leaves, static_live_leaves, lambda_update_dbg_str):  # add <n_children> children to <leaf>, maybe using intermediate fake binary tree
         # ----------------------------------------------------------------------------------------
-        def add_child(parent, n_binary_steps=None):
-            child = self.init_node(args, current_time, mutate=True, parent=parent, mean_kd=updated_mean_kd, n_binary_steps=n_binary_steps,
-                                   skip_stops=args.skip_stops_when_mutating, dont_mutate_struct_positions=args.dont_mutate_struct_positions)
-            parent.add_child(child)
-            return child
+        def get_child(parent, n_binary_steps=None):
+            return self.init_node(args, current_time, mutate=True, parent=parent, mean_kd=updated_mean_kd, n_binary_steps=n_binary_steps,
+                                  skip_stops=args.skip_stops_when_mutating, dont_mutate_struct_positions=args.dont_mutate_struct_positions)
         # ----------------------------------------------------------------------------------------
-        def add_leaf(child):
+        def add_leaf(child):  # the leaf distinction is for things that depend on the current_time loop, e.g. debug printing and lambda updating
             if args.debug > 1:
                 kd_list.append(child.Kd)
                 n_mutation_list.append(hamming_distance(child.nuc_seq, leaf.nuc_seq))
@@ -149,7 +147,8 @@ class MutationModel():
             n_bstep_list, n_mutation_list, kd_list = [], [], []
         if args.multifurcating_tree or n_children == 1:  # use this strategy also for a single child since ete doesn't correctly traverse a tree consisting of a single child
             for _ in range(n_children):
-                child = add_child(leaf)
+                child = get_child(leaf)
+                leaf.add_child(child)
                 add_leaf(child)
         else:  # default: resolve tree into a random bifurcating tree
             fake_tree = TreeNode()
@@ -159,7 +158,8 @@ class MutationModel():
                 if fake_node == fake_tree:  # skip the root
                     continue
                 parent = fake_node.up.actual_node
-                child = add_child(parent, n_binary_steps=fake_node.get_distance(fake_tree))
+                child = get_child(parent, n_binary_steps=fake_node.get_distance(fake_tree))
+                parent.add_child(child)
                 fake_node.actual_node = child
                 if fake_node.is_leaf():
                     add_leaf(child)
