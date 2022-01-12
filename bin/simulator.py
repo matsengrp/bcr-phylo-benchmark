@@ -104,15 +104,17 @@ class MutationModel():
         return self.translation_cache[nuc_seq]
 
     # ----------------------------------------------------------------------------------------
-    def init_node(self, args, time, target_seqs, mutate=False, nuc_seq=None, aa_seq=None, parent=None, mean_kd=None, n_binary_steps=None, skip_stops=False, dont_mutate_struct_positions=False):
+    def init_node(self, args, time, target_seqs, mutate=False, tseq=None, parent=None, mean_kd=None, n_binary_steps=None, skip_stops=False, dont_mutate_struct_positions=False):
         if mutate:  # if set, we get <nuc_seq> by mutating parent's nuc seq; otherwise <nuc_seq> must be specified (e.g. for root of tree)
-            assert nuc_seq is None and aa_seq is None and parent is not None
+            assert tseq is None and parent is not None
             mfo = self.mutate(args, parent.nuc_seq, args.lambda0, aa_seq=parent.aa_seq, skip_stops=skip_stops, dont_mutate_struct_positions=dont_mutate_struct_positions)
             nuc_seq, aa_seq = [mfo[k+'_seq'] for k in ['nuc', 'aa']]
+            tseq = TranslatedSeq(args, nuc_seq, aa_seq=aa_seq)
+        assert tseq is not None
         node = TreeNode()
-        node.add_feature('nuc_seq', nuc_seq)  # NOTE don't use a TranslatedSeq feature since it gets written to pickle files, which then requires importing the class definition
-        node.add_feature('aa_seq', aa_seq if aa_seq is not None else self.get_translation(nuc_seq))
-        node.add_feature('naive_distance', hamming_distance(nuc_seq, args.naive_tseq.nuc))  # nucleotide distance (but don't want to change the name for backwards compatibility)
+        node.add_feature('nuc_seq', tseq.nuc)  # NOTE don't use a TranslatedSeq feature since it gets written to pickle files, which then requires importing the class definition
+        node.add_feature('aa_seq', tseq.aa)  # self.get_translation(nuc_seq))
+        node.add_feature('naive_distance', hamming_distance(node.nuc_seq, args.naive_tseq.nuc))  # nucleotide distance (but don't want to change the name for backwards compatibility)
         node.add_feature('shm_aa', hamming_distance(node.aa_seq, args.naive_tseq.aa))  # aa distance
         node.add_feature('time', time)
         node.dist = mfo['n_muts'] if mutate else 0  # always nucleotide distance (doesn't use add_feature() because it's a builtin ete3 feature)
@@ -120,7 +122,7 @@ class MutationModel():
         node.add_feature('terminated', False)  # set if it's dead (only set if it draws zero children, or if --kill_sampled_intermediates is set and it's sampled at an intermediate time point)
         node.add_feature('frequency', 0)  # observation frequency, is set to either 1 or 0 in set_observation_frequencies_and_names(), then when the collapsed tree is constructed it can get bigger than 1 when the frequencies of nodes connected by zero-length branches are summed
         node.add_feature('lambda_', None)  # set in selection_utils.update_lambda_values() (i.e. is modified every few generations)
-        itarget, tdist = target_distance_fcn(args, TranslatedSeq(args, nuc_seq, aa_seq=node.aa_seq), target_seqs)
+        itarget, tdist = target_distance_fcn(args, tseq, target_seqs)
         node.add_feature('target_index', itarget)
         node.add_feature('target_distance', tdist)  # nuc or aa distance, depending on args
         node.add_feature('Kd', selection_utils.calc_kd(node, args))
@@ -421,11 +423,11 @@ class MutationModel():
         self.intermediate_sampled_nodes = []  # actual intermediate-sampled nodes
         self.intermediate_sampled_lineage_nodes = set()  # any nodes ancestral to intermediate-sampled nodes (we keep track of these so we know not to prune them)
         self.nodes_to_detach = set()
-        tree = self.init_node(args, current_time, target_seqs, nuc_seq=args.naive_tseq.nuc, aa_seq=args.naive_tseq.aa, mean_kd=args.naive_kd)
+        tree = self.init_node(args, current_time, target_seqs, tseq=args.naive_tseq, mean_kd=args.naive_kd)
         if args.n_initial_seqs > 1:
             _ = selection_utils.update_lambda_values(args, [tree])
             for _ in range(args.n_initial_seqs):
-                tree.add_child(self.init_node(args, current_time, target_seqs, nuc_seq=args.naive_tseq.nuc, aa_seq=args.naive_tseq.aa, mean_kd=args.naive_kd))
+                tree.add_child(self.init_node(args, current_time, target_seqs, tseq=args.naive_tseq, mean_kd=args.naive_kd))
             print('    --n_initial_seqs: added %d initial naive seqs below root' % args.n_initial_seqs)
         self.tdist_hists[0] = self.get_target_distance_hist(args, tree)  # i guess the first entry in the other two just stays None
 
@@ -509,7 +511,7 @@ class MutationModel():
                 else:  # default: resolve tree into a random bifurcating tree
                     fake_tree = TreeNode()
                     fake_tree.populate(n_children)  # build a random bifurcating tree with the right number of leaves, but only use it as a tool for generating and adding children (note that all branches have length 1, but branch length anyway has no effect on the subsequent number of mutations)
-                    fake_tree.actual_node = leaf
+                    fake_tree.actual_node = leaf  # .actual_node attribute keeps track of the ete node that we made that has actual sequences + whatnot in it (rather than the empty one in the fake tree)
                     for fake_node in fake_tree.traverse("preorder"):
                         if fake_node == fake_tree:  # skip the root
                             continue
