@@ -121,7 +121,7 @@ class MutationModel():
         node.add_feature('n_binary_steps', n_binary_steps)  # only used for dbg at the moment
         node.add_feature('terminated', False)  # set if it's dead (only set if it draws zero children, or if --kill_sampled_intermediates is set and it's sampled at an intermediate time point)
         node.add_feature('frequency', 0)  # observation frequency, is set to either 1 or 0 in set_observation_frequencies_and_names(), then when the collapsed tree is constructed it can get bigger than 1 when the frequencies of nodes connected by zero-length branches are summed
-        node.add_feature('lambda_', None)  # set in selection_utils.update_lambda_values() (i.e. is modified every few generations)
+        node.add_feature('lambda_', None)  # initially set when we next call selection_utils.update_lambda_values(), and thereafter modified periodically (although note that now that we have caching impelemented, we could in principle set individual lambdas like here)
         itarget, tdist = target_distance_fcn(args, tseq, self.target_seqs)
         node.add_feature('target_index', itarget)
         node.add_feature('target_distance', tdist)  # nuc or aa distance, depending on args
@@ -130,7 +130,7 @@ class MutationModel():
         return node
 
     # ----------------------------------------------------------------------------------------
-    def add_children(self, args, n_children, leaf, current_time, updated_mean_kd, updated_live_leaves, static_live_leaves, lambda_update_dbg_str):  # add <n_children> children to <leaf>, maybe using intermediate fake binary tree
+    def add_children(self, args, n_children, leaf, current_time, updated_mean_kd, updated_live_leaves, static_live_leaves, lambda_update_dbg_str, cached_bna):  # add <n_children> children to <leaf>, maybe using intermediate fake binary tree
         # ----------------------------------------------------------------------------------------
         def get_child(parent, n_binary_steps=None):
             return self.init_node(args, current_time, mutate=True, parent=parent, mean_kd=updated_mean_kd, n_binary_steps=n_binary_steps,
@@ -151,6 +151,7 @@ class MutationModel():
                 leaf.add_child(child)
                 add_leaf(child)
         else:  # default: resolve tree into a random bifurcating tree
+            new_nodes = []
             fake_tree = TreeNode()
             fake_tree.populate(n_children)  # build a random bifurcating tree with the right number of leaves, but only use it as a tool for generating and adding children (note that all branches have length 1, but branch length anyway has no effect on the subsequent number of mutations)
             fake_tree.actual_node = leaf  # .actual_node attribute keeps track of the ete node that we made that has actual sequences + whatnot in it (rather than the empty one in the fake tree)
@@ -163,6 +164,9 @@ class MutationModel():
                 fake_node.actual_node = child
                 if fake_node.is_leaf():
                     add_leaf(child)
+                new_nodes.append(child)
+            if len(new_nodes) > 0:
+                selection_utils.update_lambda_values(args, new_nodes, cached_bna=cached_bna)  # NOTE selection strength scaling won't really be right if we only pass in <new_nodes>, but i don't really want to modify the live leaves here (should maybe be updated_live_leaves + new_nodes)
 
         if args.debug > 1:
             terminated_dbg_str = selection_utils.color('red', 'x') if n_children == 0 else ' '
@@ -469,7 +473,7 @@ class MutationModel():
         self.nodes_to_detach = set()
         tree = self.init_node(args, current_time, tseq=args.naive_tseq, mean_kd=args.naive_kd)
         if args.n_initial_seqs > 1:
-            _ = selection_utils.update_lambda_values(args, [tree])
+            selection_utils.update_lambda_values(args, [tree])
             for _ in range(args.n_initial_seqs):
                 tree.add_child(self.init_node(args, current_time, tseq=args.naive_tseq, mean_kd=args.naive_kd))
             print('    --n_initial_seqs: added %d initial naive seqs below root' % args.n_initial_seqs)
@@ -481,7 +485,7 @@ class MutationModel():
         if args.debug > 1:
             print('       gen   live leaves   (%s: terminated/no children, %s: updated lambdas)' % (selection_utils.color('red', 'x'), selection_utils.color('blue', 'x')))
             print('             before/after   ileaf   lambda  n children     n binary steps          n mutations            Kd                              Kd / (mean Kd)')
-        static_live_leaves, updated_live_leaves = None, None
+        static_live_leaves, updated_live_leaves, cached_bna = None, None, None
         while True:
             current_time += 1
 
@@ -505,7 +509,7 @@ class MutationModel():
                 lambda_update_dbg_str = ' '
                 if skip_lambda_n == 0:  # time to update the lambdas for every leaf
                     skip_lambda_n = args.skip_update + 1  # reset it so we don't update again until we've done <args.skip_update> more leaves (+ 1 is so that if args.skip_update is 0 we don't skip at all, i.e. args.skip_update is the number of leaves skipped, *not* the number of leaves *between* updates)
-                    updated_lambda_values = selection_utils.update_lambda_values(args, updated_live_leaves)  # note that when this updates in the middle of the loop over leaves, it'll set lambda values for any children that have so far been added
+                    updated_lambda_values, cached_bna = selection_utils.update_lambda_values(args, updated_live_leaves)  # note that when this updates in the middle of the loop over leaves, it'll set lambda values for any children that have so far been added
                     updated_mean_kd = numpy.mean([l.Kd for l in updated_live_leaves if l.Kd != float('inf')])  # NOTE that if mean kd deviates by a huge amount from args.mature_kd (probably due to very low selection strength, causing the cells to rapidly drift away from the target sequence) then in order to avoid the cells dying out you'd need to recalculate A_total here with the current mean kd (but it's unclear what you'd really be simulating then, since adding an aribtrarily large amount of new antigen because the population's getting low isn't very realistic)
                     lambda_update_dbg_str = selection_utils.color('blue', 'x')
                 skip_lambda_n -= 1
@@ -531,7 +535,7 @@ class MutationModel():
                     if len(static_live_leaves) == 1:
                         print('  terminating only leaf in tree (it has no children)')
 
-                self.add_children(args, n_children, leaf, current_time, updated_mean_kd, updated_live_leaves, static_live_leaves, lambda_update_dbg_str)
+                self.add_children(args, n_children, leaf, current_time, updated_mean_kd, updated_live_leaves, static_live_leaves, lambda_update_dbg_str, cached_bna)
 
             self.tdist_hists[current_time] = self.get_target_distance_hist(args, updated_live_leaves)
             self.n_nuc_mutated_hists[current_time] = scipy.histogram([l.naive_distance for l in updated_live_leaves], bins=list(numpy.arange(-0.5, (max(args.obs_times) if args.obs_times is not None else current_time) + 0.5)))  # can't have more than one mutation per generation
@@ -554,7 +558,7 @@ class MutationModel():
 
             if finished:
                 print(termstr)
-                _ = selection_utils.update_lambda_values(args, updated_live_leaves)  # have to set lambda for any newly-born leaves
+                selection_utils.update_lambda_values(args, updated_live_leaves)  # have to set lambda for any newly-born leaves
                 break
 
             if args.obs_times is not None and len(args.obs_times) > 1 and current_time in args.obs_times:

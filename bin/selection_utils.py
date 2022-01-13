@@ -178,7 +178,7 @@ def calc_kd(node, args):
     return kd
 
 # ----------------------------------------------------------------------------------------
-def update_lambda_values(args, live_leaves, lambda_min=10e-10, debug=False):
+def update_lambda_values(args, live_leaves, lambda_min=10e-10, cached_bna=None, debug=False):
     ''' update the lambda_ feature (parameter for the poisson progeny distribution) for each leaf in <live_leaves> '''
 
     # ----------------------------------------------------------------------------------------
@@ -210,11 +210,18 @@ def update_lambda_values(args, live_leaves, lambda_min=10e-10, debug=False):
         BnA = calc_BnA(Kd_n, obj_min.x[0])
         # Terminate if the precision is not good enough:
         assert(BnA.sum()+obj_min.x[0]-args.A_total < args.A_total/100)
-        return BnA
+        bna_dict = {k : ba for k, ba in zip(Kd_n, BnA)}
+        # print('  calcd new bna values for %d leaves: %s' % (len(BnA), '  '.join('%5.1f %-5.3f'%(k, b) for k, b in sorted(bna_dict.items(), key=operator.itemgetter(1)))))
+        if cached_bna is not None:
+            if debug:
+                print('     updating cached bna for %d new kd values' % len([k for k in bna_dict if k not in cached_bna]))
+            cached_bna.update(bna_dict)
+        return BnA, bna_dict
 
     # ----------------------------------------------------------------------------------------
     def trans_BA(BnA):
         '''Transform the fraction B:A (B bound to A) to a poisson lambda between 0 and 2.'''
+        alpha, beta, Q = args.logi_params
         # We keep alpha to enable the possibility that there is a minimum lambda_:
         lambda_ = alpha + (2 - alpha) / (1 + Q*scipy.exp(-beta*BnA))
         return [max(lambda_min, l) for l in lambda_]
@@ -245,16 +252,24 @@ def update_lambda_values(args, live_leaves, lambda_min=10e-10, debug=False):
         return [max(lambda_min, l) for l in lambdas]
 
     # ----------------------------------------------------------------------------------------
-    alpha, beta, Q = args.logi_params
     Kd_n = scipy.array([l.Kd for l in live_leaves])  # get scipy array of kd values from list of live leaves
     if debug:
-        print('    updating %d lambda values with alpha, beta, Q: %.2f %.2f %.2f' % (len(Kd_n), alpha, beta, Q))
+        print('    updating %d lambda values' % len(Kd_n))
         initial_lambda_values = [l.lambda_ for l in live_leaves]
     if args.min_effective_kd is not None:
         if debug:
             print('      --min_effective_kd: increased %d / %d Kd values to %.0f' % (len([k for k in Kd_n if k < args.min_effective_kd]), len(Kd_n), args.min_effective_kd))
         Kd_n = scipy.array([max(k, args.min_effective_kd) for k in Kd_n])
-    BnA = calc_binding_time(Kd_n)  # get list of binding time values for each cell
+
+    # get list of binding time values for each cell (this is the slow step)
+    bna_dict = None
+    if cached_bna is None or any(k not in cached_bna for k in Kd_n):  # calculate new bna values if either no cached values were passed in, or if there's a new kd value that isn't in the cache dict
+        BnA, bna_dict = calc_binding_time(Kd_n)
+    else:  # use cached values that were passed in
+        if debug:
+            print('      using %d cached values for %d nodes' % (len(cached_bna), len(Kd_n)))
+        BnA = scipy.array([cached_bna[k] for k in Kd_n])
+
     new_lambdas = trans_BA(BnA)  # convert each cell's binding time to poisson lambda (i.e. mean number of offspring)
     if args.selection_strength < 1 and len(new_lambdas) > 0:
         new_lambdas = apply_selection_strength_scaling(new_lambdas)
@@ -265,7 +280,7 @@ def update_lambda_values(args, live_leaves, lambda_min=10e-10, debug=False):
         def fstr(l1, l2): return 4*' ' if l1==l2 else color(None if l1 is None else ('green' if l2 > l1 else 'red'), lstr(l2))
         print('        initial: %s' % '  '.join(lstr(l1) for l1 in initial_lambda_values))
         print('          final: %s' % '  '.join(fstr(l1, l2) for l1, l2 in zip(initial_lambda_values, new_lambdas)))
-    return new_lambdas  # return new values (only for debug printing)
+    return new_lambdas, bna_dict  # return new values (only for debug printing), and dict of kd : bna pairs (for caching)
 
 # ----------------------------------------------------------------------------------------
 def find_A_total(carry_cap, B_total, f_full, mature_kd, U):
