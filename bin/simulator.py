@@ -292,9 +292,9 @@ class MutationModel():
         # ----------------------------------------------------------------------------------------
         def print_final(tseq):
             print('    nuc target seq:')
-            selection_utils.color_mutants(initial_tseq.nuc, tseq.nuc, print_result=True, extra_str='      ')
+            selection_utils.color_mutants(initial_tseq.nuc, tseq.nuc, print_result=True, only_print_seq=True, extra_str='      ')
             print('    aa target seq:')
-            selection_utils.color_mutants(initial_tseq.aa, tseq.aa, amino_acid=True, print_result=True, extra_str='      ')
+            selection_utils.color_mutants(initial_tseq.aa, tseq.aa, amino_acid=True, print_result=True, only_print_seq=True, extra_str='      ')
         # ----------------------------------------------------------------------------------------
         assert not nonfunc_aa(args, initial_tseq.aa)  # already checked during argument parsing, but we really want to make sure since the loop will blow up if there's a stop to start with
         if tdbg:
@@ -472,11 +472,24 @@ class MutationModel():
         self.intermediate_sampled_lineage_nodes = set()  # any nodes ancestral to intermediate-sampled nodes (we keep track of these so we know not to prune them)
         self.nodes_to_detach = set()
         tree = self.init_node(args, current_time, tseq=args.naive_tseq, mean_kd=args.naive_kd)
-        if args.n_initial_seqs > 1:
+        init_seqs, mean_kd = [], None
+        if args.initial_seq_file is not None:
+            from Bio import SeqIO
+            init_seqs = [TranslatedSeq(args, s.seq.upper()) for s in SeqIO.parse(args.initial_seq_file, "fasta")]
+            print('    --initial_seq_file: added %d initial seqs below root from %s' % (len(init_seqs), args.initial_seq_file))
+            if args.debug:
+                print('      initial seqs:')
+                for iseq in init_seqs:
+                    selection_utils.color_mutants(args.naive_tseq.nuc, iseq.nuc, print_result=True, extra_str='        ')
+        elif args.n_naive_seq_copies > 1:
+            init_seqs = [args.naive_tseq for _ in range(args.n_naive_seq_copies)]
+            mean_kd = args.naive_kd
+            print('    --n_naive_seq_copies: added %d initial naive seqs below root' % args.n_naive_seq_copies)
+        if len(init_seqs) > 0:
             selection_utils.update_lambda_values(args, [tree])
-            for _ in range(args.n_initial_seqs):
-                tree.add_child(self.init_node(args, current_time, tseq=args.naive_tseq, mean_kd=args.naive_kd))
-            print('    --n_initial_seqs: added %d initial naive seqs below root' % args.n_initial_seqs)
+            self.n_unterminated_leaves = len(init_seqs)
+            for aseq in init_seqs:
+                tree.add_child(self.init_node(args, current_time, tseq=aseq, mean_kd=mean_kd))
         self.tdist_hists[0] = self.get_target_distance_hist(args, tree)  # i guess the first entry in the other two just stays None
 
         if args.debug == 1:
@@ -792,11 +805,12 @@ def main():
     parser.add_argument('--outbase', required=True, help='String specifying output location: concatenation of output directory with an optional base string for the output files. E.g. \'/path/to/output/xxx\' will write files to the dir \'/path/to/output/\', each of which begin with the string \'xxx\'. If no path is specified, they\'re written to the current dir (or a subdir of it if a relative path is specified).')
     # initial conditions + mutation
     parser.add_argument('--naive_seq', help='Initial naive nucleotide sequence. Have to set either this or --naive_seq_file')
-    parser.add_argument('--naive_seq_file', help='Path to fasta file containing initial naive sequences from which do draw at random. Have to set either this or --naive_seq')
+    parser.add_argument('--naive_seq_file', help='Path to fasta file containing initial naive sequences from which do draw at random. Have to set either this or --naive_seq. Either way, it is only possible to have a single naive sequence (although see --initial_seq_file).')
+    parser.add_argument('--n_naive_seq_copies', type=int, default=1, help='Number of times to duplicate the single initial naive sequence before starting simulation. Ignored if --initial_seq_file is set.')
+    parser.add_argument('--initial_seq_file', help='Fasta file with initial sequences (in general *not* the naive sequence) to start simulation, for use with multiple GC reentry rounds, i.e. these should *not* be the naive sequence but rather are the sequences from previous GC rounds that are reentering the GC reaction (and the naive sequence should be the same for all rounds).')
     parser.add_argument('--carry_cap', type=int, default=1000, help='The carrying capacity of the simulation with selection. This number affects the fixation time of a new mutation. Fixation time is approx. log2(carry_cap), e.g. log2(1000) ~= 10.')
     parser.add_argument('--selection_strength', type=float, default=1., help='Value in [0, 1] specifying the relative strength of selection, i.e. the extent to which fitness (in the form of the lambda value for each cell\'s poisson distribution from which its N offspring is drawn) is determined by affinity (strength of 1 is entirely affinity) vs by chance (strength of 0 is entirely chance). See also --no_selection.')
     parser.add_argument('--no_selection', action='store_true', help='Give all sequences the same kd value (i.e. neutral evolution). Similar to --selection_strength 0, although the latter gives a wider N offspring distribution since kd varies among sequences.')
-    parser.add_argument('--n_initial_seqs', type=int, default=1, help='Number of initial naive sequences.')
     parser.add_argument('--mutability_file', default=file_dir+'/../motifs/Mutability_S5F.csv', help='Path to mutability model file.')
     parser.add_argument('--substitution_file', default=file_dir+'/../motifs/Substitution_S5F.csv', help='Path to substitution model file.')
     parser.add_argument('--no_context', action='store_true', help='Disable context dependence, i.e. use a uniform mutability and substitution. This is vastly faster.')
@@ -879,6 +893,8 @@ def main():
     if [args.naive_seq, args.naive_seq_file].count(None) != 1:
         raise Exception('exactly one of --naive_seq and --naive_seq_file must be set')
     if args.naive_seq_file is not None:
+        if args.initial_seq_file is not None:
+            raise Exception('if setting --initial_seq_file, you have to specify the exacty naive sequence (not a file from which to choose at random) since we\'d then have no way of knowing which naive sequence was chosen in the initial GC round.')
         from Bio import SeqIO
         records = list(SeqIO.parse(args.naive_seq_file, "fasta"))
         random.shuffle(records)
@@ -919,8 +935,8 @@ def main():
                     return color('blue', char)
             return char
         print('    naive seq%s%s:' % ('' if args.aa_paratope_positions is None else color('red', ' paratope'), '' if args.aa_struct_positions is None else color('blue', ' structural')))
-        print('        %s' % ''.join(getcol(i, c) for i, c in enumerate(args.naive_tseq.nuc)))
-        print('        %s' % ''.join(getcol(i, c, aa=True) for i, c in enumerate(args.naive_tseq.aa)))
+        print('      %s' % ''.join(getcol(i, c) for i, c in enumerate(args.naive_tseq.nuc)))
+        print('      %s' % ''.join(getcol(i, c, aa=True) for i, c in enumerate(args.naive_tseq.aa)))
     if nonfunc_aa(args, args.naive_tseq.aa):
         raise Exception('stop codon in --naive_seq (this isn\'t necessarily otherwise forbidden, but it\'ll quickly end you in a thicket of infinite loops, so should be corrected).')
 
