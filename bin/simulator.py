@@ -956,6 +956,8 @@ def main():
     if args.obs_times is None and args.n_to_sample is not None and len(args.n_to_sample) > 1:
         raise Exception('doesn\'t make sense to specify multiple values for --n_to_sample if --obs_times is not set (i.e. if we\'re only sampling at the end)')
     if args.obs_times is not None:
+        if 0 in args.obs_times:
+            raise Exception('can\'t sample at time 0 (could implement it, but it doesn\'t make a ton of sense)')
         if args.obs_times != sorted(args.obs_times):
             raise Exception('--obs_times must be sorted (we could sort them here, but then you might think you didn\'t need to worry about the order of --n_to_sample being the same)')
 
