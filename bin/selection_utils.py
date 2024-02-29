@@ -22,6 +22,7 @@ import os
 import csv
 import math
 import sys
+import collections
 warnings.filterwarnings('ignore', 'The iteration is not making good progress')  # scipy.optimize.fsolve() is throwing this. I think it's telling us that our initial guess isn't very good, but as far as I can tell (without understanding kristian's code here) it ends up at a fine solution in the end, so maybe it's ok to turn off this warning
 
 from GCutils import nonfunc_aa, hamming_distance, local_translate
@@ -30,6 +31,8 @@ from GCutils import nonfunc_aa, hamming_distance, local_translate
 # it might make replace_codon_in_aa_seq() faster to use a table here of precached translations, but translation just isn't taking that much time a.t.m.
 all_codons = [''.join(c) for c in itertools.product('ACGT', repeat=3)]
 all_amino_acids = set(local_translate(c) for c in all_codons)  # note: includes stop codons (*)
+def ambig_chars(aa=False):
+    return ['X'] if aa else list('NRYKMSWBDHV')
 
 # ----------------------------------------------------------------------------------------
 def aa_ascii_code_distance(aa1, aa2):  # super arbitrary, but at least for the moment we just want some arbitrary spread in distances
@@ -395,18 +398,26 @@ def plot_runstats(tdist_hists, outbase, colors):
 
 # ----------------------------------------------------------------------------------------
 # bash color codes
-Colors = {}
-Colors['head'] = '\033[95m'
-Colors['bold'] = '\033[1m'
-Colors['purple'] = '\033[95m'
-Colors['blue'] = '\033[94m'
-Colors['light_blue'] = '\033[1;34m'
-Colors['green'] = '\033[92m'
-Colors['yellow'] = '\033[93m'
-Colors['red'] = '\033[91m'
-Colors['reverse_video'] = '\033[7m'
-Colors['red_bkg'] = '\033[41m'
-Colors['end'] = '\033[0m'
+ansi_color_table = collections.OrderedDict((
+    # 'head' : '95'  # not sure wtf this was?
+    ('end', 0),
+    ('bold', 1),
+    ('reverse_video', 7),
+    ('grey', 90),
+    ('red', 91),
+    ('green', 92),
+    ('yellow', 93),
+    ('blue', 94),
+    ('purple', 95),
+    ('grey_bkg', 100),
+    ('red_bkg', 41),
+    ('green_bkg', 42),
+    ('yellow_bkg', 43),
+    ('blue_bkg', 44),
+    ('light_blue_bkg', 104),
+    ('purple_bkg', 45),
+))
+Colors = {c : '\033[%sm'%i for c, i in ansi_color_table.items()}
 
 # ----------------------------------------------------------------------------------------
 def color(col, seq, width=None, padside='left'):
@@ -430,13 +441,8 @@ def color_mutants(ref_seq, seq, print_result=False, extra_str='', print_n_snps=F
     if len(ref_seq) != len(seq):
         raise Exception('unequal lengths in color_mutants()\n    %s\n    %s' % (ref_seq, seq))
 
-    gap_chars = ['.', '-']
-    if amino_acid:
-        tmp_ambigs = ['X']
-        tmp_gaps = gap_chars
-    else:
-        tmp_ambigs = list('NRYKMSWBDHV')
-        tmp_gaps = gap_chars
+    tmp_gaps = ['.', '-']
+    tmp_ambigs = ambig_chars(aa=amino_acid)
 
     return_str, isnps = [], []
     for inuke in range(len(seq)):

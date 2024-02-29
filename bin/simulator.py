@@ -1,4 +1,4 @@
-#! /usr/bin/env python
+#! /usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 '''
@@ -438,7 +438,7 @@ class MutationModel():
                 finished = True
                 successful = True
         if args.obs_times is not None:
-            dbgstr += ['time %d' % current_time]
+            dbgstr += ['time %3d' % current_time]
             if current_time >= max(args.obs_times):  # if we've done as many generations as we were told to
                 termstr += ['    --obs_times: breaking at generation %d >= %d' % (current_time, max(args.obs_times))]
                 finished = True
@@ -453,6 +453,12 @@ class MutationModel():
         if finished and self.n_unterminated_leaves < 2:  # moving this check from later on, so we can rerun if we finish successfully but only have one leaf (I think some of the post-processing steps must fail if there's only one leaf)
             successful = False
         return finished, successful, ', '.join(dbgstr), '\n'.join(termstr)
+
+    # ----------------------------------------------------------------------------------------
+    def abdn_str(self, leaf_list):
+        all_seqs = [n.nuc_seq for n in leaf_list]
+        abdns = sorted([len(list(sgrp)) for _, sgrp in itertools.groupby(sorted(all_seqs))], reverse=True)
+        return '%s (2: %d, 1: %d)' % (' '.join(str(l) for l in abdns if l > 2), abdns.count(2), abdns.count(1))
 
     # ----------------------------------------------------------------------------------------
     def simulate(self, args):
@@ -494,7 +500,7 @@ class MutationModel():
 
         if args.debug == 1:
             print('        end of      live     target dist (%s)           kd            lambda       termination' % args.metric_for_target_distance)
-            print('      generation   leaves      min  mean            min    mean      max  mean        checks')
+            print('      generation   leaves      min  mean            min    mean      max  mean        checks      abundances')
         if args.debug > 1:
             print('       gen   live leaves   (%s: terminated/no children, %s: updated lambdas)' % (selection_utils.color('red', 'x'), selection_utils.color('blue', 'x')))
             print('             before/after   ileaf   lambda  n children     n binary steps          n mutations            Kd                              Kd / (mean Kd)')
@@ -567,7 +573,7 @@ class MutationModel():
                     minkd, meankd = [('%5.1f' % v) for v in (min(tmpkdvals), numpy.mean(tmpkdvals))] if len(tmpkdvals) > 0 else (0, 0)
                     if len(updated_lambda_values) > 0:
                         maxl, meanl = [('%4.2f' % v) for v in (max(updated_lambda_values), numpy.mean(updated_lambda_values))]
-                print('        %3d       %5d         %s  %s          %s  %s     %4s  %4s      %s' % (current_time, len(updated_live_leaves), mintd, meantd, minkd, meankd, maxl, meanl, dbgstr))
+                print('        %3d       %5d         %s  %s          %s  %s     %4s  %4s      %s      %s' % (current_time, len(updated_live_leaves), mintd, meantd, minkd, meankd, maxl, meanl, dbgstr, self.abdn_str(updated_live_leaves)))
 
             if finished:
                 print(termstr)
@@ -602,10 +608,12 @@ class MutationModel():
                 uid, potential_names, used_names = selection_utils.choose_new_uid(potential_names, used_names)
                 node.name = 'int-' + uid
 
+        print('    final abundances: %s' % self.abdn_str(non_stop_leaves))
         observed_leaves = list(non_stop_leaves)  # don't really need a separate list, but it's a little nicer
         if args.n_to_sample is not None and len(observed_leaves) > args.n_to_sample[-1]:  # if there's more leaves than we were asked to sample
             observed_leaves = self.choose_leaves_to_sample(args, observed_leaves, args.n_to_sample[-1])
             print('    sampled %d / %d no-stop leaves at final time (sampling scheme: %s)' % (len(observed_leaves), len(non_stop_leaves), args.leaf_sampling_scheme))
+        print('    observed abundances: %s' % self.abdn_str(observed_leaves))
 
         for leaf in observed_leaves:
             leaf.frequency = 1
@@ -817,8 +825,8 @@ def main():
     parser.add_argument('--lambda0', type=float, default=0.365, help='Baseline sequence mutation rate')
     parser.add_argument('--target_sequence_lambda0', type=float, default=0.1, help='baseline mutation rate used for generating target sequences (you shouldn\'t need to change this)')
     parser.add_argument('--aa_paratope_positions', help='amino acid indices that should be considered as part of the paratope, i.e. that count toward the target distance (non-paratope positions are ignored for purposes of the target distance). Three ways to specify (f=<f>, N=<N>, i=<i>): f=<f> sets a fraction of positions chosen at random, if <f> is 1 it uses all remaining positions; N=<N> same as f= but sets absolute number; i=<i> specify exact positions, as a comma-separated list, where each entry in list is either a single position or a python-style slice, e.g. i=0,3,5:10 would use indices 0, 3, 5, 6, 7, 8, 9 (use \'len\' to specify the end of the sequence).')
-    parser.add_argument('--aa_struct_positions', help='amino acid indices to treat as \'structural\' positions that are either only allowed synonymous mutations (default) or forbidden mutation entirely (if --dont_mutate_struct_positions is set). Specified as for --aa_paratope_positions (which is set first, and whose positions are automatically excluded from consideratoin for --aa_struct_positions).')
-    parser.add_argument('--dont_mutate_struct_positions', action='store_true', help='if --aa_paratope_positions is set, by default we allow synonymous mutations at these positions, but this forbids mutations entirely (and is much faster)')
+    parser.add_argument('--aa_struct_positions', help='amino acid indices to treat as \'structural\' positions that are either only allowed synonymous mutations (default) or forbidden mutation entirely (if --dont_mutate_struct_positions is set). Specified as for --aa_paratope_positions (which is set first, and whose positions are automatically excluded from consideration for --aa_struct_positions).')
+    parser.add_argument('--dont_mutate_struct_positions', action='store_true', help='if --aa_struct_positions is set, by default we allow synonymous mutations at these positions, but this forbids mutations entirely (and is much faster)')
     parser.add_argument('--allow_stops_in_functional_seqs', action='store_true', help='treat seqs with stop codons as functional')
     parser.add_argument('--skip_stops_when_mutating', action='store_true', help='when selecting nucleotide mutations, skip any mutations that would result in a stop codon (this is partly designed as a speed optimization, and partly to make it harder for trees to go extinct with low selection strength)')
     # stopping criteria + sampling
@@ -926,15 +934,18 @@ def main():
     args.naive_tseq = TranslatedSeq(args, args.naive_seq)
     delattr(args, 'naive_seq')  # I think this is the most sensible thing to to
     if args.debug:
+        pt_col, st_col = 'red_bkg', 'blue_bkg'
         def getcol(ipos, char, aa=False):
             if args.aa_paratope_positions is not None:
                 if (not aa and ipos in args.nuc_paratope_positions) or (aa and ipos in args.aa_paratope_positions):
-                    return color('red', char)
+                    return color(pt_col, char)
             if args.aa_struct_positions is not None:
                 if (not aa and ipos in args.nuc_struct_positions) or (aa and ipos in args.aa_struct_positions):
-                    return color('blue', char)
+                    return color(st_col, char)
+            if char in selection_utils.ambig_chars(aa=aa):
+                return color('blue', char)
             return char
-        print('    naive seq%s%s:' % ('' if args.aa_paratope_positions is None else color('red', ' paratope'), '' if args.aa_struct_positions is None else color('blue', ' structural')))
+        print('    naive seq%s%s:' % ('' if args.aa_paratope_positions is None else ' '+color(pt_col, 'paratope'), '' if args.aa_struct_positions is None else ' '+color(st_col, 'structural')))
         print('      %s' % ''.join(getcol(i, c) for i, c in enumerate(args.naive_tseq.nuc)))
         print('      %s' % ''.join(getcol(i, c, aa=True) for i, c in enumerate(args.naive_tseq.aa)))
     if nonfunc_aa(args, args.naive_tseq.aa):
