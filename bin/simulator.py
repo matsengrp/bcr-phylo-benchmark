@@ -19,6 +19,7 @@ from colored_traceback import always
 import sys
 from ete3 import TreeNode, TreeStyle, NodeStyle, SVG_COLORS
 import matplotlib; matplotlib.use('agg')
+import operator
 try:
     import cPickle as pickle
 except:
@@ -455,10 +456,15 @@ class MutationModel():
         return finished, successful, ', '.join(dbgstr), '\n'.join(termstr)
 
     # ----------------------------------------------------------------------------------------
-    def abdn_str(self, leaf_list):
+    def abdn_str(self, leaf_list, with_kd=False):
         all_seqs = [n.nuc_seq for n in leaf_list]
-        abdns = sorted([len(list(sgrp)) for _, sgrp in itertools.groupby(sorted(all_seqs))], reverse=True)
-        return '%s (2: %d, 1: %d)' % (' '.join(str(l) for l in abdns if l > 2), abdns.count(2), abdns.count(1))
+        tmplist = [(aseq, len(list(sgrp))) for aseq, sgrp in itertools.groupby(sorted(all_seqs))]
+        abseqs, abdns = zip(*sorted(tmplist, key=operator.itemgetter(1), reverse=True))
+        abstr = '%s [3: %d, 2: %d, 1: %d]' % (' '.join(str(l) for l in abdns if l > 3), abdns.count(3), abdns.count(2), abdns.count(1))
+        if with_kd:
+            nodes_by_seq = {l.nuc_seq : l for l in leaf_list}  # each seq is of course represented here by only one of the nodes that has it
+            abstr += '  (%s [...])' % (' '.join('%.1f'%nodes_by_seq[s].Kd for s, a in zip(abseqs, abdns) if a > 3))
+        return abstr
 
     # ----------------------------------------------------------------------------------------
     def simulate(self, args):
@@ -608,12 +614,12 @@ class MutationModel():
                 uid, potential_names, used_names = selection_utils.choose_new_uid(potential_names, used_names)
                 node.name = 'int-' + uid
 
-        print('    final abundances: %s' % self.abdn_str(non_stop_leaves))
+        print('      final abundances (Kds): %s' % self.abdn_str(non_stop_leaves, with_kd=True))
         observed_leaves = list(non_stop_leaves)  # don't really need a separate list, but it's a little nicer
         if args.n_to_sample is not None and len(observed_leaves) > args.n_to_sample[-1]:  # if there's more leaves than we were asked to sample
             observed_leaves = self.choose_leaves_to_sample(args, observed_leaves, args.n_to_sample[-1])
             print('    sampled %d / %d no-stop leaves at final time (sampling scheme: %s)' % (len(observed_leaves), len(non_stop_leaves), args.leaf_sampling_scheme))
-        print('    observed abundances: %s' % self.abdn_str(observed_leaves))
+        print('      observed abundances (Kds): %s' % self.abdn_str(observed_leaves, with_kd=True))
 
         for leaf in observed_leaves:
             leaf.frequency = 1
