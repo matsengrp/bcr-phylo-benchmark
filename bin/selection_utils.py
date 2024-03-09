@@ -255,14 +255,14 @@ def update_lambda_values(args, live_leaves, lambda_min=10e-10, cached_bna=None, 
         return [max(lambda_min, l) for l in lambdas]
 
     # ----------------------------------------------------------------------------------------
-    Kd_n = scipy.array([l.Kd for l in live_leaves])  # get scipy array of kd values from list of live leaves
+    Kd_n = numpy.array([l.Kd for l in live_leaves])  # get numpy array of kd values from list of live leaves
     if debug:
         print('    updating %d lambda values' % len(Kd_n))
         initial_lambda_values = [l.lambda_ for l in live_leaves]
     if args.min_effective_kd is not None:
         if debug:
             print('      --min_effective_kd: increased %d / %d Kd values to %.0f' % (len([k for k in Kd_n if k < args.min_effective_kd]), len(Kd_n), args.min_effective_kd))
-        Kd_n = scipy.array([max(k, args.min_effective_kd) for k in Kd_n])
+        Kd_n = numpy.array([max(k, args.min_effective_kd) for k in Kd_n])
 
     # get list of binding time values for each cell (this is the slow step)
     bna_dict = None
@@ -271,7 +271,7 @@ def update_lambda_values(args, live_leaves, lambda_min=10e-10, cached_bna=None, 
     else:  # use cached values that were passed in
         if debug:
             print('      using %d cached values for %d nodes' % (len(cached_bna), len(Kd_n)))
-        BnA = scipy.array([cached_bna[k] for k in Kd_n])
+        BnA = numpy.array([cached_bna[k] for k in Kd_n])
 
     new_lambdas = trans_BA(BnA)  # convert each cell's binding time to poisson lambda (i.e. mean number of offspring)
     if args.selection_strength < 1 and len(new_lambdas) > 0:
@@ -296,7 +296,7 @@ def find_A_total(carry_cap, B_total, f_full, mature_kd, U):
         def obj(A): return((carry_cap - C_A(A, A_total_fun(A, B_total, Kd_n), f_full, U))**2)
         return obj
 
-    Kd_n = scipy.array([mature_kd] * carry_cap)
+    Kd_n = numpy.array([mature_kd] * carry_cap)
     obj = A_obj(carry_cap, B_total, f_full, Kd_n, U)
     # Some funny "zero encountered in true_divide" errors are not affecting results so ignore them:
     old_settings = scipy.seterr(all='ignore')  # Keep old settings
@@ -370,7 +370,7 @@ def plot_runstats(tdist_hists, outbase, colors):
         return(imin, imax)
 
     tdist_hists = [h for h in tdist_hists if h is not None]  # the initial list of hist is filled with none values to length max(args.obs_times), but then if we stop because of another criterion some of the nones are still there, so i guess just remove them here for plotting
-    pop_size = scipy.array([sum(r[0]) for r in tdist_hists])  # total population size
+    pop_size = numpy.array([sum(r[0]) for r in tdist_hists])  # total population size
     bounds = make_bounds(tdist_hists)  # bin indices of the min and max hamming distances to plot
     if None in bounds:
         print('  note: couldn\'t get bounds for runstat hists, so not writing')
@@ -378,12 +378,12 @@ def plot_runstats(tdist_hists, outbase, colors):
 
     fig = plt.figure()
     ax = plt.subplot(111)
-    t = scipy.array(list(range(len(pop_size))))  # The x-axis are generations
+    t = numpy.array(list(range(len(pop_size))))  # The x-axis are generations
     ax.plot(t, pop_size, lw=2, label='all cells')  # Total population size is plotted
     # Then plot the counts for each hamming distance as a function on generation:
     for ibin in list(range(*bounds)):
         color = colors[ibin]
-        ax.plot(t, scipy.array([r[0][ibin] for r in tdist_hists]), lw=2, color=color, label='distance {}'.format(ibin))
+        ax.plot(t, numpy.array([r[0][ibin] for r in tdist_hists]), lw=2, color=color, label='distance {}'.format(ibin))
 
     plt.legend(bbox_to_anchor=(1.05, 1), loc=2, borderaxespad=0)
 

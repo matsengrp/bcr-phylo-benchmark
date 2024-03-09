@@ -30,7 +30,7 @@ import selection_utils
 from selection_utils import color
 from selection_utils import target_distance_fcn
 
-scipy.seterr(all='raise')
+# scipy.seterr(all='raise')
 
 # ----------------------------------------------------------------------------------------
 def parse_ipos_arg(argstr, aa_seq, exclude_positions=None):
@@ -254,7 +254,7 @@ class MutationModel():
             # Determine the position to mutate from the mutability matrix:
             mutability_p = None
             if self.context_model is not None:
-                mutability_p = scipy.array([mutabilities[pos][0] for pos in available_positions])
+                mutability_p = numpy.array([mutabilities[pos][0] for pos in available_positions])
                 mutability_p /= mutability_p.sum()
             mut_pos = scipy.random.choice(available_positions, p=mutability_p)
 
