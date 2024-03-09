@@ -13,6 +13,7 @@ import numpy
 import itertools
 import string
 from scipy.optimize import minimize, fsolve
+import scipy.special as scp
 import matplotlib; matplotlib.use('agg')
 from matplotlib import pyplot as plt
 from ete3 import TreeNode
@@ -199,7 +200,7 @@ def update_lambda_values(args, live_leaves, lambda_min=10e-10, cached_bna=None, 
         The objective function that solves the set of differential equations setup to find the number of free As,
         at equilibrium, given a number of Bs with some affinity listed in Kd_n.
         '''
-        return lambda A: (args.A_total - (A + scipy.sum(args.B_total/(1+Kd_n/A))))**2
+        return lambda A: (args.A_total - (A + numpy.sum(args.B_total/(1+Kd_n/A))))**2
 
     # ----------------------------------------------------------------------------------------
     def calc_binding_time(Kd_n):
@@ -226,7 +227,7 @@ def update_lambda_values(args, live_leaves, lambda_min=10e-10, cached_bna=None, 
         '''Transform the fraction B:A (B bound to A) to a poisson lambda between 0 and 2.'''
         alpha, beta, Q = args.logi_params
         # We keep alpha to enable the possibility that there is a minimum lambda_:
-        lambda_ = alpha + (2 - alpha) / (1 + Q*scipy.exp(-beta*BnA))
+        lambda_ = alpha + (2 - alpha) / (1 + Q*numpy.exp(-beta*BnA))
         return [max(lambda_min, l) for l in lambda_]
 
     # ----------------------------------------------------------------------------------------
@@ -288,7 +289,7 @@ def update_lambda_values(args, live_leaves, lambda_min=10e-10, cached_bna=None, 
 # ----------------------------------------------------------------------------------------
 def find_A_total(carry_cap, B_total, f_full, mature_kd, U):
     # find the total amount of A necessary for sustaining the specified carrying capacity
-    def A_total_fun(A, B_total, Kd_n): return(A + scipy.sum(B_total/(1+Kd_n/A)))
+    def A_total_fun(A, B_total, Kd_n): return(A + numpy.sum(B_total/(1+Kd_n/A)))
 
     def C_A(A, A_total, f_full, U): return(U * (A_total - A) / f_full)
 
@@ -299,10 +300,11 @@ def find_A_total(carry_cap, B_total, f_full, mature_kd, U):
     Kd_n = numpy.array([mature_kd] * carry_cap)
     obj = A_obj(carry_cap, B_total, f_full, Kd_n, U)
     # Some funny "zero encountered in true_divide" errors are not affecting results so ignore them:
-    old_settings = scipy.seterr(all='ignore')  # Keep old settings
-    scipy.seterr(divide='ignore')
+    # update: commenting these, since the new scipy version seems to have broken backwards compatibility, and I'm not getting the warnings now
+    # old_settings = scp.seterr(all='ignore')  # Keep old settings
+    # scp.seterr(divide='ignore')
     obj_min = minimize(obj, 1e-20, bounds=[[1e-20, carry_cap]], method='L-BFGS-B', tol=1e-20)
-    scipy.seterr(**old_settings)  # Reset to default
+    # scp.seterr(**old_settings)  # Reset to default
     A = obj_min.x[0]
     A_total = A_total_fun(A, B_total, Kd_n)
     assert(C_A(A, A_total, f_full, U) > carry_cap * 99/100)
@@ -317,7 +319,7 @@ def find_logistic_params(f_full, U):
         # We keep alpha to enable the possibility
         # that there is a minimum lambda_
         alpha, beta, Q = lparams
-        lambda_ = alpha + (2 - alpha) / (1 + Q*scipy.exp(-beta*BA))
+        lambda_ = alpha + (2 - alpha) / (1 + Q*numpy.exp(-beta*BA))
         return(lambda_)
 
     def solve_T_BA(lparams, f_full, U):
@@ -338,8 +340,9 @@ def find_logistic_params(f_full, U):
         return fsolve(obj_T_A, (0, 10e-5, 1), xtol=1e-20, maxfev=1000)
 
     # FloatingPointError errors are not affecting results so ignore them:
-    old_settings = scipy.seterr(all='ignore')  # Keep old settings
-    scipy.seterr(over='ignore')
+    # update: commenting these, since the new scipy version seems to have broken backwards compatibility, and I'm not getting the warnings now
+    # old_settings = scp.seterr(all='ignore')  # Keep old settings
+    # scp.seterr(over='ignore')
     def obj_T_A(lparams): return(solve_T_BA(lparams, f_full, U))
     try:
         lparams = run_fsolve(obj_T_A)
@@ -348,7 +351,7 @@ def find_logistic_params(f_full, U):
         def obj_T_A(lparams): return(solve_T_BA_low_epsilon(lparams, f_full, U))
         lparams = run_fsolve(obj_T_A)
     assert(sum(solve_T_BA(lparams, f_full, U)) < f_full * 1/1000)
-    scipy.seterr(**old_settings)  # Reset to default
+    # scp.seterr(**old_settings)  # Reset to default
     return lparams  # tuple with (alpha, beta, Q)
 
 # ----------------------------------------------------------------------------------------

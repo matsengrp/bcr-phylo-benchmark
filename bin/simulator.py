@@ -14,6 +14,7 @@ import time
 import itertools
 import scipy
 from scipy import stats
+import scipy.special as scp
 import numpy
 from colored_traceback import always
 import sys
@@ -30,7 +31,7 @@ import selection_utils
 from selection_utils import color
 from selection_utils import target_distance_fcn
 
-# scipy.seterr(all='raise')
+scp.seterr(all='raise')
 
 # ----------------------------------------------------------------------------------------
 def parse_ipos_arg(argstr, aa_seq, exclude_positions=None):
@@ -43,7 +44,7 @@ def parse_ipos_arg(argstr, aa_seq, exclude_positions=None):
         if exclude_positions is not None:
             pchoices = [p for p in pchoices if p not in exclude_positions]
             n_pos = min(len(pchoices), n_pos)
-        ipositions = scipy.random.choice(pchoices, n_pos, replace=False)
+        ipositions = numpy.random.choice(pchoices, n_pos, replace=False)
     elif 'i=' in argstr:
         argstr = argstr.lstrip('i=')
         ipositions = []
@@ -256,7 +257,7 @@ class MutationModel():
             if self.context_model is not None:
                 mutability_p = numpy.array([mutabilities[pos][0] for pos in available_positions])
                 mutability_p /= mutability_p.sum()
-            mut_pos = scipy.random.choice(available_positions, p=mutability_p)
+            mut_pos = numpy.random.choice(available_positions, p=mutability_p)
 
             # Now draw the target nucleotide using the substitution matrix
             nucs = [n for n in 'ACGT' if n != nuc_seq[mut_pos]]
@@ -264,7 +265,7 @@ class MutationModel():
             if self.context_model is not None:
                 substitution_p = [mutabilities[mut_pos][1][n] for n in nucs]
                 assert 0 <= abs(sum(substitution_p) - 1.) < 1e-10
-            new_nuc = scipy.random.choice(nucs, p=substitution_p)
+            new_nuc = numpy.random.choice(nucs, p=substitution_p)
             new_seq = nuc_seq[ : mut_pos] + new_nuc + nuc_seq[mut_pos + 1 :]
             if skip_stops:
                 new_codon = local_translate(get_codon(new_seq, mut_pos))
@@ -380,7 +381,7 @@ class MutationModel():
     # ----------------------------------------------------------------------------------------
     def get_target_distance_hist(self, args, leaves):
         bin_edges = list(numpy.arange(-0.5, int(2 * args.target_distance) + 0.5))  # some sequences manage to wander quite far away from their nearest target without getting killed, so multiply by 2
-        hist = scipy.histogram([l.target_distance for l in leaves], bins=bin_edges)  # if <bins> is a list, it defines the bin edges, including the rightmost edge
+        hist = numpy.histogram([l.target_distance for l in leaves], bins=bin_edges)  # if <bins> is a list, it defines the bin edges, including the rightmost edge
         return hist
 
     # ----------------------------------------------------------------------------------------
@@ -563,8 +564,8 @@ class MutationModel():
                 self.add_children(args, n_children, leaf, current_time, updated_mean_kd, updated_live_leaves, static_live_leaves, lambda_update_dbg_str, cached_bna)
 
             self.tdist_hists[current_time] = self.get_target_distance_hist(args, updated_live_leaves)
-            self.n_nuc_mutated_hists[current_time] = scipy.histogram([l.naive_distance for l in updated_live_leaves], bins=list(numpy.arange(-0.5, (max(args.obs_times) if args.obs_times is not None else current_time) + 0.5)))  # can't have more than one mutation per generation
-            self.n_aa_mutated_hists[current_time] = scipy.histogram([l.shm_aa for l in updated_live_leaves], bins=list(numpy.arange(-0.5, (max(args.obs_times) if args.obs_times is not None else current_time) + 0.5)))  # can't have more than one mutation per generation
+            self.n_nuc_mutated_hists[current_time] = numpy.histogram([l.naive_distance for l in updated_live_leaves], bins=list(numpy.arange(-0.5, (max(args.obs_times) if args.obs_times is not None else current_time) + 0.5)))  # can't have more than one mutation per generation
+            self.n_aa_mutated_hists[current_time] = numpy.histogram([l.shm_aa for l in updated_live_leaves], bins=list(numpy.arange(-0.5, (max(args.obs_times) if args.obs_times is not None else current_time) + 0.5)))  # can't have more than one mutation per generation
 
             finished, successful, dbgstr, termstr = self.check_termination(args, current_time, updated_live_leaves)
 
