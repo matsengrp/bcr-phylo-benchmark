@@ -458,6 +458,8 @@ class MutationModel():
 
     # ----------------------------------------------------------------------------------------
     def abdn_str(self, leaf_list, with_kd=False):
+        if len(leaf_list) == 0:
+            return ''
         all_seqs = [n.nuc_seq for n in leaf_list]
         tmplist = [(aseq, len(list(sgrp))) for aseq, sgrp in itertools.groupby(sorted(all_seqs))]
         abseqs, abdns = zip(*sorted(tmplist, key=operator.itemgetter(1), reverse=True))
