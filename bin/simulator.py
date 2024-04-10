@@ -172,7 +172,7 @@ class MutationModel():
 
         if args.debug > 1:
             terminated_dbg_str = selection_utils.color('red', 'x') if n_children == 0 else ' '
-            n_bstep_str_list = '' if args.multifurcating_tree else [('%d' % n) if n > 0 else '-' for n in n_bstep_list]
+            n_bstep_str_list = '' if args.multifurcating_tree else [('%d' % n) if n is not None and n > 0 else '-' for n in n_bstep_list]
             n_mutation_str_list = [('%d' % n) if n > 0 else '-' for n in n_mutation_list]
             kd_str_list = ['%.0f' % kd for kd in kd_list]
             rel_kd_str_list = ['%.2f' % (kd / updated_mean_kd) for kd in kd_list]
