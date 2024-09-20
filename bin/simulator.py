@@ -210,7 +210,7 @@ class MutationModel():
 
         mutabilities_to_average, substitutions_to_average = zip(*[self.context_model[x] for x in MutationModel.disambiguate(kmer)])
 
-        average_mutability = scipy.mean(mutabilities_to_average)
+        average_mutability = numpy.mean(mutabilities_to_average)
         average_substitution = {b:sum(substitution_dict[b] for substitution_dict in substitutions_to_average)/len(substitutions_to_average) for b in 'ACGT'}
 
         return average_mutability, average_substitution
